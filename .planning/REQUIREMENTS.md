@@ -86,13 +86,40 @@
 
 ## Traceability
 
-| Phase | Requirements | Status |
-|-------|--------------|--------|
-| Phase 1 | DATA-01, DATA-02, DATA-04, DATA-05, COMP-01, COMP-02 | Pending |
-| Phase 2 | DATA-03, DATA-06, EVID-01, EVID-02, EVID-03, EVID-04, EVID-05 | Pending |
-| Phase 3 | DATA-07, DATA-08, SEARCH-01, SEARCH-02, SEARCH-03, SEARCH-04 | Pending |
-| Phase 4 | SEARCH-05, UI-01, UI-02, UI-03, UI-04, EVAL-01, EVAL-02, EVAL-03, EVAL-04, EVAL-05 | Pending |
-| Phase 5 | UI-05, COMP-03, COMP-04 | Pending |
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| DATA-01 | Phase 1 | Pending |
+| DATA-02 | Phase 1 | Pending |
+| DATA-04 | Phase 1 | Pending |
+| COMP-01 | Phase 1 | Pending |
+| COMP-02 | Phase 1 | Pending |
+| DATA-03 | Phase 2 | Pending |
+| DATA-05 | Phase 2 | Pending |
+| DATA-06 | Phase 2 | Pending |
+| EVID-01 | Phase 2 | Pending |
+| EVID-02 | Phase 2 | Pending |
+| EVID-03 | Phase 2 | Pending |
+| EVID-04 | Phase 2 | Pending |
+| EVID-05 | Phase 2 | Pending |
+| DATA-07 | Phase 3 | Pending |
+| DATA-08 | Phase 3 | Pending |
+| SEARCH-01 | Phase 3 | Pending |
+| SEARCH-02 | Phase 3 | Pending |
+| SEARCH-03 | Phase 3 | Pending |
+| SEARCH-04 | Phase 3 | Pending |
+| SEARCH-05 | Phase 4 | Pending |
+| UI-01 | Phase 4 | Pending |
+| UI-02 | Phase 4 | Pending |
+| UI-03 | Phase 4 | Pending |
+| UI-04 | Phase 4 | Pending |
+| EVAL-01 | Phase 4 | Pending |
+| EVAL-02 | Phase 4 | Pending |
+| EVAL-03 | Phase 4 | Pending |
+| EVAL-04 | Phase 4 | Pending |
+| EVAL-05 | Phase 4 | Pending |
+| UI-05 | Phase 5 | Pending |
+| COMP-03 | Phase 5 | Pending |
+| COMP-04 | Phase 5 | Pending |
 
 ---
-*Last updated: 2026-03-28 after initialization*
+*Last updated: 2026-03-28 after roadmap creation*
