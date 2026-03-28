@@ -30,7 +30,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Raw Bonjour data is normalized to a consistent schema
   4. Users can submit opt-out requests via a form
   5. Opted-out profiles are marked hidden and excluded from downstream processing
-**Plans**: TBD
+**Plans**: 2 plans (completed)
+
+Plans:
+- [x] 01-PLAN.md — Infrastructure: monorepo setup, database schema, migrations
+- [x] 02-PLAN.md — Bonjour adapter: client, normalization, discovery
 
 ### Phase 2: GitHub & Identity Merge
 **Goal**: Unified person entities are created from merged Bonjour and GitHub data with extracted evidence
@@ -42,7 +46,14 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Projects and repositories are extracted as classified evidence items
   4. Social links and job signals are extracted and stored with type classification
   5. Evidence items are associated with person entities for retrieval
-**Plans**: TBD
+**Plans**: 5 plans in 5 waves
+
+Plans:
+- [ ] 01-PLAN.md — GitHub adapter: client, normalization, SourceAdapter implementation (DATA-03, DATA-05)
+- [ ] 02-PLAN.md — Schema extension: persons, person_identities, person_aliases, evidence_items tables (EVID-05)
+- [ ] 03-PLAN.md — Evidence extraction: Bonjour projects/socials/job signals, GitHub repositories (EVID-01, EVID-02, EVID-03, EVID-04)
+- [ ] 04-PLAN.md — Identity resolution: matcher, merger, resolver pipeline (DATA-06)
+- [ ] 05-PLAN.md — Worker integration: GitHub sync, identity resolution, evidence storage
 
 ### Phase 3: Search & Embeddings
 **Goal**: Natural language queries return ranked candidates with evidence-based matching
@@ -86,8 +97,12 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Infrastructure & Bonjour Ingestion | 0/TBD | Not started | - |
-| 2. GitHub & Identity Merge | 0/TBD | Not started | - |
+| 1. Infrastructure & Bonjour Ingestion | 2/2 | Completed | 2026-03-28 |
+| 2. GitHub & Identity Merge | 0/5 | Ready to execute | - |
 | 3. Search & Embeddings | 0/TBD | Not started | - |
 | 4. UI & Evaluation | 0/TBD | Not started | - |
 | 5. Conversational & Compliance Polish | 0/TBD | Not started | - |
+
+---
+
+*Last updated: 2026-03-29 after Phase 2 planning*
