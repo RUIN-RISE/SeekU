@@ -10,11 +10,15 @@
     "lint": "echo 'No lint configured for @seeku/worker'",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/cli.js",
-    "sync:bonjour": "tsx src/cli.ts sync-bonjour"
+    "sync:bonjour": "tsx src/cli.ts sync-bonjour",
+    "sync:github": "tsx src/cli.ts sync-github",
+    "resolve-identities": "tsx src/cli.ts resolve-identities",
+    "store-evidence": "tsx src/cli.ts store-evidence"
   },
   "dependencies": {
     "@seeku/adapters": "workspace:*",
     "@seeku/db": "workspace:*",
-    "@seeku/shared": "workspace:*"
+    "@seeku/shared": "workspace:*",
+    "@seeku/workers": "workspace:*"
   }
 }

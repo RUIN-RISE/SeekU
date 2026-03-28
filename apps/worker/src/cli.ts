@@ -1,5 +1,11 @@
 import "dotenv/config";
 
+import {
+  runEvidenceStorageWorker,
+  runGithubSync,
+  runIdentityResolutionWorker
+} from "@seeku/workers";
+
 import { runBonjourSyncJob } from "./index.js";
 
 function parseArgs(argv: string[]) {
@@ -46,23 +52,46 @@ async function main() {
   const [, , command, ...rest] = process.argv;
   const parsed = parseArgs(rest);
 
-  if (command !== "sync-bonjour") {
-    throw new Error(
-      "Unknown command. Use: sync-bonjour [--limit 20] [--cursor '{\"categoryIndex\":0,\"skip\":0}'] [--handles a,b]"
-    );
-  }
-
   const limit = Number(parsed.args.get("limit") ?? "20");
   const handles = parsed.args.get("handles")?.split(",").map((value) => value.trim());
   const cursor = parseCursor(parsed.args.get("cursor"));
   const jobName = parsed.args.get("job-name");
 
-  const result = await runBonjourSyncJob({
-    limit,
-    cursor,
-    handles,
-    jobName
-  });
+  let result: unknown;
+
+  if (command === "sync-bonjour") {
+    result = await runBonjourSyncJob({
+      limit,
+      cursor,
+      handles,
+      jobName
+    });
+  } else if (command === "sync-github") {
+    result = await runGithubSync(handles ?? [], { limit });
+  } else if (command === "resolve-identities") {
+    const bonjourHandles = parsed.args
+      .get("bonjour-handles")
+      ?.split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const githubHandles = parsed.args
+      .get("github-handles")
+      ?.split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    result = await runIdentityResolutionWorker(bonjourHandles, githubHandles);
+  } else if (command === "store-evidence") {
+    const personIds = parsed.args
+      .get("person-ids")
+      ?.split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    result = await runEvidenceStorageWorker(personIds);
+  } else {
+    throw new Error(
+      "Unknown command. Use one of: sync-bonjour, sync-github, resolve-identities, store-evidence"
+    );
+  }
 
   console.log(JSON.stringify(result, null, 2));
 }

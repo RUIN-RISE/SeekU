@@ -29,6 +29,8 @@ export function createDatabase(connectionString?: string) {
   return createDatabaseClient(connectionString);
 }
 
+export const getDatabase = createDatabase;
+
 export function createDatabaseConnection(connectionString: string = process.env.DATABASE_URL ?? "") {
   const client = createPostgresClient(connectionString);
   const db = drizzle(client, { schema });

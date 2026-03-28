@@ -47,6 +47,9 @@ importers:
       '@seeku/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@seeku/workers':
+        specifier: workspace:*
+        version: link:../../packages/workers
 
   packages/adapters:
     dependencies:
@@ -73,11 +76,38 @@ importers:
         specifier: ^0.21.4
         version: 0.21.4
 
+  packages/identity:
+    dependencies:
+      '@seeku/adapters':
+        specifier: workspace:*
+        version: link:../adapters
+      '@seeku/db':
+        specifier: workspace:*
+        version: link:../db
+      '@seeku/shared':
+        specifier: workspace:*
+        version: link:../shared
+
   packages/shared:
     dependencies:
       zod:
         specifier: ^3.24.2
         version: 3.25.76
+
+  packages/workers:
+    dependencies:
+      '@seeku/adapters':
+        specifier: workspace:*
+        version: link:../adapters
+      '@seeku/db':
+        specifier: workspace:*
+        version: link:../db
+      '@seeku/identity':
+        specifier: workspace:*
+        version: link:../identity
+      '@seeku/shared':
+        specifier: workspace:*
+        version: link:../shared
 
 packages:
 

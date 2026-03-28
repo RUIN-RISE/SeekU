@@ -5,6 +5,8 @@
     { "path": "./packages/shared" },
     { "path": "./packages/db" },
     { "path": "./packages/adapters" },
+    { "path": "./packages/identity" },
+    { "path": "./packages/workers" },
     { "path": "./apps/worker" },
     { "path": "./apps/api" }
   ]
