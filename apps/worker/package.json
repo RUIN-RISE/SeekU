@@ -1,0 +1,20 @@
+{
+  "name": "@seeku/worker",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "echo 'No lint configured for @seeku/worker'",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/cli.js",
+    "sync:bonjour": "tsx src/cli.ts sync-bonjour"
+  },
+  "dependencies": {
+    "@seeku/adapters": "workspace:*",
+    "@seeku/db": "workspace:*",
+    "@seeku/shared": "workspace:*"
+  }
+}

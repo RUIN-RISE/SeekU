@@ -1,0 +1,20 @@
+{
+  "name": "@seeku/api",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "echo 'No lint configured for @seeku/api'",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.ts"
+  },
+  "dependencies": {
+    "@seeku/db": "workspace:*",
+    "@seeku/shared": "workspace:*",
+    "fastify": "^5.3.3"
+  }
+}

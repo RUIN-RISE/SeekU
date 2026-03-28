@@ -1,0 +1,30 @@
+{
+  "name": "@seeku/db",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "echo 'No lint configured for @seeku/db'",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "db:generate": "drizzle-kit generate --config ../../drizzle.config.ts",
+    "db:push": "drizzle-kit push --config ../../drizzle.config.ts",
+    "db:migrate": "drizzle-kit migrate --config ../../drizzle.config.ts"
+  },
+  "dependencies": {
+    "@seeku/shared": "workspace:*",
+    "drizzle-orm": "^0.30.10",
+    "postgres": "^3.4.5"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.21.4"
+  }
+}
