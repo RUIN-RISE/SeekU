@@ -1,7 +1,6 @@
 import "dotenv/config";
 
-import { and, eq, inArray } from "drizzle-orm";
-import { persons, evidenceItems, searchDocuments, createDatabaseConnection, type Person, type EvidenceItem, type SearchDocument } from "@seeku/db";
+import { and, eq, inArray, persons, evidenceItems, searchDocuments, createDatabaseConnection, type Person, type EvidenceItem, type SearchDocument } from "@seeku/db";
 import { SiliconFlowProvider } from "@seeku/llm";
 import { QueryPlanner, HybridRetriever, Reranker, type QueryIntent, type SearchResult, type RerankResult } from "@seeku/search";
 
@@ -25,7 +24,7 @@ export interface SearchResultOutput {
 }
 
 export interface ProfileOutput {
-  person: Person;
+  person: Person | null;
   evidence: EvidenceItem[];
 }
 

@@ -105,6 +105,12 @@ importers:
       '@seeku/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@seeku/llm':
+        specifier: workspace:*
+        version: link:../../packages/llm
+      '@seeku/search':
+        specifier: workspace:*
+        version: link:../../packages/search
       '@seeku/shared':
         specifier: workspace:*
         version: link:../../packages/shared

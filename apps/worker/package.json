@@ -18,6 +18,8 @@
   "dependencies": {
     "@seeku/adapters": "workspace:*",
     "@seeku/db": "workspace:*",
+    "@seeku/llm": "workspace:*",
+    "@seeku/search": "workspace:*",
     "@seeku/shared": "workspace:*",
     "@seeku/workers": "workspace:*"
   }
