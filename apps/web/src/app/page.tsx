@@ -22,14 +22,14 @@ export default function HomePage() {
   const [typewriterText, setTypewriterText] = useState("");
   const [showResults, setShowResults] = useState(false);
 
-  // 打字机效果 - 使用 setInterval 避免内存泄漏
+  // 打字机效果 - setTimeout + useRef 正确清理，保留动态时序
   const queryIndexRef = useRef(0);
   const charIndexRef = useRef(0);
   const isDeletingRef = useRef(false);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    intervalRef.current = setInterval(() => {
+    const typeWriter = () => {
       const currentQuery = TYPEWRITER_QUERIES[queryIndexRef.current];
 
       if (isDeletingRef.current) {
@@ -40,20 +40,27 @@ export default function HomePage() {
         setTypewriterText(currentQuery.substring(0, charIndexRef.current));
       }
 
+      // 动态时序：打字80ms、删除30ms、停留2.5s、切换0.5s
+      let typeSpeed = isDeletingRef.current ? 30 : 80;
+
       if (!isDeletingRef.current && charIndexRef.current === currentQuery.length) {
-        // 完成打字，等待后开始删除
+        typeSpeed = 2500; // 完成打字，停留让用户阅读
         isDeletingRef.current = true;
       } else if (isDeletingRef.current && charIndexRef.current === 0) {
-        // 完成删除，切换到下一个查询
         isDeletingRef.current = false;
         queryIndexRef.current = (queryIndexRef.current + 1) % TYPEWRITER_QUERIES.length;
+        typeSpeed = 500; // 切换到下一句前的停顿
       }
-    }, 80); // 固定 80ms 间隔，删除时也用相同速度保持流畅
+
+      timerRef.current = setTimeout(typeWriter, typeSpeed);
+    };
+
+    timerRef.current = setTimeout(typeWriter, 1000); // 初始延迟
 
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
       }
     };
   }, []);
