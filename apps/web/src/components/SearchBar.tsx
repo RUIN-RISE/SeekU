@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { useDebouncedCallback } from "use-debounce";
-import { Search } from "lucide-react";
 import { useSearch, type SearchResponse } from "@/lib/hooks";
 
 interface SearchBarProps {
@@ -31,27 +30,29 @@ export function SearchBar({ onResults }: SearchBarProps) {
   }, [data, onResults]);
 
   return (
-    <div className="w-full max-w-[640px] mx-auto">
-      <div className="relative">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-text-muted" />
-        <input
-          type="text"
-          value={inputValue}
-          placeholder="Find AI engineers with RAG experience in Beijing..."
-          onChange={handleInputChange}
-          className="w-full h-14 pl-12 pr-4 text-lg font-body bg-bg-white border-2 border-transparent rounded-card shadow-[0_4px_20px_rgba(0,0,0,0.08)] focus:border-accent-blue focus:shadow-[0_0_0_4px_rgba(37,99,235,0.2)] focus:outline-none transition-all duration-200"
-        />
-        {isLoading && (
-          <div className="absolute right-4 top-1/2 -translate-y-1/2">
-            <div className="w-5 h-5 border-2 border-accent-blue border-t-transparent rounded-full animate-spin" />
-          </div>
-        )}
-      </div>
+    <>
+      {/* 透明输入框 - 叠加在打字机文本上 */}
+      <input
+        type="text"
+        value={inputValue}
+        onChange={handleInputChange}
+        className="w-full h-full bg-transparent border-none outline-none text-slate-900 text-lg px-2 font-medium absolute inset-0 z-20"
+        placeholder=""
+      />
+
+      {/* 加载指示器 */}
+      {isLoading && (
+        <div className="absolute right-4 top-1/2 -translate-y-1/2 z-30">
+          <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
+
+      {/* 错误提示 */}
       {error && (
-        <p className="mt-2 text-sm text-red-500">
-          Search failed. Please try again.
+        <p className="absolute -bottom-8 left-0 text-sm text-red-500 z-30">
+          搜索失败，请重试
         </p>
       )}
-    </div>
+    </>
   );
 }

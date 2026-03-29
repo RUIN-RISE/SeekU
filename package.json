@@ -8,6 +8,8 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "worker:sync:bonjour": "pnpm --filter @seeku/worker sync:bonjour",
     "worker:sync:github": "pnpm --filter @seeku/worker sync:github",
     "worker:resolve-identities": "pnpm --filter @seeku/worker resolve-identities",
@@ -25,6 +27,7 @@
     "dotenv": "^16.4.7",
     "turbo": "^2.5.0",
     "tsx": "^4.20.6",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^3.0.0"
   }
 }
