@@ -92,7 +92,7 @@ Plans:
 - [x] 04-01-PLAN.md — Backend API endpoints: profiles, admin routes (SEARCH-05, UI-04 backend)
 - [x] 04-02-PLAN.md — Eval package: datasets, loader functions (EVAL-01, EVAL-02)
 - [ ] 04-03-PLAN.md — CLI search interface: search and show commands (additional feature per user decision)
-- [ ] 04-04-PLAN.md — Eval benchmark runner: metrics computation (EVAL-03, EVAL-04)
+- [x] 04-04-PLAN.md — Eval benchmark runner: metrics computation (EVAL-03, EVAL-04)
 - [ ] 04-05-PLAN.md — Web frontend setup: Next.js app, SearchBar, CandidateCard (UI-01, UI-02)
 - [ ] 04-06a-PLAN.md — Web frontend components: Header, ResultsList, EvidenceTabs, CandidateDetailModal (UI-03, UI-04)
 - [ ] 04-06b-PLAN.md — Web frontend pages: search home, admin dashboard (UI-01, UI-02, EVAL-05)
@@ -119,7 +119,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. Infrastructure & Bonjour Ingestion | 2/2 | Completed | 2026-03-28 |
 | 2. GitHub & Identity Merge | 0/5 | Ready to execute | - |
 | 3. Search & Embeddings | 0/7 | Ready to execute | - |
-| 4. UI & Evaluation | 1/8 | In progress | 2026-03-29 |
+| 4. UI & Evaluation | 3/8 | In Progress|  |
 | 5. Conversational & Compliance Polish | 0/TBD | Not started | - |
 
 ---

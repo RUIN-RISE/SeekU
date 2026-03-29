@@ -33,8 +33,8 @@
 
 - [x] **EVAL-01**: Create eval query set (50-100 realistic search queries)
 - [x] **EVAL-02**: Create golden set (known AI talent with expected matches)
-- [ ] **EVAL-03**: Benchmark runner computes coverage (how many golden set found)
-- [ ] **EVAL-04**: Benchmark runner computes precision@k (top results relevance)
+- [x] **EVAL-03**: Benchmark runner computes coverage (how many golden set found)
+- [x] **EVAL-04**: Benchmark runner computes precision@k (top results relevance)
 - [ ] **EVAL-05**: Eval dashboard shows metrics and regression reports
 
 ### UI Layer
@@ -114,8 +114,8 @@
 | UI-04 | Phase 4 | Partial (backend 04-01) |
 | EVAL-01 | Phase 4 | Complete |
 | EVAL-02 | Phase 4 | Complete |
-| EVAL-03 | Phase 4 | Pending |
-| EVAL-04 | Phase 4 | Pending |
+| EVAL-03 | Phase 4 | Complete |
+| EVAL-04 | Phase 4 | Complete |
 | EVAL-05 | Phase 4 | Pending |
 | UI-05 | Phase 5 | Pending |
 | COMP-03 | Phase 5 | Pending |
