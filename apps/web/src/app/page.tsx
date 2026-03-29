@@ -22,45 +22,48 @@ export default function HomePage() {
   const [typewriterText, setTypewriterText] = useState("");
   const [showResults, setShowResults] = useState(false);
 
-  // 打字机效果
+  // 打字机效果 - 使用 setInterval 避免内存泄漏
   const queryIndexRef = useRef(0);
   const charIndexRef = useRef(0);
   const isDeletingRef = useRef(false);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    const typeWriter = () => {
+    intervalRef.current = setInterval(() => {
       const currentQuery = TYPEWRITER_QUERIES[queryIndexRef.current];
 
       if (isDeletingRef.current) {
-        setTypewriterText(currentQuery.substring(0, charIndexRef.current - 1));
         charIndexRef.current--;
+        setTypewriterText(currentQuery.substring(0, charIndexRef.current));
       } else {
-        setTypewriterText(currentQuery.substring(0, charIndexRef.current + 1));
         charIndexRef.current++;
+        setTypewriterText(currentQuery.substring(0, charIndexRef.current));
       }
-
-      let typeSpeed = isDeletingRef.current ? 30 : 80;
 
       if (!isDeletingRef.current && charIndexRef.current === currentQuery.length) {
-        typeSpeed = 2500;
+        // 完成打字，等待后开始删除
         isDeletingRef.current = true;
       } else if (isDeletingRef.current && charIndexRef.current === 0) {
+        // 完成删除，切换到下一个查询
         isDeletingRef.current = false;
         queryIndexRef.current = (queryIndexRef.current + 1) % TYPEWRITER_QUERIES.length;
-        typeSpeed = 500;
       }
+    }, 80); // 固定 80ms 间隔，删除时也用相同速度保持流畅
 
-      setTimeout(typeWriter, typeSpeed);
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
     };
-
-    const timer = setTimeout(typeWriter, 1000);
-    return () => clearTimeout(timer);
   }, []);
 
-  // 监听搜索结果变化
+  // 监听搜索结果变化 - 正确处理空结果
   useEffect(() => {
     if (results && results.results.length > 0) {
       setShowResults(true);
+    } else {
+      setShowResults(false);
     }
   }, [results]);
 

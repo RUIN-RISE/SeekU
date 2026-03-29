@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 
 interface EvidenceNode {
   id: string;
@@ -42,12 +42,17 @@ export function EvidenceEngine() {
   const [activeNode, setActiveNode] = useState<string | null>(null);
   const [totalScore, setTotalScore] = useState(0);
   const [showCard, setShowCard] = useState(false);
+  const visitedNodesRef = useRef<Set<string>>(new Set());
 
   const handleNodeHover = (nodeId: string | null, score: number) => {
     setActiveNode(nodeId);
     if (nodeId) {
       setShowCard(true);
-      setTotalScore(prev => Math.min(98, prev + score));
+      // 只有首次访问该节点时才累加分数，避免重复叠加
+      if (!visitedNodesRef.current.has(nodeId)) {
+        visitedNodesRef.current.add(nodeId);
+        setTotalScore(prev => Math.min(98, prev + score));
+      }
     }
   };
 
