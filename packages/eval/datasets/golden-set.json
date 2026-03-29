@@ -1,0 +1,602 @@
+[
+  {
+    "queryId": "q001",
+    "personId": "placeholder-001",
+    "relevance": "high",
+    "notes": "Placeholder - Beijing AI algorithm engineer with PyTorch experience"
+  },
+  {
+    "queryId": "q001",
+    "personId": "placeholder-002",
+    "relevance": "medium",
+    "notes": "Placeholder - Beijing-based, some PyTorch projects"
+  },
+  {
+    "queryId": "q002",
+    "personId": "placeholder-003",
+    "relevance": "high",
+    "notes": "Placeholder - RAG system developer with LangChain experience"
+  },
+  {
+    "queryId": "q002",
+    "personId": "placeholder-004",
+    "relevance": "medium",
+    "notes": "Placeholder - Senior engineer with vector database experience"
+  },
+  {
+    "queryId": "q003",
+    "personId": "placeholder-005",
+    "relevance": "high",
+    "notes": "Placeholder - Shanghai-based LLM inference optimization expert"
+  },
+  {
+    "queryId": "q003",
+    "personId": "placeholder-006",
+    "relevance": "low",
+    "notes": "Placeholder - Shanghai engineer, some inference work"
+  },
+  {
+    "queryId": "q004",
+    "personId": "placeholder-007",
+    "relevance": "high",
+    "notes": "Placeholder - Python ML engineer with sklearn expertise"
+  },
+  {
+    "queryId": "q004",
+    "personId": "placeholder-008",
+    "relevance": "medium",
+    "notes": "Placeholder - Python developer transitioning to ML"
+  },
+  {
+    "queryId": "q005",
+    "personId": "placeholder-009",
+    "relevance": "high",
+    "notes": "Placeholder - Shenzhen CV algorithm researcher"
+  },
+  {
+    "queryId": "q005",
+    "personId": "placeholder-010",
+    "relevance": "medium",
+    "notes": "Placeholder - Shenzhen-based, CV projects in industry"
+  },
+  {
+    "queryId": "q006",
+    "personId": "placeholder-011",
+    "relevance": "high",
+    "notes": "Placeholder - NLP research scientist with ACL papers"
+  },
+  {
+    "queryId": "q006",
+    "personId": "placeholder-012",
+    "relevance": "medium",
+    "notes": "Placeholder - NLP researcher, some publications"
+  },
+  {
+    "queryId": "q007",
+    "personId": "placeholder-013",
+    "relevance": "high",
+    "notes": "Placeholder - Transformer architecture contributor"
+  },
+  {
+    "queryId": "q007",
+    "personId": "placeholder-014",
+    "relevance": "low",
+    "notes": "Placeholder - Deep learning practitioner, uses Transformers"
+  },
+  {
+    "queryId": "q008",
+    "personId": "placeholder-015",
+    "relevance": "high",
+    "notes": "Placeholder - Hangzhou deep learning engineer"
+  },
+  {
+    "queryId": "q008",
+    "personId": "placeholder-016",
+    "relevance": "medium",
+    "notes": "Placeholder - Hangzhou-based, DL projects"
+  },
+  {
+    "queryId": "q009",
+    "personId": "placeholder-017",
+    "relevance": "high",
+    "notes": "Placeholder - LLM fine-tuning expert, LoRA experience"
+  },
+  {
+    "queryId": "q009",
+    "personId": "placeholder-018",
+    "relevance": "medium",
+    "notes": "Placeholder - Engineer with fine-tuning project experience"
+  },
+  {
+    "queryId": "q010",
+    "personId": "placeholder-019",
+    "relevance": "high",
+    "notes": "Placeholder - GenAI product lead at major tech company"
+  },
+  {
+    "queryId": "q010",
+    "personId": "placeholder-020",
+    "relevance": "medium",
+    "notes": "Placeholder - AI product manager"
+  },
+  {
+    "queryId": "q011",
+    "personId": "placeholder-021",
+    "relevance": "high",
+    "notes": "Placeholder - Beijing multimodal algorithm researcher"
+  },
+  {
+    "queryId": "q011",
+    "personId": "placeholder-022",
+    "relevance": "medium",
+    "notes": "Placeholder - Beijing-based, multimodal projects"
+  },
+  {
+    "queryId": "q012",
+    "personId": "placeholder-023",
+    "relevance": "high",
+    "notes": "Placeholder - PyTorch core contributor"
+  },
+  {
+    "queryId": "q012",
+    "personId": "placeholder-024",
+    "relevance": "medium",
+    "notes": "Placeholder - Active PyTorch community member"
+  },
+  {
+    "queryId": "q013",
+    "personId": "placeholder-025",
+    "relevance": "high",
+    "notes": "Placeholder - Recommendation system algorithm expert"
+  },
+  {
+    "queryId": "q013",
+    "personId": "placeholder-026",
+    "relevance": "medium",
+    "notes": "Placeholder - Engineer with recommendation system experience"
+  },
+  {
+    "queryId": "q014",
+    "personId": "placeholder-027",
+    "relevance": "high",
+    "notes": "Placeholder - RL research engineer, gaming AI"
+  },
+  {
+    "queryId": "q014",
+    "personId": "placeholder-028",
+    "relevance": "low",
+    "notes": "Placeholder - Engineer with some RL knowledge"
+  },
+  {
+    "queryId": "q015",
+    "personId": "placeholder-029",
+    "relevance": "high",
+    "notes": "Placeholder - Shanghai AI startup CTO"
+  },
+  {
+    "queryId": "q015",
+    "personId": "placeholder-030",
+    "relevance": "medium",
+    "notes": "Placeholder - Shanghai-based tech lead"
+  },
+  {
+    "queryId": "q016",
+    "personId": "placeholder-031",
+    "relevance": "high",
+    "notes": "Placeholder - AI Agent developer, AutoGPT contributor"
+  },
+  {
+    "queryId": "q016",
+    "personId": "placeholder-032",
+    "relevance": "medium",
+    "notes": "Placeholder - Engineer with agent framework experience"
+  },
+  {
+    "queryId": "q017",
+    "personId": "placeholder-033",
+    "relevance": "high",
+    "notes": "Placeholder - Guangzhou AI backend engineer"
+  },
+  {
+    "queryId": "q017",
+    "personId": "placeholder-034",
+    "relevance": "low",
+    "notes": "Placeholder - Guangzhou-based backend developer"
+  },
+  {
+    "queryId": "q018",
+    "personId": "placeholder-035",
+    "relevance": "high",
+    "notes": "Placeholder - Knowledge graph construction expert"
+  },
+  {
+    "queryId": "q018",
+    "personId": "placeholder-036",
+    "relevance": "medium",
+    "notes": "Placeholder - NLP engineer with KG projects"
+  },
+  {
+    "queryId": "q019",
+    "personId": "placeholder-037",
+    "relevance": "high",
+    "notes": "Placeholder - AI engineer with open source contributions"
+  },
+  {
+    "queryId": "q019",
+    "personId": "placeholder-038",
+    "relevance": "medium",
+    "notes": "Placeholder - Engineer, some GitHub projects"
+  },
+  {
+    "queryId": "q020",
+    "personId": "placeholder-039",
+    "relevance": "high",
+    "notes": "Placeholder - Speech recognition algorithm researcher"
+  },
+  {
+    "queryId": "q020",
+    "personId": "placeholder-040",
+    "relevance": "medium",
+    "notes": "Placeholder - Researcher with ASR project experience"
+  },
+  {
+    "queryId": "q021",
+    "personId": "placeholder-041",
+    "relevance": "high",
+    "notes": "Placeholder - Shenzhen autonomous driving perception engineer"
+  },
+  {
+    "queryId": "q021",
+    "personId": "placeholder-042",
+    "relevance": "medium",
+    "notes": "Placeholder - Shenzhen CV engineer, some ADAS work"
+  },
+  {
+    "queryId": "q022",
+    "personId": "placeholder-043",
+    "relevance": "high",
+    "notes": "Placeholder - ML platform engineer at tech company"
+  },
+  {
+    "queryId": "q022",
+    "personId": "placeholder-044",
+    "relevance": "low",
+    "notes": "Placeholder - Infrastructure engineer"
+  },
+  {
+    "queryId": "q023",
+    "personId": "placeholder-045",
+    "relevance": "high",
+    "notes": "Placeholder - Image generation model researcher, diffusion models"
+  },
+  {
+    "queryId": "q023",
+    "personId": "placeholder-046",
+    "relevance": "medium",
+    "notes": "Placeholder - Researcher with generative AI projects"
+  },
+  {
+    "queryId": "q024",
+    "personId": "placeholder-047",
+    "relevance": "high",
+    "notes": "Placeholder - Beijing explainable AI researcher"
+  },
+  {
+    "queryId": "q024",
+    "personId": "placeholder-048",
+    "relevance": "low",
+    "notes": "Placeholder - Beijing-based AI researcher"
+  },
+  {
+    "queryId": "q025",
+    "personId": "placeholder-049",
+    "relevance": "high",
+    "notes": "Placeholder - LLM application engineer, LangChain expert"
+  },
+  {
+    "queryId": "q025",
+    "personId": "placeholder-050",
+    "relevance": "medium",
+    "notes": "Placeholder - Engineer with LLM app development experience"
+  },
+  {
+    "queryId": "q026",
+    "personId": "placeholder-051",
+    "relevance": "high",
+    "notes": "Placeholder - Shanghai NLP algorithm engineer"
+  },
+  {
+    "queryId": "q026",
+    "personId": "placeholder-052",
+    "relevance": "medium",
+    "notes": "Placeholder - Shanghai-based NLP practitioner"
+  },
+  {
+    "queryId": "q027",
+    "personId": "placeholder-053",
+    "relevance": "high",
+    "notes": "Placeholder - Data scientist with AI product launch experience"
+  },
+  {
+    "queryId": "q027",
+    "personId": "placeholder-054",
+    "relevance": "medium",
+    "notes": "Placeholder - Data scientist, some ML projects"
+  },
+  {
+    "queryId": "q028",
+    "personId": "placeholder-055",
+    "relevance": "high",
+    "notes": "Placeholder - Distributed training engineer, Megatron experience"
+  },
+  {
+    "queryId": "q028",
+    "personId": "placeholder-056",
+    "relevance": "medium",
+    "notes": "Placeholder - Engineer with multi-GPU training experience"
+  },
+  {
+    "queryId": "q029",
+    "personId": "placeholder-057",
+    "relevance": "high",
+    "notes": "Placeholder - Hangzhou AI infrastructure engineer"
+  },
+  {
+    "queryId": "q029",
+    "personId": "placeholder-058",
+    "relevance": "low",
+    "notes": "Placeholder - Hangzhou-based infrastructure developer"
+  },
+  {
+    "queryId": "q030",
+    "personId": "placeholder-059",
+    "relevance": "high",
+    "notes": "Placeholder - Dialogue system development expert"
+  },
+  {
+    "queryId": "q030",
+    "personId": "placeholder-060",
+    "relevance": "medium",
+    "notes": "Placeholder - NLP engineer with chatbot experience"
+  },
+  {
+    "queryId": "q031",
+    "personId": "placeholder-061",
+    "relevance": "high",
+    "notes": "Placeholder - Beijing AI institute senior researcher"
+  },
+  {
+    "queryId": "q031",
+    "personId": "placeholder-062",
+    "relevance": "medium",
+    "notes": "Placeholder - Beijing-based researcher"
+  },
+  {
+    "queryId": "q032",
+    "personId": "placeholder-063",
+    "relevance": "high",
+    "notes": "Placeholder - Graph neural network algorithm expert"
+  },
+  {
+    "queryId": "q032",
+    "personId": "placeholder-064",
+    "relevance": "medium",
+    "notes": "Placeholder - Researcher with GNN projects"
+  },
+  {
+    "queryId": "q033",
+    "personId": "placeholder-065",
+    "relevance": "high",
+    "notes": "Placeholder - Shenzhen AI chip software engineer"
+  },
+  {
+    "queryId": "q033",
+    "personId": "placeholder-066",
+    "relevance": "low",
+    "notes": "Placeholder - Shenzhen-based embedded developer"
+  },
+  {
+    "queryId": "q034",
+    "personId": "placeholder-067",
+    "relevance": "high",
+    "notes": "Placeholder - Model compression and quantization expert"
+  },
+  {
+    "queryId": "q034",
+    "personId": "placeholder-068",
+    "relevance": "medium",
+    "notes": "Placeholder - Engineer with quantization experience"
+  },
+  {
+    "queryId": "q035",
+    "personId": "placeholder-069",
+    "relevance": "high",
+    "notes": "Placeholder - AI product manager with LLM product experience"
+  },
+  {
+    "queryId": "q035",
+    "personId": "placeholder-070",
+    "relevance": "medium",
+    "notes": "Placeholder - Product manager exploring AI"
+  },
+  {
+    "queryId": "q036",
+    "personId": "placeholder-071",
+    "relevance": "high",
+    "notes": "Placeholder - Shanghai computer vision engineer"
+  },
+  {
+    "queryId": "q036",
+    "personId": "placeholder-072",
+    "relevance": "medium",
+    "notes": "Placeholder - Shanghai-based CV developer"
+  },
+  {
+    "queryId": "q037",
+    "personId": "placeholder-073",
+    "relevance": "high",
+    "notes": "Placeholder - Text embedding model researcher"
+  },
+  {
+    "queryId": "q037",
+    "personId": "placeholder-074",
+    "relevance": "low",
+    "notes": "Placeholder - NLP researcher"
+  },
+  {
+    "queryId": "q038",
+    "personId": "placeholder-075",
+    "relevance": "high",
+    "notes": "Placeholder - Beijing LLM training engineer"
+  },
+  {
+    "queryId": "q038",
+    "personId": "placeholder-076",
+    "relevance": "medium",
+    "notes": "Placeholder - Beijing-based ML engineer"
+  },
+  {
+    "queryId": "q039",
+    "personId": "placeholder-077",
+    "relevance": "high",
+    "notes": "Placeholder - AI researcher with NeurIPS/ICML papers"
+  },
+  {
+    "queryId": "q039",
+    "personId": "placeholder-078",
+    "relevance": "medium",
+    "notes": "Placeholder - Researcher with conference publications"
+  },
+  {
+    "queryId": "q040",
+    "personId": "placeholder-079",
+    "relevance": "high",
+    "notes": "Placeholder - AutoML algorithm engineer"
+  },
+  {
+    "queryId": "q040",
+    "personId": "placeholder-080",
+    "relevance": "medium",
+    "notes": "Placeholder - Engineer with AutoML project experience"
+  },
+  {
+    "queryId": "q041",
+    "personId": "placeholder-081",
+    "relevance": "high",
+    "notes": "Placeholder - Guangzhou ML researcher"
+  },
+  {
+    "queryId": "q041",
+    "personId": "placeholder-082",
+    "relevance": "medium",
+    "notes": "Placeholder - Guangzhou-based AI practitioner"
+  },
+  {
+    "queryId": "q042",
+    "personId": "placeholder-083",
+    "relevance": "high",
+    "notes": "Placeholder - Federated learning research expert"
+  },
+  {
+    "queryId": "q042",
+    "personId": "placeholder-084",
+    "relevance": "low",
+    "notes": "Placeholder - Privacy-preserving ML researcher"
+  },
+  {
+    "queryId": "q043",
+    "personId": "placeholder-085",
+    "relevance": "high",
+    "notes": "Placeholder - Hangzhou AI safety researcher"
+  },
+  {
+    "queryId": "q043",
+    "personId": "placeholder-086",
+    "relevance": "medium",
+    "notes": "Placeholder - Hangzhou-based AI researcher"
+  },
+  {
+    "queryId": "q044",
+    "personId": "placeholder-087",
+    "relevance": "high",
+    "notes": "Placeholder - Prompt engineering expert, LLM specialist"
+  },
+  {
+    "queryId": "q044",
+    "personId": "placeholder-088",
+    "relevance": "medium",
+    "notes": "Placeholder - Engineer with prompt engineering experience"
+  },
+  {
+    "queryId": "q045",
+    "personId": "placeholder-089",
+    "relevance": "high",
+    "notes": "Placeholder - Shanghai LLM evaluation engineer"
+  },
+  {
+    "queryId": "q045",
+    "personId": "placeholder-090",
+    "relevance": "medium",
+    "notes": "Placeholder - Shanghai-based ML evaluation engineer"
+  },
+  {
+    "queryId": "q046",
+    "personId": "placeholder-091",
+    "relevance": "high",
+    "notes": "Placeholder - Medical AI algorithm researcher"
+  },
+  {
+    "queryId": "q046",
+    "personId": "placeholder-092",
+    "relevance": "medium",
+    "notes": "Placeholder - Researcher with healthcare AI projects"
+  },
+  {
+    "queryId": "q047",
+    "personId": "placeholder-093",
+    "relevance": "high",
+    "notes": "Placeholder - Beijing data annotation platform engineer"
+  },
+  {
+    "queryId": "q047",
+    "personId": "placeholder-094",
+    "relevance": "low",
+    "notes": "Placeholder - Beijing-based data engineer"
+  },
+  {
+    "queryId": "q048",
+    "personId": "placeholder-095",
+    "relevance": "high",
+    "notes": "Placeholder - Video understanding algorithm expert"
+  },
+  {
+    "queryId": "q048",
+    "personId": "placeholder-096",
+    "relevance": "medium",
+    "notes": "Placeholder - CV researcher with video projects"
+  },
+  {
+    "queryId": "q049",
+    "personId": "placeholder-097",
+    "relevance": "high",
+    "notes": "Placeholder - Shenzhen AI startup co-founder"
+  },
+  {
+    "queryId": "q049",
+    "personId": "placeholder-098",
+    "relevance": "medium",
+    "notes": "Placeholder - Shenzhen-based tech entrepreneur"
+  },
+  {
+    "queryId": "q050",
+    "personId": "placeholder-099",
+    "relevance": "high",
+    "notes": "Placeholder - Vector database development engineer"
+  },
+  {
+    "queryId": "q050",
+    "personId": "placeholder-100",
+    "relevance": "medium",
+    "notes": "Placeholder - Engineer with vector DB experience"
+  }
+]
