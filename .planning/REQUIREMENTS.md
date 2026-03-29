@@ -19,7 +19,7 @@
 - [ ] **SEARCH-02**: Query planner converts natural language to structured intent (role, skills, location, experience level)
 - [ ] **SEARCH-03**: Hybrid retrieval — keyword (pg_trgm) + vector (pgvector) search
 - [ ] **SEARCH-04**: Reranking with evidence-weighted scoring
-- [ ] **SEARCH-05**: API endpoint `GET /profiles/:personId` returns candidate detail with evidence
+- [x] **SEARCH-05**: API endpoint `GET /profiles/:personId` returns candidate detail with evidence
 
 ### Evidence Layer
 
@@ -107,11 +107,11 @@
 | SEARCH-02 | Phase 3 | Pending |
 | SEARCH-03 | Phase 3 | Pending |
 | SEARCH-04 | Phase 3 | Pending |
-| SEARCH-05 | Phase 4 | Pending |
+| SEARCH-05 | Phase 4 | Complete (04-01) |
 | UI-01 | Phase 4 | Pending |
 | UI-02 | Phase 4 | Pending |
 | UI-03 | Phase 4 | Pending |
-| UI-04 | Phase 4 | Pending |
+| UI-04 | Phase 4 | Partial (backend 04-01) |
 | EVAL-01 | Phase 4 | Pending |
 | EVAL-02 | Phase 4 | Pending |
 | EVAL-03 | Phase 4 | Pending |
@@ -122,4 +122,4 @@
 | COMP-04 | Phase 5 | Pending |
 
 ---
-*Last updated: 2026-03-28 after roadmap creation*
+*Last updated: 2026-03-29 after 04-01 completion*

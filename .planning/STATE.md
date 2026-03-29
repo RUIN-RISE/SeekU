@@ -5,37 +5,37 @@
 See: .planning/PROJECT.md (updated 2026-03-28)
 
 **Core value:** Find the right AI talent through what they've done, not what they claim. Evidence-based matching over profile text matching.
-**Current focus:** Phase 1: Infrastructure & Bonjour Ingestion
+**Current focus:** Phase 4: UI & Evaluation
 
 ## Current Position
 
-Phase: 1 of 5 (Infrastructure & Bonjour Ingestion)
-Plan: 0 of TBD
-Status: Ready to plan
-Last activity: 2026-03-28 — Roadmap created
+Phase: 4 of 5 (UI & Evaluation)
+Plan: 2 of 8 (04-02-PLAN.md next)
+Status: In progress
+Last activity: 2026-03-29 — Backend API endpoints created
 
-Progress: [----------] 0%
+Progress: [=---------] 1/8 (12.5%)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 0
-- Average duration: N/A
-- Total execution time: 0 hours
+- Total plans completed: 3 (Phase 1: 2, Phase 4: 1)
+- Average duration: ~15 minutes
+- Total execution time: ~45 minutes
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 1. Infrastructure & Bonjour | 0 | TBD | - |
-| 2. GitHub & Identity Merge | 0 | TBD | - |
-| 3. Search & Embeddings | 0 | TBD | - |
-| 4. UI & Evaluation | 0 | TBD | - |
+| 1. Infrastructure & Bonjour | 2 | 2 | ~20 min |
+| 2. GitHub & Identity Merge | 0 | 5 | - |
+| 3. Search & Embeddings | 0 | 7 | - |
+| 4. UI & Evaluation | 1 | 8 | ~5 min |
 | 5. Conversational & Compliance | 0 | TBD | - |
 
 **Recent Trend:**
-- Last 5 plans: N/A
-- Trend: N/A
+- Last 5 plans: f5f9010, 207aad7, 60bb8a0 (04-01)
+- Trend: Steady progress
 
 *Updated after each plan completion*
 
@@ -46,11 +46,13 @@ Progress: [----------] 0%
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- (None yet - project initialized)
+- **04-01**: No authentication on admin routes for MVP - Admin routes unprotected for development simplicity
+- **04-01**: Eval endpoint as placeholder - POST /admin/run-eval returns not_implemented until eval package integrated
 
 ### Pending Todos
 
-None yet.
+- Integrate eval package with POST /admin/run-eval endpoint
+- Add authentication to admin routes in future phase
 
 ### Blockers/Concerns
 
@@ -59,6 +61,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-28
-Stopped at: Roadmap created, ready for Phase 1 planning
-Resume file: None
+Last session: 2026-03-29
+Stopped at: Completed 04-01-PLAN.md (Backend API endpoints)
+Resume file: .planning/phases/04-ui-evaluation/04-01-SUMMARY.md
