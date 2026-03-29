@@ -31,8 +31,8 @@
 
 ### Evaluation Layer
 
-- [ ] **EVAL-01**: Create eval query set (50-100 realistic search queries)
-- [ ] **EVAL-02**: Create golden set (known AI talent with expected matches)
+- [x] **EVAL-01**: Create eval query set (50-100 realistic search queries)
+- [x] **EVAL-02**: Create golden set (known AI talent with expected matches)
 - [ ] **EVAL-03**: Benchmark runner computes coverage (how many golden set found)
 - [ ] **EVAL-04**: Benchmark runner computes precision@k (top results relevance)
 - [ ] **EVAL-05**: Eval dashboard shows metrics and regression reports
@@ -112,8 +112,8 @@
 | UI-02 | Phase 4 | Pending |
 | UI-03 | Phase 4 | Pending |
 | UI-04 | Phase 4 | Partial (backend 04-01) |
-| EVAL-01 | Phase 4 | Pending |
-| EVAL-02 | Phase 4 | Pending |
+| EVAL-01 | Phase 4 | Complete |
+| EVAL-02 | Phase 4 | Complete |
 | EVAL-03 | Phase 4 | Pending |
 | EVAL-04 | Phase 4 | Pending |
 | EVAL-05 | Phase 4 | Pending |
