@@ -1,0 +1,24 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;800&family=Manrope:wght@700;800&family=Space+Mono:wght@400;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-white: #ffffff;
+  --bg-light: #f5f7fa;
+  --bg-dark: #0a1628;
+  --accent-blue: #2563eb;
+  --accent-indigo: #4f46e5;
+  --text-dark: #0a1628;
+  --text-light: #ffffff;
+  --text-muted: #6b7280;
+  --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  --radius: 12px;
+}
+
+body {
+  font-family: 'Noto Sans SC', sans-serif;
+  background-color: var(--bg-light);
+  color: var(--text-dark);
+}
