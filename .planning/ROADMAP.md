@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: GitHub & Identity Merge** - Data integration: GitHub adapter, profile merging, evidence extraction
 - [x] **Phase 3: Search & Embeddings** - Retrieval: query parsing, hybrid search, reranking, embeddings
 - [x] **Phase 4: UI & Evaluation** - Validation: web interface, candidate display, benchmark system
-- [ ] **Phase 5: CLI Interactive Search** - Conversational CLI: intelligent chat, multi-dimensional profiles, keyboard TUI
+- [x] **Phase 5: CLI Interactive Search** - Conversational CLI: intelligent chat, multi-dimensional profiles, keyboard TUI
 - [ ] **Phase 6: Conversational & Compliance Polish** - UX enhancement: conversational refinement, profile claims
 
 ## Phase Details
@@ -113,12 +113,12 @@ Plans:
 **Plans**: 6 plans in 3 waves
 
 Plans:
-- [ ] 05-01-PLAN.md — Chat interaction module: LLM condition extraction, missing detection, follow-up (CLI-01)
-- [ ] 05-02-PLAN.md — TUI keyboard module: enquirer setup, ↑↓ selection, Enter/q handlers (CLI-02)
-- [ ] 05-03-PLAN.md — Hybrid scorer: rule-based (location/tech/stability) + LLM-based (project/academic) (CLI-03)
-- [ ] 05-04-PLAN.md — Profile cache layer: PostgreSQL JSONB schema, TTL 7 days, cache invalidation (CLI-04)
-- [ ] 05-05-PLAN.md — Profile generator: 6-dimension JSON generation, highlights extraction (CLI-05)
-- [ ] 05-06-PLAN.md — Terminal renderer: boxen/chalk cards, progress bars, color coding (CLI-06)
+- [x] 05-01-PLAN.md — Chat interaction module: LLM condition extraction, missing detection, follow-up (CLI-01)
+- [x] 05-02-PLAN.md — TUI keyboard module: enquirer setup, ↑↓ selection, Enter/q handlers (CLI-02)
+- [x] 05-03-PLAN.md — Hybrid scorer: rule-based (location/tech/stability) + LLM-based (project/academic) (CLI-03)
+- [x] 05-04-PLAN.md — Profile cache layer: PostgreSQL JSONB schema, TTL 7 days, cache invalidation (CLI-04)
+- [x] 05-05-PLAN.md — Profile generator: 6-dimension JSON generation, highlights extraction (CLI-05)
+- [x] 05-06-PLAN.md — Terminal renderer: boxen/chalk cards, progress bars, color coding (CLI-06)
 
 ### Phase 6: Conversational & Compliance Polish (Future)
 **Goal**: Users can refine searches conversationally and claim profile ownership
@@ -141,9 +141,9 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 1. Infrastructure & Bonjour Ingestion | 2/2 | ✅ Completed | 2026-03-28 |
 | 2. GitHub & Identity Merge | 5/5 | ✅ Completed | 2026-03-29 |
 | 3. Search & Embeddings | 7/7 | ✅ Completed | 2026-03-29 |
-| 4. UI & Evaluation | 7/8 | ✅ Completed (UI fixes done) | 2026-03-29 |
-| 5. CLI Interactive Search | 0/6 | 🔵 Ready to execute | - |
+| 4. UI & Evaluation | 7/8 | ✅ Completed | 2026-03-29 |
+| 5. CLI Interactive Search | 6/6 | ✅ Completed | 2026-03-29 |
 | 6. Conversational & Compliance Polish | 0/TBD | ⏸️ Pending | - |
 
 ---
-*Last updated: 2026-03-29 - Phase 5 CLI design approved, awaiting implementation*
+*Last updated: 2026-03-29 - Phase 5 CLI Interactive Search completed*
