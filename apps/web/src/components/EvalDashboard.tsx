@@ -11,13 +11,15 @@ interface EvalMetrics {
 }
 
 interface EvalDashboardProps {
-  evalMetrics?: EvalMetrics;
+  evalMetrics?: EvalMetrics | null;
   onRunEval?: () => void;
   onTriggerSync?: () => void;
 }
 
 export function EvalDashboard({ evalMetrics, onRunEval, onTriggerSync }: EvalDashboardProps) {
   const { data: syncStatus, isLoading: syncLoading } = useSyncStatus();
+  const runs = syncStatus?.runs ?? [];
+  const hasRuns = runs.length > 0;
 
   return (
     <div className="grid gap-6 md:grid-cols-2">
@@ -30,16 +32,16 @@ export function EvalDashboard({ evalMetrics, onRunEval, onTriggerSync }: EvalDas
           <div className="flex items-center justify-center py-8">
             <div className="w-6 h-6 border-2 border-accent-blue border-t-transparent rounded-full animate-spin" />
           </div>
-        ) : syncStatus?.runs?.length > 0 ? (
+        ) : hasRuns ? (
           <div>
             <p className="text-sm text-text-muted mb-2">
-              Last sync: {syncStatus.runs[0].source} ({syncStatus.runs[0].status})
+              Last sync: {runs[0].source} ({runs[0].status})
             </p>
             <p className="text-xs text-text-muted">
-              {new Date(syncStatus.runs[0].startedAt).toLocaleString()}
+              {new Date(runs[0].startedAt).toLocaleString()}
             </p>
             <div className="mt-4 space-y-2">
-              {syncStatus.runs.slice(0, 5).map((run) => (
+              {runs.slice(0, 5).map((run) => (
                 <div key={run.id} className="flex items-center justify-between text-sm">
                   <span className="text-text-muted">{run.source}</span>
                   <span className={`px-2 py-0.5 rounded ${
