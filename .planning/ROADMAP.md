@@ -94,7 +94,7 @@ Plans:
 - [x] 04-03-PLAN.md — CLI search interface: search and show commands (additional feature per user decision)
 - [x] 04-04-PLAN.md — Eval benchmark runner: metrics computation (EVAL-03, EVAL-04)
 - [x] 04-05-PLAN.md — Web frontend setup: Next.js app, SearchBar, CandidateCard (UI-01, UI-02)
-- [ ] 04-06a-PLAN.md — Web frontend components: Header, ResultsList, EvidenceTabs, CandidateDetailModal (UI-03, UI-04)
+- [x] 04-06a-PLAN.md — Web frontend components: Header, ResultsList, EvidenceTabs, CandidateDetailModal (UI-03, UI-04)
 - [ ] 04-06b-PLAN.md — Web frontend pages: search home, admin dashboard (UI-01, UI-02, EVAL-05)
 - [ ] 04-07-PLAN.md — Human verification checkpoint
 
