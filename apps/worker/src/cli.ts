@@ -10,6 +10,7 @@ import {
 } from "@seeku/workers";
 
 import { runBonjourSyncJob } from "./index.js";
+import { runSearchCli, runShowCli } from "./search-cli.js";
 
 function parseArgs(argv: string[]) {
   const args = new Map<string, string>();
@@ -111,9 +112,18 @@ async function main() {
       .map((value) => value.trim())
       .filter(Boolean);
     result = await runSearchRebuildWorker(personIds);
+  } else if (command === "search") {
+    const query = parsed.args.get("query") ?? parsed.positionals[0] ?? "";
+    const limit = Number(parsed.args.get("limit") ?? "10");
+    const json = parsed.flags.has("json");
+    result = await runSearchCli({ query, limit, json });
+  } else if (command === "show") {
+    const personId = parsed.args.get("personId") ?? parsed.positionals[0] ?? "";
+    const json = parsed.flags.has("json");
+    result = await runShowCli({ personId, json });
   } else {
     throw new Error(
-      "Unknown command. Use one of: sync-bonjour, sync-github, resolve-identities, store-evidence, search-index, search-embeddings, rebuild-search"
+      "Unknown command. Use one of: sync-bonjour, sync-github, resolve-identities, store-evidence, search-index, search-embeddings, rebuild-search, search, show"
     );
   }
 
