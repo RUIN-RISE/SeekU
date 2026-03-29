@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { searchAPI, getProfileAPI, getSyncStatusAPI, type SearchResponse, type ProfileResponse, type SearchFilters } from "./api";
 
+export { type SearchResponse };
+
 export function useSearch(query: string, filters?: SearchFilters, limit?: number) {
   return useQuery({
     queryKey: ["search", query, filters, limit],

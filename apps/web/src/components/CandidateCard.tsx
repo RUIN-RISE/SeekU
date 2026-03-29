@@ -9,7 +9,11 @@ interface CandidateCardProps {
   onSelect?: (personId: string) => void;
 }
 
-function EvidenceIcon(type: string) {
+interface EvidenceIconProps {
+  type: string;
+}
+
+function EvidenceIcon({ type }: EvidenceIconProps) {
   switch (type) {
     case "repository":
       return <GitBranch className="w-4 h-4" />;
@@ -105,7 +109,7 @@ export function CandidateCard({ candidate, onSelect }: CandidateCardProps) {
         <div className="flex flex-col gap-2 text-sm text-text-muted">
           {candidate.evidencePreview.slice(0, 3).map((evidence) => (
             <div key={evidence.url ?? evidence.title} className="flex items-center gap-2">
-              <EvidenceIcon(evidence.type) />
+              <EvidenceIcon type={evidence.type} />
               <span className="truncate">{evidence.title ?? "Untitled"}</span>
               {evidence.stars && (
                 <span className="flex items-center gap-1 text-xs">
