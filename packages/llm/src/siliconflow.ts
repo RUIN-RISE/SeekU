@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import type { LLMProvider, LLMProviderConfig, ChatMessage, ChatResponse, EmbeddingResponse } from "./provider.js";
+import type { LLMProvider, LLMProviderConfig, ChatMessage, ChatResponse, EmbeddingResponse, ChatOptions } from "./provider.js";
 
 // SiliconFlow defaults (Stepfun models)
 const SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1";
@@ -41,11 +41,13 @@ export class SiliconFlowProvider implements LLMProvider {
     });
   }
 
-  async chat(messages: ChatMessage[], options?: { model?: string; temperature?: number }): Promise<ChatResponse> {
+  async chat(messages: ChatMessage[], options?: ChatOptions): Promise<ChatResponse> {
     const response = await this.client.chat.completions.create({
       model: options?.model ?? this.defaultChatModel,
       messages: messages.map(m => ({ role: m.role, content: m.content })),
       temperature: options?.temperature ?? 0.7
+    }, {
+      signal: options?.signal // Pass AbortSignal to OpenAI SDK
     });
 
     const choice = response.choices[0];

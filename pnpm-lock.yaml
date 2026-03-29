@@ -141,6 +141,9 @@ importers:
       enquirer:
         specifier: ^2.4.1
         version: 2.4.1
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
 
   packages/adapters:
     dependencies:

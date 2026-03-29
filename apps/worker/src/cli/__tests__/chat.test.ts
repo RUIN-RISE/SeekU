@@ -12,28 +12,27 @@ vi.mock("enquirer", () => {
   };
 });
 
-// Mock @seeku/llm
-vi.mock("@seeku/llm", () => ({
-  SiliconFlowProvider: {
-    fromEnv: vi.fn(() => ({
-      chat: vi.fn(async () => ({
-        content: JSON.stringify({
-          skills: ["RAG"],
-          locations: ["Beijing"],
-          experience: "3 years",
-          role: "Engineer",
-          limit: 10
-        })
-      }))
-    }))
-  }
-}));
+// Mock LLM Provider
+const mockLLMProvider = {
+  name: "mock",
+  chat: vi.fn(async () => ({
+    content: JSON.stringify({
+      skills: ["RAG"],
+      locations: ["Beijing"],
+      experience: "3 years",
+      role: "Engineer",
+      limit: 10
+    })
+  })),
+  embed: vi.fn(),
+  embedBatch: vi.fn()
+};
 
 describe("ChatInterface", () => {
   let chat: ChatInterface;
 
   beforeEach(() => {
-    chat = new ChatInterface();
+    chat = new ChatInterface(mockLLMProvider as any);
     vi.clearAllMocks();
   });
 
@@ -45,10 +44,8 @@ describe("ChatInterface", () => {
     });
 
     it("should handle malformed JSON from LLM", async () => {
-      // Setup mock to fail JSON parsing once
-      const mockLlm = chat["llm"];
-      mockLlm.chat = vi.fn().mockResolvedValue({ content: "not a json" });
-      
+      mockLLMProvider.chat.mockResolvedValueOnce({ content: "not a json" });
+
       const result = await chat.extractConditions("invalid");
       expect(result).toHaveProperty("skills");
       expect(Array.isArray(result.skills)).toBe(true);

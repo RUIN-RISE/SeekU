@@ -1,44 +1,70 @@
+import type { LLMProvider } from "@seeku/llm";
 import { SiliconFlowProvider } from "@seeku/llm";
 import enquirer from "enquirer";
 const { Input } = enquirer as unknown as { Input: any };
 import { SearchConditions, MissingField } from "./types.js";
+import { ConditionsSchema, sanitizeForPrompt, safeParseJSON, type ValidatedConditions } from "./schemas.js";
 
 const DEFAULT_LIMIT = 10;
 
 export class ChatInterface {
-  private llm = SiliconFlowProvider.fromEnv();
+  constructor(private llm: LLMProvider) {}
+
+  // Factory method for convenience (backward compatibility)
+  static withDefaultProvider(): ChatInterface {
+    return new ChatInterface(SiliconFlowProvider.fromEnv());
+  }
 
   async extractConditions(input: string): Promise<Partial<SearchConditions>> {
+    // Sanitize user input to prevent prompt injection
+    const safeInput = sanitizeForPrompt(input, "userQuery");
+
     const prompt = `
-Extract structured search conditions from user input.
+Extract structured search conditions from the user query below.
 
-User Input: "${input}"
+${safeInput}
 
-Return ONLY a valid JSON object with this exact schema:
+Return ONLY a JSON object with this exact schema:
 {
-  "skills": string[],     // Technology keywords (e.g., ["RAG", "PyTorch"])
-  "locations": string[],  // City names or "remote" (e.g., ["北京", "上海"])
-  "experience": string | null,  // e.g., "3-5年", "senior", null if not mentioned
-  "role": string | null,        // e.g., "AI Engineer", null if not mentioned
-  "limit": number | null        // Default 10 if not specified
+  "skills": string[],     // Technology keywords extracted from query
+  "locations": string[],  // Location names mentioned
+  "experience": string | null,
+  "role": string | null,
+  "limit": number | null
 }
 
-CRITICAL: Return ONLY the JSON. No markdown, no code blocks, no explanation.
+CRITICAL RULES:
+1. Return ONLY the JSON object, no markdown, no explanation
+2. If a field is not mentioned, use empty array or null
+3. Do NOT include any text outside the JSON object
 `;
 
-    const response = await this.llm.chat([
-      { role: "system", content: "You are a recruitment data extractor." },
-      { role: "user", content: prompt }
-    ]);
-
     try {
-      // Find JSON block if LLM adds markdown
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      const jsonStr = jsonMatch ? jsonMatch[0] : response.content;
-      return JSON.parse(jsonStr);
+      const response = await this.llm.chat([
+        { role: "system", content: "You are a precise data extraction engine. You output only valid JSON." },
+        { role: "user", content: prompt }
+      ]);
+
+      const result = safeParseJSON(
+        response.content,
+        ConditionsSchema,
+        { skills: [], locations: [], limit: DEFAULT_LIMIT }
+      );
+
+      if (!result.success) {
+        console.warn("LLM condition extraction validation failed:", result.error);
+      }
+
+      return {
+      skills: result.data.skills,
+      locations: result.data.locations,
+      experience: result.data.experience ?? undefined,
+      role: result.data.role ?? undefined,
+      limit: result.data.limit ?? DEFAULT_LIMIT
+    };
     } catch (e) {
-      console.error("Failed to parse LLM response as JSON:", response.content);
-      return { skills: [], locations: [] };
+      console.error("Failed to extract conditions:", e instanceof Error ? e.message : String(e));
+      return { skills: [], locations: [], limit: DEFAULT_LIMIT };
     }
   }
 
@@ -46,7 +72,6 @@ CRITICAL: Return ONLY the JSON. No markdown, no code blocks, no explanation.
     const missing: MissingField[] = [];
     if (!conditions.skills || conditions.skills.length === 0) missing.push("skills");
     if (!conditions.locations || conditions.locations.length === 0) missing.push("locations");
-    // experience is optional but good to have
     if (!conditions.experience) missing.push("experience");
     return missing;
   }
@@ -68,15 +93,13 @@ CRITICAL: Return ONLY the JSON. No markdown, no code blocks, no explanation.
 
   async refineConditions(initialInput: string): Promise<SearchConditions> {
     let conditions = await this.extractConditions(initialInput);
-    
-    // Max 2 follow-ups
+
     const missing = this.detectMissing(conditions);
     const fieldsToAsk = missing.slice(0, 2);
 
     for (const field of fieldsToAsk) {
       const answer = await this.askFollowUp(field);
       if (answer && answer.trim() && !["不限", "随便", "无", "none"].includes(answer.trim().toLowerCase())) {
-        // Update conditions with new info
         const extra = await this.extractConditions(answer);
         conditions = {
           ...conditions,

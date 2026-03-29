@@ -9,6 +9,12 @@ export interface ChatResponse {
   usage?: { promptTokens: number; completionTokens: number };
 }
 
+export interface ChatOptions {
+  model?: string;
+  temperature?: number;
+  signal?: AbortSignal;
+}
+
 export interface EmbeddingResponse {
   embedding: number[];
   model: string;
@@ -18,7 +24,7 @@ export interface EmbeddingResponse {
 
 export interface LLMProvider {
   readonly name: string;
-  chat(messages: ChatMessage[], options?: { model?: string; temperature?: number }): Promise<ChatResponse>;
+  chat(messages: ChatMessage[], options?: ChatOptions): Promise<ChatResponse>;
   embed(text: string, options?: { model?: string }): Promise<EmbeddingResponse>;
   embedBatch(texts: string[], options?: { model?: string }): Promise<EmbeddingResponse[]>;
 }

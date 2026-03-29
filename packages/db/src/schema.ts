@@ -270,7 +270,7 @@ export const profileCache = pgTable("profile_cache", {
   personId: uuid("person_id")
     .primaryKey()
     .references(() => persons.id, { onDelete: "cascade" }),
-  profile: jsonb("profile").$type<any>().notNull(),
+  profile: jsonb("profile").notNull(), // Type validated at application layer via Zod
   overallScore: numeric("overall_score", { precision: 5, scale: 2 }),
   cachedAt: timestamp("cached_at", { withTimezone: true }).defaultNow().notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true })
