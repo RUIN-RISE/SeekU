@@ -91,7 +91,7 @@ Plans:
 Plans:
 - [x] 04-01-PLAN.md — Backend API endpoints: profiles, admin routes (SEARCH-05, UI-04 backend)
 - [x] 04-02-PLAN.md — Eval package: datasets, loader functions (EVAL-01, EVAL-02)
-- [ ] 04-03-PLAN.md — CLI search interface: search and show commands (additional feature per user decision)
+- [x] 04-03-PLAN.md — CLI search interface: search and show commands (additional feature per user decision)
 - [x] 04-04-PLAN.md — Eval benchmark runner: metrics computation (EVAL-03, EVAL-04)
 - [ ] 04-05-PLAN.md — Web frontend setup: Next.js app, SearchBar, CandidateCard (UI-01, UI-02)
 - [ ] 04-06a-PLAN.md — Web frontend components: Header, ResultsList, EvidenceTabs, CandidateDetailModal (UI-03, UI-04)
