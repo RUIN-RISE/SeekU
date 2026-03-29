@@ -13,10 +13,11 @@ Seeku is a Chinese AI talent search engine that finds candidates through evidenc
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Infrastructure & Bonjour Ingestion** - Foundation: project setup, Bonjour adapter, compliance opt-out
-- [ ] **Phase 2: GitHub & Identity Merge** - Data integration: GitHub adapter, profile merging, evidence extraction
-- [ ] **Phase 3: Search & Embeddings** - Retrieval: query parsing, hybrid search, reranking, embeddings
-- [ ] **Phase 4: UI & Evaluation** - Validation: web interface, candidate display, benchmark system (in progress)
-- [ ] **Phase 5: Conversational & Compliance Polish** - UX enhancement: conversational refinement, profile claims
+- [x] **Phase 2: GitHub & Identity Merge** - Data integration: GitHub adapter, profile merging, evidence extraction
+- [x] **Phase 3: Search & Embeddings** - Retrieval: query parsing, hybrid search, reranking, embeddings
+- [x] **Phase 4: UI & Evaluation** - Validation: web interface, candidate display, benchmark system
+- [ ] **Phase 5: CLI Interactive Search** - Conversational CLI: intelligent chat, multi-dimensional profiles, keyboard TUI
+- [ ] **Phase 6: Conversational & Compliance Polish** - UX enhancement: conversational refinement, profile claims
 
 ## Phase Details
 
@@ -98,9 +99,30 @@ Plans:
 - [x] 04-06b-PLAN.md — Web frontend pages: search home, admin dashboard (UI-01, UI-02, EVAL-05)
 - [ ] 04-07-PLAN.md — Human verification checkpoint
 
-### Phase 5: Conversational & Compliance Polish
-**Goal**: Users can refine searches conversationally and claim profile ownership
+### Phase 5: CLI Interactive Search Experience
+**Goal**: Users can search talents through intelligent conversational CLI with multi-dimensional profile visualization
 **Depends on**: Phase 4
+**Requirements**: CLI-01, CLI-02, CLI-03, CLI-04, CLI-05, CLI-06
+**Success Criteria** (what must be TRUE):
+  1. Users input natural language queries and LLM extracts structured search conditions
+  2. Missing conditions are detected and follow-up questions asked (max 2, Enter to skip)
+  3. Candidates are displayed with 6-dimensional profile cards (tech, project, academic, community, stability, location)
+  4. Keyboard interaction allows ↑↓ selection, Enter for details, q to quit
+  5. Profile cache in PostgreSQL JSONB enables instant repeated queries
+  6. Hybrid scoring combines rule-based (location, tech, stability) and LLM-based (project, academic) evaluation
+**Plans**: 6 plans in 3 waves
+
+Plans:
+- [ ] 05-01-PLAN.md — Chat interaction module: LLM condition extraction, missing detection, follow-up (CLI-01)
+- [ ] 05-02-PLAN.md — TUI keyboard module: enquirer setup, ↑↓ selection, Enter/q handlers (CLI-02)
+- [ ] 05-03-PLAN.md — Hybrid scorer: rule-based (location/tech/stability) + LLM-based (project/academic) (CLI-03)
+- [ ] 05-04-PLAN.md — Profile cache layer: PostgreSQL JSONB schema, TTL 7 days, cache invalidation (CLI-04)
+- [ ] 05-05-PLAN.md — Profile generator: 6-dimension JSON generation, highlights extraction (CLI-05)
+- [ ] 05-06-PLAN.md — Terminal renderer: boxen/chalk cards, progress bars, color coding (CLI-06)
+
+### Phase 6: Conversational & Compliance Polish (Future)
+**Goal**: Users can refine searches conversationally and claim profile ownership
+**Depends on**: Phase 5
 **Requirements**: UI-05, COMP-03, COMP-04
 **Success Criteria** (what must be TRUE):
   1. Users can iteratively refine search conditions through conversational UI
@@ -112,15 +134,16 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Infrastructure & Bonjour Ingestion | 2/2 | Completed | 2026-03-28 |
-| 2. GitHub & Identity Merge | 0/5 | Ready to execute | - |
-| 3. Search & Embeddings | 0/7 | Ready to execute | - |
-| 4. UI & Evaluation | 3/8 | In Progress|  |
-| 5. Conversational & Compliance Polish | 0/TBD | Not started | - |
+| 1. Infrastructure & Bonjour Ingestion | 2/2 | ✅ Completed | 2026-03-28 |
+| 2. GitHub & Identity Merge | 5/5 | ✅ Completed | 2026-03-29 |
+| 3. Search & Embeddings | 7/7 | ✅ Completed | 2026-03-29 |
+| 4. UI & Evaluation | 7/8 | ✅ Completed (UI fixes done) | 2026-03-29 |
+| 5. CLI Interactive Search | 0/6 | 🔵 Ready to execute | - |
+| 6. Conversational & Compliance Polish | 0/TBD | ⏸️ Pending | - |
 
 ---
-*Last updated: 2026-03-29 after 04-01-PLAN completion*
+*Last updated: 2026-03-29 - Phase 5 CLI design approved, awaiting implementation*
