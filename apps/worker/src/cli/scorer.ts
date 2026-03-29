@@ -36,6 +36,61 @@ export class HybridScoringEngine {
     };
   }
 
+  /**
+   * Calculate experience/seniority match (ISSUE-002 fix)
+   * Returns a bonus score if candidate matches requested experience level
+   */
+  calculateExperienceMatch(candidate: Person, evidence: EvidenceItem[], conditions: SearchConditions): number {
+    if (!conditions.experience && !conditions.role) return 0; // No preference = no bonus
+
+    const headline = candidate.primaryHeadline?.toLowerCase() || "";
+    const summary = candidate.summary?.toLowerCase() || "";
+    const context = headline + " " + summary;
+
+    let bonus = 0;
+
+    // Match experience years (e.g., "5年", "3-5年", "5年以上")
+    if (conditions.experience) {
+      const exp = conditions.experience.toLowerCase();
+
+      // Senior/seniority keywords
+      if (exp.includes("senior") || exp.includes("高级") || exp.includes("资深") || exp.includes("lead") || exp.includes("专家")) {
+        if (context.includes("senior") || context.includes("高级") || context.includes("资深") ||
+            context.includes("lead") || context.includes("principal") || context.includes("专家")) {
+          bonus += 15;
+        }
+      }
+
+      // Junior keywords
+      if (exp.includes("junior") || exp.includes("初级") || exp.includes("实习")) {
+        if (context.includes("junior") || context.includes("初级") || context.includes("intern")) {
+          bonus += 15;
+        }
+      }
+
+      // Year-based matching (simplified heuristic)
+      const yearMatch = exp.match(/(\d+)/);
+      if (yearMatch) {
+        const years = parseInt(yearMatch[1]);
+        // Look for experience evidence count as proxy
+        const expEvidence = evidence.filter(e => e.evidenceType === "experience");
+        if (expEvidence.length >= years / 2) {
+          bonus += 10;
+        }
+      }
+    }
+
+    // Match role (e.g., "AI工程师", "后端开发")
+    if (conditions.role) {
+      const role = conditions.role.toLowerCase();
+      if (context.includes(role) || headline.includes(role)) {
+        bonus += 15;
+      }
+    }
+
+    return Math.min(30, bonus); // Cap at 30 points bonus
+  }
+
   private calculateLocationMatch(candidate: Person, conditions: SearchConditions): number {
     if (!conditions.locations || conditions.locations.length === 0) return 100;
     const candidateLoc = candidate.primaryLocation?.toLowerCase() || "";
@@ -151,7 +206,7 @@ CRITICAL: Return ONLY the JSON, no markdown, no explanation.
 
   // --- Aggregation ---
 
-  aggregate(rules: Partial<DimensionScores>, llm: Partial<DimensionScores>): MultiDimensionProfile {
+  aggregate(rules: Partial<DimensionScores>, llm: Partial<DimensionScores>, experienceBonus: number = 0): MultiDimensionProfile {
     const scores: DimensionScores = {
       techMatch: rules.techMatch || 0,
       locationMatch: rules.locationMatch || 0,
@@ -170,9 +225,12 @@ CRITICAL: Return ONLY the JSON, no markdown, no explanation.
       (scores.communityReputation * SCORING_WEIGHTS.communityReputation) +
       (scores.locationMatch * SCORING_WEIGHTS.locationMatch);
 
+    // ISSUE-002: Add experience/role match bonus
+    const finalScore = Math.min(100, weightedScore + experienceBonus);
+
     return {
       dimensions: scores,
-      overallScore: weightedScore,
+      overallScore: finalScore,
       highlights: [],
       summary: ""
     };

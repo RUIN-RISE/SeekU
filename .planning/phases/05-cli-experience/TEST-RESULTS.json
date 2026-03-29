@@ -1,0 +1,84 @@
+{
+  "testRun": "2026-03-29T23:55:00Z",
+  "tester": "Antigravity",
+  "totalTests": 30,
+  "results": [
+    {
+      "id": "A1", "group": "A", "scenario": "简单技能搜索",
+      "input": ["Python", "Enter", "Enter"],
+      "expected": "显示候选人列表", "actual": "成功显示匹配的候选人", "passed": true, "severity": null, "notes": "响应敏捷，缓存正常"
+    },
+    { "id": "A2", "group": "A", "scenario": "技能+地点搜索", "input": ["AI", "北京", "Enter"], "expected": "显示北京地区 AI 候选人", "actual": "正确过滤返回北京位置的人选", "passed": true, "severity": null, "notes": "" },
+    { "id": "A3", "group": "A", "scenario": "完整条件搜索", "input": ["RAG", "上海", "3-5年"], "expected": "显示符合条件的候选人", "actual": "完整解析条件并输出结果", "passed": true, "severity": null, "notes": "" },
+    { "id": "A4", "group": "A", "scenario": "中文技能词", "input": ["深度学习", "Enter", "Enter"], "expected": "正确解析并搜索", "actual": "成功抽取并正确检索", "passed": true, "severity": null, "notes": "" },
+    { "id": "A5", "group": "A", "scenario": "英文技能词", "input": ["PyTorch", "Enter", "Enter"], "expected": "正确解析并搜索", "actual": "无缝抽取", "passed": true, "severity": null, "notes": "" },
+    { "id": "A6", "group": "A", "scenario": "多技能组合", "input": ["Python Rust CUDA", "Enter", "Enter"], "expected": "包含所有技能的候选人", "actual": "正确分为数组传入查询", "passed": true, "severity": null, "notes": "" },
+    { "id": "A7", "group": "A", "scenario": "远程地点", "input": ["远程", "远程", "Enter"], "expected": "支持远程关键词", "actual": "Location 分值按包含规则返回", "passed": true, "severity": null, "notes": "" },
+    { "id": "A8", "group": "A", "scenario": "高级职位", "input": ["AI", "北京", "senior"], "expected": "解析职级关键词", "actual": "成功解析，但评分引擎对 experience 字段使用受限", "passed": false, "severity": "MAJOR", "notes": "详见 ISSUE-002" },
+    { "id": "A9", "group": "A", "scenario": "特定框架", "input": ["LangChain", "Enter", "Enter"], "expected": "识别具体框架", "actual": "有效查询", "passed": true, "severity": null, "notes": "" },
+    { "id": "A10", "group": "A", "scenario": "领域搜索", "input": ["推荐系统", "Enter", "Enter"], "expected": "识别业务领域", "actual": "技能匹配正常评估包含领域上下文", "passed": true, "severity": null, "notes": "" },
+
+    { "id": "B1", "group": "B", "scenario": "空输入提交", "input": ["Enter", "Enter", "Enter"], "expected": "提示重新输入或合理默认", "actual": "直接传递空查询到后端执行无效查找", "passed": false, "severity": "MAJOR", "notes": "缺少对空字符串的短路拦截" },
+    { "id": "B2", "group": "B", "scenario": "超长输入", "input": ["Python, ".repeat(30), "Enter", "Enter"], "expected": "正确截断或处理", "actual": "依赖底层提供商截断或正确处理，未崩", "passed": true, "severity": null, "notes": "" },
+    { "id": "B3", "group": "B", "scenario": "特殊字符", "input": ["C++ !@#", "Enter", "Enter"], "expected": "正确处理特殊字符", "actual": "sanitizeForPrompt 成功屏蔽异常字符", "passed": true, "severity": null, "notes": "" },
+    { "id": "B4", "group": "B", "scenario": "纯空格", "input": ["   ", "Enter", "Enter"], "expected": "视为无效输入", "actual": "被等效视为空输入缺陷（同 B1 现象）", "passed": false, "severity": "MINOR", "notes": "应当提前 trim() 并拦截" },
+    { "id": "B5", "group": "B", "scenario": "重复技能", "input": ["Python Python Python", "Enter"], "expected": "去重处理", "actual": "数组中出现重复项", "passed": false, "severity": "MINOR", "notes": "详见 ISSUE-003" },
+    { "id": "B6", "group": "B", "scenario": "中英混合", "input": ["Python开发", "Enter", "Enter"], "expected": "正确分词", "actual": "LLM 良好分离 Python 和开发", "passed": true, "severity": null, "notes": "" },
+    { "id": "B7", "group": "B", "scenario": "不存在的技能", "input": ["Xyz123Nonexistent", "Enter", "Enter"], "expected": "空结果提示", "actual": "提示 'No candidates found'", "passed": true, "severity": null, "notes": "" },
+    { "id": "B8", "group": "B", "scenario": "所有追问都跳过", "input": ["Java", "Enter", "Enter"], "expected": "显示全部或最大结果", "actual": "查询顺利退役", "passed": true, "severity": null, "notes": "" },
+
+    { "id": "C1", "group": "C", "scenario": "候选人列表滚动", "input": ["↑/↓键选择"], "expected": "高亮切换正常", "actual": "终端选择器正常流转选项", "passed": true, "severity": null, "notes": "" },
+    { "id": "C2", "group": "C", "scenario": "查看候选人详情", "input": ["Enter选中"], "expected": "显示 6 维画像卡片", "actual": "六维画像卡片渲染排版准确", "passed": true, "severity": null, "notes": "" },
+    { "id": "C3", "group": "C", "scenario": "返回列表", "input": ["详情页按Enter"], "expected": "返回候选人列表", "actual": "正确刷新列表", "passed": true, "severity": null, "notes": "" },
+    { "id": "C4", "group": "C", "scenario": "退出程序", "input": ["输入 q"], "expected": "优雅退出", "actual": "退出进程", "passed": true, "severity": null, "notes": "" },
+    { "id": "C5", "group": "C", "scenario": "连续查看多人", "input": ["看A -> 返回 -> 看B"], "expected": "数据不混淆", "actual": "上下文完全隔离无状态污染", "passed": true, "severity": null, "notes": "" },
+    { "id": "C6", "group": "C", "scenario": "缓存命中验证", "input": ["重复查看A"], "expected": "第二次显示 Cache hit!", "actual": "触发 Cache hit，0延迟展现", "passed": true, "severity": null, "notes": "" },
+
+    { "id": "D1", "group": "D", "scenario": "网络超时降级", "input": ["模拟网络断开"], "expected": "显示降级分数，不崩溃", "actual": "捕获 AbortError，通过动态公式生成分数，不崩", "passed": true, "severity": null, "notes": "二审已修复该阻塞" },
+    { "id": "D2", "group": "D", "scenario": "JSON 解析失败", "input": ["模拟非标准化 JSON 输出"], "expected": "Zod 降级生效", "actual": "safeParseJSON 解析错误，触发默认参数兜底", "passed": true, "severity": null, "notes": "Zod 层稳固" },
+    { "id": "D3", "group": "D", "scenario": "数据库连接失败", "input": ["挂起本地 pg"], "expected": "友好错误提示", "actual": "index.ts 最外层抛出可读的红色 Error 日志断开", "passed": true, "severity": null, "notes": "" },
+    { "id": "D4", "group": "D", "scenario": "大结果集处理", "input": ["搜索常态词"], "expected": "分页或限制显示", "actual": "由 LIMIT 控制最大展现", "passed": true, "severity": null, "notes": "" },
+    { "id": "D5", "group": "D", "scenario": "无候选人时操作", "input": ["触发空结果并按键"], "expected": "无异常崩溃", "actual": "直接跳出循环保护", "passed": true, "severity": null, "notes": "" },
+    { "id": "D6", "group": "D", "scenario": "连续快速操作", "input": ["迅速多击Enter"], "expected": "无竞态条件", "actual": "TUI 队列吞并指令未产生状态撕裂", "passed": true, "severity": null, "notes": "" }
+  ],
+  "summary": {
+    "passed": 26,
+    "failed": 4,
+    "blocked": 0,
+    "passRate": "86.7%"
+  },
+  "issues": [
+    {
+      "id": "ISSUE-001",
+      "testId": "B1",
+      "title": "无效输入传递漏洞 (Empty Input Passthrough)",
+      "severity": "MAJOR",
+      "description": "当用户在初始交互与连续追问阶段均输入空字符（或纯空格）时，系统未在交互层（TUI/ChatInterface）对其进行短路阻断，从而向 LLM 发送了无效的空查询语句，不仅浪费 Token 接口额度，还可能引起难以预期的搜索全表响应或幻觉。",
+      "file": "chat.ts",
+      "line": 78
+    },
+    {
+      "id": "ISSUE-002",
+      "testId": "A8",
+      "title": "打分引擎遗漏 LLM Role/Experience 意图 (Ignored Extracted Dimensions)",
+      "severity": "MAJOR",
+      "description": "虽然 \`chat.ts\` 中的 LLM 从用户的提问中成功解析出了 \`experience\` 与 \`role\`，但翻阅 \`scorer.ts\` 内部打分逻辑规则，完全没有消费这部分解析出来的条件树（只采用了 skills / location），导致针对特定工作年限的打分过滤形同虚设。",
+      "file": "scorer.ts",
+      "line": 32
+    },
+    {
+      "id": "ISSUE-003",
+      "testId": "B5",
+      "title": "连续追问技能数组未去重 (Duplicate Skills in Array)",
+      "severity": "MINOR",
+      "description": "如果在多次追问下，新提取的 \`extra.skills\` 和以前阶段包含同样内容的 \`conditions.skills\` 进行拼接时，仅使用了单纯的 \`[...a, ...b]\`，导致出现同样的关键字出现多次（如 \`['Python', 'Python']\`），略微恶化了检索权重和 Token 利用率。",
+      "file": "chat.ts",
+      "line": 106
+    }
+  ],
+  "recommendations": [
+    "在输入阶段实施基本的字符串长度与非空Trim检查，遇到连续空输入主动终止交互或抛出验证错误。",
+    "重构 \`HybridScoringEngine\` 的入参逻辑，使其吸纳被提取出来的 \`role\`（职级）、\`experience\`（年限），甚至在 \`CareerStability\` 和规则池中给予降权/加权惩罚。",
+    "将 \`chat.ts\` 中各多维展开 \`[...a, ...b]\` 优化为通过 \`Set\` 或者 \`lodash.uniq\` 自动去重后再并入 conditions 对象。"
+  ]
+}

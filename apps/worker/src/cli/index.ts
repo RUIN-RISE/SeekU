@@ -154,7 +154,9 @@ async function displayCandidateProfile(
 
     const rules = scorer.scoreByRules(person, personEvidence, conditions);
     const llm = await scorer.scoreByLLM(person, personEvidence);
-    profile = scorer.aggregate(rules, llm);
+    // ISSUE-002: Calculate experience/role match bonus
+    const experienceBonus = scorer.calculateExperienceMatch(person, personEvidence, conditions);
+    profile = scorer.aggregate(rules, llm, experienceBonus);
 
     console.log(chalk.dim("   (Generating summary & highlights...)"));
     profile = await generator.generate(person, personEvidence, profile);
