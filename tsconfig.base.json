@@ -22,6 +22,7 @@
       "@seeku/adapters": ["packages/adapters/src/index.ts"],
       "@seeku/identity": ["packages/identity/src/index.ts"],
       "@seeku/workers": ["packages/workers/src/index.ts"],
+      "@seeku/eval": ["packages/eval/src/index.ts"],
       "@seeku/worker": ["apps/worker/src/index.ts"],
       "@seeku/api": ["apps/api/src/index.ts"]
     }
