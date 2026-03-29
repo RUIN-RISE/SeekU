@@ -14,6 +14,15 @@ Seeku is a Chinese AI talent search engine designed for AI Builders, Founders, a
 - **Compliance**: GDPR-style opt-out required from day one — Not optional feature, must-have infrastructure
 - **Tech Stack**: TypeScript monorepo (pnpm + turbo), Postgres 16 + pgvector + pg_trgm — User preference
 - **Architecture**: Worker-first (async jobs before API), Adapter-first (source logic isolated), Eval-first (benchmark before UI polish)
+
+### Environment Requirements
+
+- **PostgreSQL with pgvector**: Required for vector similarity search (search_embeddings table)
+- **Default Docker**: `infra/docker-compose.yml` uses `pgvector/pgvector:pg16` image
+- **Vector Dimensions**: 4096 (Qwen3-Embedding-8B) — No ANN index (HNSW limit is 2000), uses sequential scan for MVP
+- **LLM Provider**: SiliconFlow API (OpenAI SDK compatible)
+  - Chat: `stepfun-ai/Step-3.5-Flash`
+  - Embedding: `Qwen/Qwen3-Embedding-8B`
 <!-- GSD:project-end -->
 
 <!-- GSD:stack-start source:STACK.md -->
