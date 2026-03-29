@@ -11,6 +11,7 @@ import {
 
 import { runBonjourSyncJob } from "./index.js";
 import { runSearchCli, runShowCli } from "./search-cli.js";
+import { runInteractiveSearch } from "./cli/index.js";
 
 function parseArgs(argv: string[]) {
   const args = new Map<string, string>();
@@ -116,6 +117,13 @@ async function main() {
     const query = parsed.args.get("query") ?? parsed.positionals[0] ?? "";
     const limit = Number(parsed.args.get("limit") ?? "10");
     const json = parsed.flags.has("json");
+    const interactive = parsed.flags.has("interactive");
+
+    if (interactive) {
+      await runInteractiveSearch();
+      return;
+    }
+
     result = await runSearchCli({ query, limit, json });
   } else if (command === "show") {
     const personId = parsed.args.get("personId") ?? parsed.positionals[0] ?? "";
@@ -127,7 +135,9 @@ async function main() {
     );
   }
 
-  console.log(JSON.stringify(result, null, 2));
+  if (result !== undefined) {
+    console.log(JSON.stringify(result, null, 2));
+  }
 }
 
 main().catch((error) => {

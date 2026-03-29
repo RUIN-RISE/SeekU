@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Seeku UI Preview - Style E: Ink & Paper</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=ZCOOL+XiaoWei&family=Noto+Serif+SC:wght@400;600;700;900&family=Ma+ Shan+Zheng&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-cream: #faf8f5;
+      --bg-card: #ffffff;
+      --ink: #1a1a1a;
+      --ink-light: #4a4a4a;
+      --ink-muted: #7a7a7a;
+      --accent-crimson: #b91c1c;
+      --accent-gold: #a68b5b;
+      --paper-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+      --radius: 0;  /* Sharp corners for paper aesthetic */
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Noto Serif SC', serif;
+      background: var(--bg-cream);
+      color: var(--ink);
+      min-height: 100vh;
+      /* Subtle paper texture simulation via lines */
+      background-image: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 28px,
+        rgba(0, 0, 0, 0.02) 28px,
+        rgba(0, 0, 0, 0.02) 29px
+      );
+    }
+
+    .header {
+      background: var(--ink);
+      color: var(--bg-cream);
+      padding: 20px 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      animation: slideDown 0.6s ease-out;
+    }
+
+    .logo {
+      font-family: 'Ma Shan Zheng', cursive;
+      font-size: 42px;
+      font-weight: 400;
+      letter-spacing: 8px;
+    }
+
+    .logo-accent { color: var(--accent-crimson); }
+
+    .nav {
+      display: flex;
+      gap: 40px;
+    }
+
+    .nav a {
+      color: var(--bg-cream);
+      text-decoration: none;
+      font-size: 16px;
+      font-weight: 600;
+      transition: color 0.3s;
+      border-bottom: 2px solid transparent;
+    }
+
+    .nav a:hover {
+      color: var(--accent-crimson);
+      border-bottom-color: var(--accent-crimson);
+    }
+
+    /* Search Section */
+    .search-section {
+      padding: 100px 40px 60px;
+      max-width: 800px;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    .search-title {
+      font-family: 'Ma Shan Zheng', cursive;
+      font-size: 72px;
+      font-weight: 400;
+      color: var(--ink);
+      margin-bottom: 24px;
+      animation: fadeIn 0.8s ease-out 0.2s both;
+    }
+
+    .search-subtitle {
+      font-size: 18px;
+      color: var(--ink-muted);
+      margin-bottom: 48px;
+      font-style: italic;
+      animation: fadeIn 0.8s ease-out 0.4s both;
+    }
+
+    .search-box {
+      position: relative;
+      animation: fadeIn 0.8s ease-out 0.6s both;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 20px 0;
+      font-size: 20px;
+      font-family: 'Noto Serif SC', serif;
+      background: transparent;
+      border: none;
+      border-bottom: 3px solid var(--ink);
+      color: var(--ink);
+      transition: border-color 0.3s;
+    }
+
+    .search-input:focus {
+      outline: none;
+      border-bottom-color: var(--accent-crimson);
+    }
+
+    .search-btn {
+      margin-top: 24px;
+      background: var(--ink);
+      color: var(--bg-cream);
+      border: none;
+      padding: 14px 48px;
+      font-family: 'Noto Serif SC', serif;
+      font-weight: 600;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    .search-btn:hover { background: var(--accent-crimson); }
+
+    /* Results */
+    .results-section {
+      padding: 40px;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .results-header {
+      text-align: center;
+      margin-bottom: 48px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+      animation: fadeIn 0.8s ease-out 0.8s both;
+    }
+
+    .results-count {
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--ink-light);
+    }
+
+    /* Cards - paper aesthetic */
+    .candidate-card {
+      background: var(--bg-card);
+      padding: 32px 40px;
+      margin-bottom: 24px;
+      box-shadow: var(--paper-shadow);
+      cursor: pointer;
+      transition: transform 0.3s;
+      animation: slideUp 0.6s ease-out both;
+      animation-delay: calc(var(--delay) * 0.15s);
+      position: relative;
+    }
+
+    .candidate-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 4px;
+      height: 100%;
+      background: var(--accent-gold);
+    }
+
+    .candidate-card:nth-child(1) { --delay: 1; }
+    .candidate-card:nth-child(2) { --delay: 2; }
+    .candidate-card:nth-child(3) { --delay: 3; }
+
+    .candidate-card:hover {
+      transform: translateY(-2px);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 24px;
+    }
+
+    .avatar {
+      width: 80px;
+      height: 80px;
+      background: var(--ink);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--bg-cream);
+      font-family: 'Ma Shan Zheng', cursive;
+      font-size: 36px;
+    }
+
+    .card-info { flex: 1; }
+
+    .candidate-name {
+      font-family: 'ZCOOL XiaoWei', serif;
+      font-size: 32px;
+      font-weight: 400;
+      letter-spacing: 4px;
+      margin-bottom: 8px;
+    }
+
+    .candidate-headline {
+      color: var(--ink-muted);
+      font-size: 16px;
+      margin-bottom: 16px;
+    }
+
+    .match-score {
+      display: inline-flex;
+      background: var(--accent-crimson);
+      color: var(--bg-cream);
+      padding: 6px 16px;
+      font-weight: 600;
+      font-size: 16px;
+    }
+
+    .match-reasons {
+      display: flex;
+      gap: 16px;
+      margin-top: 24px;
+    }
+
+    .reason-tag {
+      color: var(--ink);
+      font-size: 15px;
+      font-weight: 600;
+      padding-bottom: 4px;
+      border-bottom: 2px solid var(--accent-crimson);
+    }
+
+    .evidence-preview {
+      margin-top: 24px;
+      padding-top: 24px;
+      border-top: 1px solid rgba(0, 0, 0, 0.1);
+      display: flex;
+      gap: 24px;
+    }
+
+    .evidence-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--ink-muted);
+      font-size: 14px;
+    }
+
+    .evidence-icon {
+      width: 8px;
+      height: 8px;
+      background: var(--accent-gold);
+      border-radius: 50%;
+    }
+
+    /* Animations */
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="logo">寻<span class="logo-accent">才</span></div>
+    <nav class="nav">
+      <a href="#">搜索人才</a>
+      <a href="#">评估系统</a>
+      <a href="#">管理后台</a>
+    </nav>
+  </header>
+
+  <section class="search-section">
+    <h1 class="search-title">发现 AI 人才</h1>
+    <p class="search-subtitle">以项目与代码为证，寻真正匹配之人才</p>
+    <div class="search-box">
+      <input class="search-input" type="text" placeholder="输入搜索条件..." value="AI工程师 北京">
+      <button class="search-btn">查找</button>
+    </div>
+  </section>
+
+  <section class="results-section">
+    <div class="results-header">
+      <span class="results-count">共找到 12 位匹配候选人</span>
+    </div>
+
+    <div class="candidate-card">
+      <div class="card-header">
+        <div class="avatar">张</div>
+        <div class="card-info">
+          <h3 class="candidate-name">张明远</h3>
+          <p class="candidate-headline">字节跳动 · AI算法工程师 · 6年经验 · 北京</p>
+          <span class="match-score">94.2 匹配</span>
+        </div>
+      </div>
+      <div class="match-reasons">
+        <span class="reason-tag">Python专家</span>
+        <span class="reason-tag">RAG系统</span>
+        <span class="reason-tag">北京</span>
+      </div>
+      <div class="evidence-preview">
+        <div class="evidence-item"><div class="evidence-icon"></div> LangChain贡献者</div>
+        <div class="evidence-item"><div class="evidence-icon"></div> 3个开源项目</div>
+        <div class="evidence-item"><div class="evidence-icon"></div> 500+ commits</div>
+      </div>
+    </div>
+
+    <div class="candidate-card">
+      <div class="card-header">
+        <div class="avatar">李</div>
+        <div class="card-info">
+          <h3 class="candidate-name">李思源</h3>
+          <p class="candidate-headline">阿里云 · 大模型研究员 · 4年经验 · 北京</p>
+          <span class="match-score">89.5 匹配</span>
+        </div>
+      </div>
+      <div class="match-reasons">
+        <span class="reason-tag">LLM研究</span>
+        <span class="reason-tag">向量检索</span>
+      </div>
+      <div class="evidence-preview">
+        <div class="evidence-item"><div class="evidence-icon"></div> 10篇论文</div>
+        <div class="evidence-item"><div class="evidence-icon"></div> HuggingFace项目</div>
+      </div>
+    </div>
+
+    <div class="candidate-card">
+      <div class="card-header">
+        <div class="avatar">王</div>
+        <div class="card-info">
+          <h3 class="candidate-name">王晓峰</h3>
+          <p class="candidate-headline">独立开发者 · NLP工程师 · 3年经验</p>
+          <span class="match-score">82.1 匹配</span>
+        </div>
+      </div>
+      <div class="match-reasons">
+        <span class="reason-tag">NLP</span>
+        <span class="reason-tag">开源贡献</span>
+      </div>
+      <div class="evidence-preview">
+        <div class="evidence-item"><div class="evidence-icon"></div> 个人RAG产品</div>
+        <div class="evidence-item"><div class="evidence-icon"></div> 50+ stars</div>
+      </div>
+    </div>
+  </section>
+</body>
+</html>

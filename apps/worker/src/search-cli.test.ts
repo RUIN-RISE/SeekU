@@ -62,7 +62,7 @@ describe("CLI Search", () => {
 
   describe("runSearchCli", () => {
     it("should return empty array when no results found", async () => {
-      const { runSearchCli } = await import("./search-cli");
+      const { runSearchCli } = await import("./search-cli.js");
 
       const result = await runSearchCli({
         query: "nonexistent skill xyz",
@@ -73,7 +73,7 @@ describe("CLI Search", () => {
     });
 
     it("should accept limit parameter", async () => {
-      const { runSearchCli } = await import("./search-cli");
+      const { runSearchCli } = await import("./search-cli.js");
 
       // Should not throw
       await expect(runSearchCli({
@@ -84,7 +84,7 @@ describe("CLI Search", () => {
     });
 
     it("should return human-readable message when json is false", async () => {
-      const { runSearchCli } = await import("./search-cli");
+      const { runSearchCli } = await import("./search-cli.js");
 
       const result = await runSearchCli({
         query: "nonexistent skill xyz",
@@ -97,7 +97,7 @@ describe("CLI Search", () => {
 
   describe("runShowCli", () => {
     it("should handle non-existent personId", async () => {
-      const { runShowCli } = await import("./search-cli");
+      const { runShowCli } = await import("./search-cli.js");
 
       const result = await runShowCli({
         personId: "non-existent-uuid",
@@ -105,6 +105,9 @@ describe("CLI Search", () => {
       });
 
       expect(result).toHaveProperty("person");
+      if (typeof result === "string") {
+        throw new Error("Expected ProfileOutput, got string");
+      }
       expect(result.person).toBeNull();
     });
   });

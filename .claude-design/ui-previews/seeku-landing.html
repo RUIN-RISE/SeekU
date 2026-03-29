@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seeku - 发现真正的 AI 核心人才</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入中文字体: Noto Sans SC -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <!-- 引入 Lucide 图标 -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Noto Sans SC"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+                        mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+                    },
+                    colors: {
+                        accent: {
+                            blue: '#2563eb',
+                            cyan: '#0d9488',
+                        }
+                    },
+                    animation: {
+                        'float': 'float 8s ease-in-out infinite',
+                        'dash': 'dash 1.5s linear infinite',
+                        'pulse-glow': 'pulseGlow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    },
+                    keyframes: {
+                        float: {
+                            '0%, 100%': { transform: 'translateY(0)' },
+                            '50%': { transform: 'translateY(-8px)' },
+                        },
+                        dash: {
+                            to: { strokeDashoffset: -20 }
+                        },
+                        pulseGlow: {
+                            '0%, 100%': { opacity: 1, transform: 'scale(1)' },
+                            '50%': { opacity: 0.7, transform: 'scale(1.05)', boxShadow: '0 0 20px rgba(37,99,235,0.4)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        ::-webkit-scrollbar { display: none; }
+        body { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* 高级毛玻璃 */
+        .glass-premium {
+            background: rgba(255, 255, 255, 0.65);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.8);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.03), inset 0 1px 0 rgba(255,255,255,0.6);
+        }
+
+        /* 搜索框聚焦时的遮罩层 */
+        #search-backdrop {
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        #search-backdrop.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        /* SVG 连线动画 */
+        .evidence-line {
+            stroke-dasharray: 6, 6;
+            transition: all 0.4s ease;
+        }
+        .evidence-line.active {
+            stroke: #2563eb;
+            stroke-width: 2;
+            filter: drop-shadow(0 0 4px rgba(37,99,235,0.5));
+            animation: dash 1s linear infinite;
+        }
+
+        /* 打字机光标 */
+        .cursor-blink::after {
+            content: '|';
+            animation: blink 1s step-end infinite;
+            color: #2563eb;
+            font-weight: 300;
+        }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+        /* 渐现动画类 */
+        .reveal-up {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .reveal-up.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    </style>
+</head>
+<body class="bg-[#fafafa] text-slate-800 antialiased min-h-screen flex flex-col relative selection:bg-blue-100 selection:text-blue-900">
+
+    <!-- 搜索专注遮罩层 -->
+    <div id="search-backdrop" class="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-40"></div>
+
+    <!-- 顶部极简光晕 -->
+    <div class="fixed top-0 left-1/2 -translate-x-1/2 w-[1200px] h-[700px] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-100/40 via-cyan-50/10 to-transparent pointer-events-none z-0"></div>
+
+    <!-- 顶栏 -->
+    <header class="fixed top-0 inset-x-0 bg-slate-900/95 backdrop-blur-xl text-white border-b border-slate-700/40 z-50 transition-all">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-2.5 hover:opacity-80 transition-opacity cursor-pointer">
+                <div class="w-7 h-7 rounded-[10px] bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center shadow-[0_2px_10px_-2px_rgba(37,99,235,0.4)] relative overflow-hidden">
+                    <div class="absolute inset-0 bg-white/20 w-full h-full transform -skew-x-12 translate-x-[-100%] group-hover:animate-[shimmer_1.5s_infinite]"></div>
+                    <i data-lucide="cpu" class="w-4 h-4 text-white relative z-10"></i>
+                </div>
+                <span class="text-[17px] font-bold tracking-tight text-white">Seeku</span>
+            </div>
+
+            <nav class="hidden md:flex items-center gap-10">
+                <a href="#" class="text-[13px] font-semibold text-slate-400 hover:text-white transition-colors tracking-wide">产品演练</a>
+                <a href="#" class="text-[13px] font-semibold text-slate-400 hover:text-white transition-colors tracking-wide">证据图谱</a>
+                <a href="#" class="text-[13px] font-semibold text-slate-400 hover:text-white transition-colors tracking-wide">企业方案</a>
+            </nav>
+
+            <div class="flex items-center gap-5">
+                <a href="#" class="text-[13px] font-semibold text-slate-300 hover:text-white transition-colors hidden sm:block tracking-wide">开发者登录</a>
+                <button class="magnetic-btn text-[13px] font-semibold bg-white text-slate-900 px-5 py-2.5 rounded-full hover:bg-slate-100 transition-all duration-300 shadow-[0_4px_14px_0_rgba(0,0,0,0.25)] hover:shadow-[0_6px_20px_rgba(0,0,0,0.35)]">
+                    开始寻访
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 核心 Hero 区 -->
+    <main class="flex-1 flex flex-col items-center pt-36 pb-20 px-4 sm:px-6 lg:px-8 relative z-40 w-full max-w-7xl mx-auto">
+
+        <div class="reveal-up">
+            <a href="#" class="group inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-50/50 border border-blue-100/80 text-blue-700 text-[11px] font-semibold tracking-widest uppercase hover:bg-blue-50 transition-colors mb-8 shadow-sm backdrop-blur-sm">
+                <span class="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                全新引擎：自动关联 GitHub 与 Google Scholar
+                <i data-lucide="arrow-right" class="w-3 h-3 ml-1 group-hover:translate-x-1 transition-transform"></i>
+            </a>
+        </div>
+
+        <h1 class="text-5xl md:text-7xl font-extrabold text-slate-900 text-center tracking-tighter leading-[1.1] mb-6 reveal-up" style="transition-delay: 0.1s;">
+            寻找简历上<br class="hidden sm:block">
+            <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-cyan-500 relative">
+                写不出来的硬实力
+                <!-- 底部装饰线 -->
+                <svg class="absolute w-full h-3 -bottom-1 left-0 text-blue-200" viewBox="0 0 100 10" preserveAspectRatio="none">
+                    <path d="M0 5 Q 50 10 100 5" stroke="currentColor" stroke-width="4" fill="transparent" stroke-linecap="round"/>
+                </svg>
+            </span>
+        </h1>
+
+        <p class="text-lg text-slate-500 text-center max-w-2xl leading-loose reveal-up font-medium" style="transition-delay: 0.2s;">
+            不要再用"精通 Python"来筛选 AI 工程师了。<br class="hidden md:block">
+            告诉 Seeku 你遇到的技术瓶颈，AI 为你从全球开源网络中定位破局者。
+        </p>
+
+        <!-- 交互式指令中心 (Command Hub) -->
+        <div id="command-hub" class="w-full max-w-3xl mt-12 relative z-50 reveal-up" style="transition-delay: 0.3s;">
+            <!-- 背景发光 -->
+            <div id="search-glow" class="absolute -inset-2 bg-gradient-to-r from-blue-500/10 to-cyan-400/10 rounded-[2rem] blur-xl opacity-0 transition duration-500"></div>
+
+            <div class="relative bg-white rounded-2xl border border-slate-200/80 shadow-[0_8px_40px_-12px_rgba(0,0,0,0.08)] transition-all duration-300" id="search-box-container">
+
+                <!-- 输入栏 -->
+                <div class="flex items-center p-3 relative z-10">
+                    <div class="pl-4 pr-3 flex items-center justify-center">
+                        <i data-lucide="sparkles" class="w-5 h-5 text-blue-500"></i>
+                    </div>
+                    <div class="flex-1 relative h-12 flex items-center">
+                        <!-- 真实的输入框 -->
+                        <input type="text" id="ai-search-input" class="w-full h-full bg-transparent border-none outline-none text-slate-900 text-lg px-2 font-medium absolute inset-0 z-20 opacity-0 focus:opacity-100 transition-opacity" placeholder="输入自然语言指令...">
+                        <!-- 打字机模拟层 -->
+                        <div id="typewriter-text" class="text-slate-400 text-lg px-2 font-medium absolute inset-0 flex items-center pointer-events-none cursor-blink z-10"></div>
+                    </div>
+                    <div class="flex gap-2 pr-2">
+                        <kbd class="hidden sm:inline-flex items-center border border-slate-200 rounded-md px-2 py-1 text-[11px] font-sans font-semibold text-slate-400 bg-slate-50 shadow-sm">⌘ K</kbd>
+                        <button class="bg-slate-900 hover:bg-slate-800 text-white text-[14px] font-semibold py-2.5 px-6 rounded-xl transition-all shadow-sm flex items-center gap-2 group">
+                            检索网络
+                            <i data-lucide="arrow-right" class="w-4 h-4 group-hover:translate-x-1 transition-transform"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 下拉面板 (默认隐藏) -->
+                <div id="search-dropdown" class="hidden border-t border-slate-100 bg-white/50 backdrop-blur-md rounded-b-2xl overflow-hidden absolute w-full left-0 top-full mt-2 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.1)] border">
+                    <div class="p-2">
+                        <div class="px-3 py-2 text-[11px] font-bold text-slate-400 uppercase tracking-widest">高级用例推荐</div>
+                        <ul class="space-y-1">
+                            <li>
+                                <button class="w-full text-left px-3 py-3 rounded-xl hover:bg-blue-50 text-slate-700 hover:text-blue-700 font-medium transition-colors flex items-center gap-3 group">
+                                    <div class="p-1.5 bg-slate-100 rounded-md group-hover:bg-blue-100 transition-colors"><i data-lucide="git-merge" class="w-4 h-4"></i></div>
+                                    <span>找出给 vLLM 提交过底层 CUDA 算子优化 PR 的开发者</span>
+                                </button>
+                            </li>
+                            <li>
+                                <button class="w-full text-left px-3 py-3 rounded-xl hover:bg-purple-50 text-slate-700 hover:text-purple-700 font-medium transition-colors flex items-center gap-3 group">
+                                    <div class="p-1.5 bg-slate-100 rounded-md group-hover:bg-purple-100 transition-colors"><i data-lucide="book-open" class="w-4 h-4"></i></div>
+                                    <span>2024年 CVPR 一作，且在 GitHub 上有开源对应代码</span>
+                                </button>
+                            </li>
+                            <li>
+                                <button class="w-full text-left px-3 py-3 rounded-xl hover:bg-teal-50 text-slate-700 hover:text-teal-700 font-medium transition-colors flex items-center gap-3 group">
+                                    <div class="p-1.5 bg-slate-100 rounded-md group-hover:bg-teal-100 transition-colors"><i data-lucide="terminal-square" class="w-4 h-4"></i></div>
+                                    <span>Rust 熟练度高，且参与过 Transformer 推理框架构建</span>
+                                </button>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- 交互式证据引擎演示区 (Evidence Engine Visualizer) -->
+    <section class="w-full relative z-20 pb-32 pt-10">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-12 reveal-up">
+                <span class="text-[12px] font-bold text-slate-400 uppercase tracking-widest block mb-2">引擎原理解析</span>
+                <h2 class="text-2xl font-bold text-slate-800">悬停查看 AI 如何构建人才证据链</h2>
+            </div>
+
+            <!-- 图谱容器 -->
+            <div class="relative w-full bg-white/40 backdrop-blur-xl border border-slate-200/60 rounded-3xl p-8 lg:p-16 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.05)] flex flex-col lg:flex-row items-center justify-between gap-12 reveal-up">
+
+                <!-- SVG 连线层 (绝对定位) -->
+                <svg class="absolute inset-0 w-full h-full pointer-events-none hidden lg:block" style="z-index: 1;">
+                    <!-- 路径 1: GitHub -->
+                    <path id="path-github" d="M 300 120 C 450 120, 550 220, 700 220" fill="transparent" stroke="#e2e8f0" stroke-width="2" class="evidence-line" stroke-linecap="round"/>
+                    <!-- 路径 2: Papers -->
+                    <path id="path-papers" d="M 300 220 C 450 220, 550 220, 700 220" fill="transparent" stroke="#e2e8f0" stroke-width="2" class="evidence-line" stroke-linecap="round"/>
+                    <!-- 路径 3: Kaggle -->
+                    <path id="path-kaggle" d="M 300 320 C 450 320, 550 220, 700 220" fill="transparent" stroke="#e2e8f0" stroke-width="2" class="evidence-line" stroke-linecap="round"/>
+                </svg>
+
+                <!-- 左侧：数据源节点 -->
+                <div class="flex flex-col gap-6 w-full lg:w-1/3 relative z-10">
+                    <!-- 节点 1 -->
+                    <div class="evidence-node group glass-premium rounded-2xl p-5 cursor-crosshair transition-all hover:scale-105 hover:border-blue-300" data-target="github" data-score="45">
+                        <div class="flex items-center gap-4 mb-2">
+                            <div class="w-10 h-10 rounded-full bg-slate-900 flex items-center justify-center text-white shadow-sm">
+                                <i data-lucide="github" class="w-5 h-5"></i>
+                            </div>
+                            <div>
+                                <h4 class="font-bold text-slate-900 text-[15px]">代码贡献度</h4>
+                                <p class="text-[12px] text-slate-500 font-mono mt-0.5">API: api.github.com/users</p>
+                            </div>
+                        </div>
+                        <p class="text-[13px] text-slate-600 leading-relaxed">抓取 PR 记录、Issue 讨论及核心代码变更量（Lines of Code）。</p>
+                    </div>
+
+                    <!-- 节点 2 -->
+                    <div class="evidence-node group glass-premium rounded-2xl p-5 cursor-crosshair transition-all hover:scale-105 hover:border-blue-300" data-target="papers" data-score="30">
+                        <div class="flex items-center gap-4 mb-2">
+                            <div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white shadow-sm">
+                                <i data-lucide="book-open" class="w-5 h-5"></i>
+                            </div>
+                            <div>
+                                <h4 class="font-bold text-slate-900 text-[15px]">学术影响力</h4>
+                                <p class="text-[12px] text-slate-500 font-mono mt-0.5">Source: Google Scholar</p>
+                            </div>
+                        </div>
+                        <p class="text-[13px] text-slate-600 leading-relaxed">解析顶会（CVPR/NeurIPS）论文发表记录及真实引用率。</p>
+                    </div>
+
+                    <!-- 节点 3 -->
+                    <div class="evidence-node group glass-premium rounded-2xl p-5 cursor-crosshair transition-all hover:scale-105 hover:border-blue-300" data-target="kaggle" data-score="23">
+                        <div class="flex items-center gap-4 mb-2">
+                            <div class="w-10 h-10 rounded-full bg-cyan-500 flex items-center justify-center text-white shadow-sm">
+                                <i data-lucide="trophy" class="w-5 h-5"></i>
+                            </div>
+                            <div>
+                                <h4 class="font-bold text-slate-900 text-[15px]">竞赛与社区</h4>
+                                <p class="text-[12px] text-slate-500 font-mono mt-0.5">Source: Kaggle / HuggingFace</p>
+                            </div>
+                        </div>
+                        <p class="text-[13px] text-slate-600 leading-relaxed">验证模型开源下载量、竞赛排名及社区声望积累。</p>
+                    </div>
+                </div>
+
+                <!-- 右侧：动态计算的人才卡片 -->
+                <div class="w-full lg:w-5/12 relative z-10">
+                    <div id="result-card" class="bg-white rounded-[2rem] border border-slate-200 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.08)] p-8 relative overflow-hidden transition-all duration-500">
+                        <!-- 扫描光效 -->
+                        <div id="card-scanner" class="absolute inset-0 bg-gradient-to-b from-transparent via-blue-400/10 to-transparent h-[200%] -top-[100%] opacity-0 pointer-events-none transition-opacity"></div>
+
+                        <div class="flex justify-between items-start mb-6 relative z-10">
+                            <div class="flex gap-4 items-center">
+                                <div class="relative">
+                                    <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=WangWei&backgroundColor=ffdfbf" class="w-14 h-14 rounded-full border-2 border-white shadow-md z-10 relative">
+                                    <div class="absolute inset-0 bg-blue-400 rounded-full animate-ping opacity-20"></div>
+                                </div>
+                                <div>
+                                    <div class="h-5 w-24 bg-slate-100 rounded animate-pulse mb-2" id="name-skeleton"></div>
+                                    <h3 class="text-lg font-bold text-slate-900 hidden items-center gap-1" id="card-name">
+                                        Wang Wei <i data-lucide="badge-check" class="w-4 h-4 text-blue-500"></i>
+                                    </h3>
+                                    <p class="text-[12px] text-slate-500">AI Research Engineer</p>
+                                </div>
+                            </div>
+
+                            <!-- 动态分数 -->
+                            <div class="text-right">
+                                <div class="relative">
+                                    <svg class="w-16 h-16 transform -rotate-90">
+                                        <circle cx="32" cy="32" r="28" stroke="#f1f5f9" stroke-width="6" fill="none" />
+                                        <circle id="score-ring" cx="32" cy="32" r="28" stroke="#2563eb" stroke-width="6" fill="none" stroke-dasharray="175" stroke-dashoffset="175" class="transition-all duration-1000 ease-out" />
+                                    </svg>
+                                    <div class="absolute inset-0 flex flex-col items-center justify-center">
+                                        <span id="score-number" class="text-xl font-black text-slate-800">0</span>
+                                    </div>
+                                </div>
+                                <span class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1 block">Seeku 分数</span>
+                            </div>
+                        </div>
+
+                        <!-- 动态解析详情 -->
+                        <div class="bg-slate-50 rounded-xl p-4 border border-slate-100 h-28 flex flex-col justify-center relative z-10">
+                            <div id="card-status" class="text-sm font-medium text-slate-400 text-center flex items-center justify-center gap-2">
+                                <i data-lucide="mouse-pointer-click" class="w-4 h-4"></i>
+                                悬停左侧节点查看解析过程
+                            </div>
+
+                            <div id="card-details" class="hidden">
+                                <div class="text-[11px] font-bold text-blue-600 uppercase tracking-widest mb-2 flex items-center gap-1">
+                                    <i data-lucide="activity" class="w-3 h-3"></i> 实时解析结果
+                                </div>
+                                <p id="card-desc" class="text-[13px] text-slate-700 font-medium leading-relaxed font-mono">
+                                    <!-- JS 动态注入 -->
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-slate-100 py-12 relative z-20">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-6">
+            <div class="flex items-center gap-2">
+                <i data-lucide="cpu" class="w-4 h-4 text-slate-900"></i>
+                <span class="text-slate-900 font-bold tracking-tight text-sm">Seeku Inc.</span>
+            </div>
+            <div class="text-[12px] text-slate-400">构建于 2026 · 为技术招聘者打造</div>
+        </div>
+    </footer>
+
+    <script>
+        lucide.createIcons();
+
+        // --- 1. 打字机特效逻辑 ---
+        const queries = [
+            "找出给 vLLM 提交过底层 CUDA 算子优化 PR 的开发者",
+            "寻找近三年内有 CVPR 一作，且开源了模型权重的研究员",
+            "谁在 GitHub 上用 Rust 重写过 Transformer 推理框架？",
+            "Kaggle LLM 竞赛前 50 名，且熟悉 PyTorch DDP 的选手"
+        ];
+        const typeElement = document.getElementById('typewriter-text');
+        const searchInput = document.getElementById('ai-search-input');
+        let queryIndex = 0;
+        let charIndex = 0;
+        let isDeleting = false;
+        let typeTimeout;
+
+        function typeWriter() {
+            // 如果用户正在输入，停止打字机
+            if (document.activeElement === searchInput || searchInput.value !== "") {
+                typeElement.style.display = 'none';
+                return;
+            }
+            typeElement.style.display = 'flex';
+
+            const currentQuery = queries[queryIndex];
+
+            if (isDeleting) {
+                typeElement.innerHTML = currentQuery.substring(0, charIndex - 1);
+                charIndex--;
+            } else {
+                typeElement.innerHTML = currentQuery.substring(0, charIndex + 1);
+                charIndex++;
+            }
+
+            let typeSpeed = isDeleting ? 30 : 80;
+
+            if (!isDeleting && charIndex === currentQuery.length) {
+                typeSpeed = 2500; // 停留时间
+                isDeleting = true;
+            } else if (isDeleting && charIndex === 0) {
+                isDeleting = false;
+                queryIndex = (queryIndex + 1) % queries.length;
+                typeSpeed = 500;
+            }
+
+            typeTimeout = setTimeout(typeWriter, typeSpeed);
+        }
+        // 延迟启动打字机
+        setTimeout(typeWriter, 1000);
+
+        // --- 2. 交互式指令中心 (Command Hub) 逻辑 ---
+        const searchContainer = document.getElementById('search-box-container');
+        const searchBackdrop = document.getElementById('search-backdrop');
+        const searchDropdown = document.getElementById('search-dropdown');
+        const searchGlow = document.getElementById('search-glow');
+
+        searchInput.addEventListener('focus', () => {
+            clearTimeout(typeTimeout);
+            typeElement.style.display = 'none';
+            searchBackdrop.classList.add('active');
+            searchDropdown.classList.remove('hidden');
+            searchContainer.classList.add('ring-4', 'ring-blue-500/20', 'border-blue-500/50', 'scale-[1.02]', 'z-50');
+            searchGlow.classList.remove('opacity-0');
+            searchGlow.classList.add('opacity-100');
+        });
+
+        // 点击遮罩层关闭
+        searchBackdrop.addEventListener('click', () => {
+            searchInput.blur();
+            searchBackdrop.classList.remove('active');
+            searchDropdown.classList.add('hidden');
+            searchContainer.classList.remove('ring-4', 'ring-blue-500/20', 'border-blue-500/50', 'scale-[1.02]', 'z-50');
+            searchGlow.classList.remove('opacity-100');
+            searchGlow.classList.add('opacity-0');
+
+            if(searchInput.value === "") {
+                isDeleting = false;
+                charIndex = 0;
+                typeWriter();
+            }
+        });
+
+        // --- 3. 证据引擎可视化逻辑 (Evidence Engine Visualizer) ---
+        const nodes = document.querySelectorAll('.evidence-node');
+        const paths = document.querySelectorAll('.evidence-line');
+        const scoreNumber = document.getElementById('score-number');
+        const scoreRing = document.getElementById('score-ring');
+
+        const cardStatus = document.getElementById('card-status');
+        const cardDetails = document.getElementById('card-details');
+        const cardDesc = document.getElementById('card-desc');
+        const cardScanner = document.getElementById('card-scanner');
+        const nameSkeleton = document.getElementById('name-skeleton');
+        const cardName = document.getElementById('card-name');
+
+        const descriptions = {
+            'github': '发现 12 个 Merged PR，涉及 <span class="text-blue-600 font-bold">CUDA PagedAttention</span> 优化，代码质量极高，判定为 L5 级别。',
+            'papers': '关联到 Google Scholar 账号，<span class="text-blue-600 font-bold">CVPR 2024 一作</span>，论文被引用 450+ 次。',
+            'kaggle': '在 Kaggle LLM 推理优化竞赛中获得 <span class="text-blue-600 font-bold">Solo Gold Medal</span> (Top 1%)。'
+        };
+
+        let currentTotalScore = 0;
+
+        nodes.forEach(node => {
+            node.addEventListener('mouseenter', () => {
+                const target = node.getAttribute('data-target');
+                const scoreAdd = parseInt(node.getAttribute('data-score'));
+
+                // 激活 SVG 连线
+                document.getElementById(`path-${target}`).classList.add('active');
+
+                // 卡片扫描动画
+                cardScanner.style.opacity = '1';
+                cardScanner.style.transitionDuration = '1.5s';
+                cardScanner.style.transform = 'translateY(150%)';
+
+                // 切换文字信息
+                cardStatus.classList.add('hidden');
+                cardDetails.classList.remove('hidden');
+                cardDesc.innerHTML = descriptions[target];
+
+                // 显示真人名字
+                nameSkeleton.classList.add('hidden');
+                cardName.classList.remove('hidden');
+                cardName.classList.add('flex');
+
+                // 动态数字增加动画
+                let startScore = currentTotalScore;
+                currentTotalScore = Math.min(98, currentTotalScore + scoreAdd); // 上限98
+                animateValue(scoreNumber, startScore, currentTotalScore, 800);
+
+                // 更新环形进度条 (175 是周长，计算 offset)
+                const offset = 175 - (175 * currentTotalScore) / 100;
+                scoreRing.style.strokeDashoffset = offset;
+            });
+
+            node.addEventListener('mouseleave', () => {
+                const target = node.getAttribute('data-target');
+                document.getElementById(`path-${target}`).classList.remove('active');
+
+                // 重置扫描器
+                cardScanner.style.opacity = '0';
+                cardScanner.style.transitionDuration = '0s';
+                cardScanner.style.transform = 'translateY(-100%)';
+            });
+        });
+
+        // 数字递增动画函数
+        function animateValue(obj, start, end, duration) {
+            let startTimestamp = null;
+            const step = (timestamp) => {
+                if (!startTimestamp) startTimestamp = timestamp;
+                const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+                // 使用 easeOut 曲线
+                const easeOut = progress * (2 - progress);
+                obj.innerHTML = Math.floor(easeOut * (end - start) + start);
+                if (progress < 1) {
+                    window.requestAnimationFrame(step);
+                }
+            };
+            window.requestAnimationFrame(step);
+        }
+
+        // --- 4. 滚动视差浮现动画 (Intersection Observer) ---
+        const revealElements = document.querySelectorAll('.reveal-up');
+        const revealObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                    revealObserver.unobserve(entry.target); // 触发一次后取消观察
+                }
+            });
+        }, { threshold: 0.1, rootMargin: "0px 0px -50px 0px" });
+
+        revealElements.forEach(el => revealObserver.observe(el));
+
+    </script>
+</body>
+</html>

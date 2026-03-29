@@ -21,6 +21,10 @@
     "@seeku/llm": "workspace:*",
     "@seeku/search": "workspace:*",
     "@seeku/shared": "workspace:*",
-    "@seeku/workers": "workspace:*"
+    "@seeku/workers": "workspace:*",
+    "ansi-escapes": "^7.3.0",
+    "boxen": "^8.0.1",
+    "chalk": "^5.6.2",
+    "enquirer": "^2.4.1"
   }
 }

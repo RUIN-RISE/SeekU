@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Seeku UI Preview - Style G: Professional Navy</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700;900&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-navy: #0f172a;
+      --bg-light: #f1f5f9;
+      --bg-white: #ffffff;
+      --accent-teal: #0d9488;
+      --accent-emerald: #10b981;
+      --text-white: #f8fafc;
+      --text-dark: #1e293b;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+      --radius: 8px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Noto Sans SC', 'Source Sans 3', sans-serif;
+      background: var(--bg-light);
+      color: var(--text-dark);
+      min-height: 100vh;
+    }
+
+    .header {
+      background: var(--bg-navy);
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      animation: slideDown 0.5s ease-out;
+    }
+
+    .logo {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--text-white);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .logo-icon {
+      width: 32px;
+      height: 32px;
+      background: var(--accent-teal);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+
+    .nav {
+      display: flex;
+      gap: 8px;
+    }
+
+    .nav-item {
+      color: var(--text-white);
+      text-decoration: none;
+      padding: 8px 16px;
+      font-size: 14px;
+      font-weight: 500;
+      border-radius: 6px;
+      transition: background 0.2s;
+    }
+
+    .nav-item:hover { background: rgba(255, 255, 255, 0.1); }
+    .nav-item.active { background: var(--accent-teal); }
+
+    /* Two-column layout */
+    .main-layout {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: 24px;
+      padding: 24px 32px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    /* Sidebar filters */
+    .sidebar {
+      background: var(--bg-white);
+      border-radius: var(--radius);
+      padding: 20px;
+      box-shadow: var(--card-shadow);
+      animation: fadeIn 0.6s ease-out 0.2s both;
+    }
+
+    .sidebar-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .filter-group {
+      margin-bottom: 20px;
+    }
+
+    .filter-label {
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 8px;
+      display: block;
+    }
+
+    .filter-input {
+      width: 100%;
+      padding: 10px 12px;
+      font-size: 14px;
+      background: var(--bg-light);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      transition: border-color 0.2s;
+    }
+
+    .filter-input:focus {
+      outline: none;
+      border-color: var(--accent-teal);
+    }
+
+    /* Main content */
+    .main-content {
+      animation: fadeIn 0.6s ease-out 0.4s both;
+    }
+
+    .search-header {
+      background: var(--bg-white);
+      border-radius: var(--radius);
+      padding: 20px;
+      box-shadow: var(--card-shadow);
+      margin-bottom: 16px;
+    }
+
+    .search-input {
+      width: 100%;
+      padding: 12px 16px;
+      font-size: 16px;
+      background: var(--bg-light);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+
+    .search-input:focus {
+      outline: none;
+      border-color: var(--accent-teal);
+    }
+
+    .results-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .results-count {
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+
+    .results-count strong { color: var(--accent-teal); }
+
+    /* Cards - clean professional */
+    .candidate-card {
+      background: var(--bg-white);
+      border-radius: var(--radius);
+      padding: 20px;
+      box-shadow: var(--card-shadow);
+      margin-bottom: 12px;
+      cursor: pointer;
+      transition: box-shadow 0.2s;
+      animation: slideUp 0.4s ease-out both;
+      animation-delay: calc(var(--delay) * 0.08s);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .candidate-card:nth-child(1) { --delay: 1; }
+    .candidate-card:nth-child(2) { --delay: 2; }
+    .candidate-card:nth-child(3) { --delay: 3; }
+
+    .candidate-card:hover {
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .avatar {
+      width: 48px;
+      height: 48px;
+      background: var(--bg-navy);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-white);
+      font-weight: 700;
+      font-size: 18px;
+    }
+
+    .card-info { flex: 1; }
+
+    .candidate-name {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .candidate-headline {
+      color: var(--text-muted);
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+
+    .match-reasons {
+      display: flex;
+      gap: 6px;
+    }
+
+    .reason-tag {
+      background: rgba(13, 148, 136, 0.1);
+      color: var(--accent-teal);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .match-score {
+      background: var(--accent-teal);
+      color: var(--text-white);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 14px;
+      text-align: center;
+    }
+
+    .score-label {
+      font-size: 10px;
+      opacity: 0.8;
+      display: block;
+    }
+
+    /* Animations */
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="logo">
+      <div class="logo-icon">寻</div>
+      Seeku
+    </div>
+    <nav class="nav">
+      <a class="nav-item active" href="#">搜索</a>
+      <a class="nav-item" href="#">评估</a>
+      <a class="nav-item" href="#">管理</a>
+    </nav>
+  </header>
+
+  <main class="main-layout">
+    <aside class="sidebar">
+      <h2 class="sidebar-title">筛选条件</h2>
+      <div class="filter-group">
+        <label class="filter-label">地点</label>
+        <input class="filter-input" type="text" value="北京">
+      </div>
+      <div class="filter-group">
+        <label class="filter-label">技能</label>
+        <input class="filter-input" type="text" value="Python, RAG">
+      </div>
+      <div class="filter-group">
+        <label class="filter-label">经验年限</label>
+        <input class="filter-input" type="text" placeholder="不限">
+      </div>
+      <div class="filter-group">
+        <label class="filter-label">公司</label>
+        <input class="filter-input" type="text" placeholder="不限">
+      </div>
+    </aside>
+
+    <div class="main-content">
+      <div class="search-header">
+        <input class="search-input" type="text" placeholder="自然语言搜索，如：有RAG经验的Python工程师" value="AI工程师 北京">
+      </div>
+
+      <div class="results-header">
+        <span class="results-count">找到 <strong>12</strong> 位候选人</span>
+      </div>
+
+      <div class="candidate-card">
+        <div class="avatar">张</div>
+        <div class="card-info">
+          <h3 class="candidate-name">张明远</h3>
+          <p class="candidate-headline">字节跳动 · AI算法工程师 · 6年经验</p>
+          <div class="match-reasons">
+            <span class="reason-tag">Python</span>
+            <span class="reason-tag">RAG</span>
+            <span class="reason-tag">北京</span>
+          </div>
+        </div>
+        <div class="match-score">
+          <span class="score-label">匹配度</span>
+          94.2
+        </div>
+      </div>
+
+      <div class="candidate-card">
+        <div class="avatar">李</div>
+        <div class="card-info">
+          <h3 class="candidate-name">李思源</h3>
+          <p class="candidate-headline">阿里云 · 大模型研究员 · 4年经验</p>
+          <div class="match-reasons">
+            <span class="reason-tag">LLM</span>
+            <span class="reason-tag">向量</span>
+          </div>
+        </div>
+        <div class="match-score">
+          <span class="score-label">匹配度</span>
+          89.5
+        </div>
+      </div>
+
+      <div class="candidate-card">
+        <div class="avatar">王</div>
+        <div class="card-info">
+          <h3 class="candidate-name">王晓峰</h3>
+          <p class="candidate-headline">独立开发者 · NLP工程师 · 3年</p>
+          <div class="match-reasons">
+            <span class="reason-tag">NLP</span>
+            <span class="reason-tag">开源</span>
+          </div>
+        </div>
+        <div class="match-score">
+          <span class="score-label">匹配度</span>
+          82.1
+        </div>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

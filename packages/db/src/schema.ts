@@ -265,3 +265,18 @@ export type SearchDocument = typeof searchDocuments.$inferSelect;
 export type NewSearchDocument = typeof searchDocuments.$inferInsert;
 export type SearchEmbedding = typeof searchEmbeddings.$inferSelect;
 export type NewSearchEmbedding = typeof searchEmbeddings.$inferInsert;
+
+export const profileCache = pgTable("profile_cache", {
+  personId: uuid("person_id")
+    .primaryKey()
+    .references(() => persons.id, { onDelete: "cascade" }),
+  profile: jsonb("profile").$type<any>().notNull(),
+  overallScore: numeric("overall_score", { precision: 5, scale: 2 }),
+  cachedAt: timestamp("cached_at", { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true })
+    .default(sql`NOW() + INTERVAL '7 days'`)
+    .notNull(),
+});
+
+export type ProfileCache = typeof profileCache.$inferSelect;
+export type NewProfileCache = typeof profileCache.$inferInsert;
