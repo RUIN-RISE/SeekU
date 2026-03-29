@@ -39,8 +39,8 @@
 
 ### UI Layer
 
-- [ ] **UI-01**: Search page with natural language input box
-- [ ] **UI-02**: Results page with candidate cards (name, headline, match score, evidence preview)
+- [x] **UI-01**: Search page with natural language input box
+- [x] **UI-02**: Results page with candidate cards (name, headline, match score, evidence preview)
 - [ ] **UI-03**: Candidate detail page with evidence tabs (projects, repos, socials, signals)
 - [ ] **UI-04**: Admin page showing sync status, eval results, and manual trigger buttons
 - [ ] **UI-05**: Search refinement conversation UI (iteratively adjust conditions)
@@ -108,8 +108,8 @@
 | SEARCH-03 | Phase 3 | Pending |
 | SEARCH-04 | Phase 3 | Pending |
 | SEARCH-05 | Phase 4 | Complete (04-01) |
-| UI-01 | Phase 4 | Pending |
-| UI-02 | Phase 4 | Pending |
+| UI-01 | Phase 4 | Complete |
+| UI-02 | Phase 4 | Complete |
 | UI-03 | Phase 4 | Pending |
 | UI-04 | Phase 4 | Partial (backend 04-01) |
 | EVAL-01 | Phase 4 | Complete |
