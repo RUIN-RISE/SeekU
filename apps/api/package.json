@@ -14,7 +14,10 @@
   },
   "dependencies": {
     "@seeku/db": "workspace:*",
+    "@seeku/llm": "workspace:*",
+    "@seeku/search": "workspace:*",
     "@seeku/shared": "workspace:*",
+    "drizzle-orm": "^0.30.10",
     "fastify": "^5.3.3"
   }
 }

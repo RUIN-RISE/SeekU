@@ -12,6 +12,8 @@ import {
 } from "@seeku/db";
 import { OptOutRequestInputSchema, type SourceName } from "@seeku/shared";
 
+import { registerSearchRoutes } from "./routes/search.js";
+
 function inferSourceAndHandle(input: {
   source?: SourceName;
   sourceHandle?: string;
@@ -58,6 +60,8 @@ export function buildApiServer(db?: SeekuDatabase) {
   fastify.get("/health", async () => ({
     status: "ok"
   }));
+
+  registerSearchRoutes(fastify, database);
 
   fastify.post("/opt-out-requests", async (request, reply) => {
     const parsed = OptOutRequestInputSchema.safeParse(request.body);

@@ -1,0 +1,242 @@
+import {
+  createDatabaseConnection,
+  eq,
+  evidenceItems,
+  inArray,
+  isNull,
+  listAllPersons,
+  lt,
+  or,
+  persons,
+  searchDocuments,
+  searchEmbeddings,
+  type EvidenceItem,
+  type NewSearchDocument,
+  type NewSearchEmbedding,
+  type Person,
+  type SearchDocument,
+  type SeekuDatabase
+} from "@seeku/db";
+import type { LLMProvider } from "@seeku/llm";
+import { SiliconFlowProvider } from "@seeku/llm";
+import {
+  EmbeddingGenerator,
+  buildAllSearchDocuments,
+  type EmbeddingGeneratorConfig
+} from "@seeku/search";
+
+export interface SearchIndexWorkerConfig {
+  batchSize?: number;
+  embeddingBatchSize?: number;
+  provider?: LLMProvider;
+}
+
+export interface SearchDocumentSyncSummary {
+  personsProcessed: number;
+  documentsUpserted: number;
+  personIds: string[];
+}
+
+export interface SearchEmbeddingSyncSummary {
+  documentsProcessed: number;
+  embeddingsUpserted: number;
+  personIds: string[];
+}
+
+export interface SearchIndexRunSummary {
+  documents: SearchDocumentSyncSummary;
+  embeddings: SearchEmbeddingSyncSummary;
+}
+
+const DEFAULT_BATCH_SIZE = 100;
+
+function groupEvidence(items: EvidenceItem[]): Map<string, EvidenceItem[]> {
+  const grouped = new Map<string, EvidenceItem[]>();
+
+  for (const item of items) {
+    const current = grouped.get(item.personId) ?? [];
+    current.push(item);
+    grouped.set(item.personId, current);
+  }
+
+  return grouped;
+}
+
+export class SearchIndexWorker {
+  private readonly db: SeekuDatabase;
+  private readonly batchSize: number;
+  private readonly embeddingGenerator: EmbeddingGenerator;
+
+  constructor(db: SeekuDatabase, config: SearchIndexWorkerConfig = {}) {
+    this.db = db;
+    this.batchSize = config.batchSize ?? DEFAULT_BATCH_SIZE;
+    this.embeddingGenerator = new EmbeddingGenerator({
+      provider: config.provider ?? SiliconFlowProvider.fromEnv(),
+      batchSize: config.embeddingBatchSize ?? config.batchSize ?? DEFAULT_BATCH_SIZE
+    } satisfies EmbeddingGeneratorConfig);
+  }
+
+  private async resolvePersons(personIds?: string[]): Promise<Person[]> {
+    if (personIds && personIds.length > 0) {
+      return this.db.select().from(persons).where(inArray(persons.id, personIds));
+    }
+
+    return listAllPersons(this.db, this.batchSize);
+  }
+
+  private async loadEvidence(personIds: string[]) {
+    if (personIds.length === 0) {
+      return [];
+    }
+
+    return this.db.select().from(evidenceItems).where(inArray(evidenceItems.personId, personIds));
+  }
+
+  private async upsertDocument(document: NewSearchDocument) {
+    await this.db
+      .insert(searchDocuments)
+      .values(document)
+      .onConflictDoUpdate({
+        target: searchDocuments.personId,
+        set: {
+          docText: document.docText,
+          facetRole: document.facetRole,
+          facetLocation: document.facetLocation,
+          facetSource: document.facetSource,
+          facetTags: document.facetTags,
+          rankFeatures: document.rankFeatures,
+          updatedAt: document.updatedAt ?? new Date()
+        }
+      });
+  }
+
+  private async upsertEmbedding(embedding: NewSearchEmbedding) {
+    await this.db
+      .insert(searchEmbeddings)
+      .values(embedding)
+      .onConflictDoUpdate({
+        target: searchEmbeddings.personId,
+        set: {
+          embedding: embedding.embedding,
+          embeddingModel: embedding.embeddingModel,
+          embeddingDimension: embedding.embeddingDimension,
+          embeddedAt: embedding.embeddedAt ?? new Date()
+        }
+      });
+  }
+
+  async rebuildDocuments(personIds?: string[]): Promise<SearchDocumentSyncSummary> {
+    const people = await this.resolvePersons(personIds);
+    const ids = people.map((person) => person.id);
+    const evidence = await this.loadEvidence(ids);
+    const documents = await buildAllSearchDocuments(people, groupEvidence(evidence));
+
+    for (const document of documents) {
+      await this.upsertDocument(document);
+    }
+
+    return {
+      personsProcessed: people.length,
+      documentsUpserted: documents.length,
+      personIds: ids
+    };
+  }
+
+  private async resolveDocumentsForEmbedding(personIds?: string[]): Promise<SearchDocument[]> {
+    if (personIds && personIds.length > 0) {
+      return this.db
+        .select()
+        .from(searchDocuments)
+        .where(inArray(searchDocuments.personId, personIds));
+    }
+
+    const rows = await this.db
+      .select({
+        document: searchDocuments
+      })
+      .from(searchDocuments)
+      .leftJoin(searchEmbeddings, eq(searchEmbeddings.personId, searchDocuments.personId))
+      .where(
+        or(
+          isNull(searchEmbeddings.personId),
+          lt(searchEmbeddings.embeddedAt, searchDocuments.updatedAt)
+        )
+      )
+      .limit(this.batchSize);
+
+    return rows.map((row) => row.document);
+  }
+
+  async rebuildEmbeddings(personIds?: string[]): Promise<SearchEmbeddingSyncSummary> {
+    const documents = await this.resolveDocumentsForEmbedding(personIds);
+    const embeddings = await this.embeddingGenerator.generateAllForDatabase(documents);
+
+    for (const embedding of embeddings) {
+      await this.upsertEmbedding(embedding);
+    }
+
+    return {
+      documentsProcessed: documents.length,
+      embeddingsUpserted: embeddings.length,
+      personIds: documents.map((document) => document.personId)
+    };
+  }
+
+  async rebuild(personIds?: string[]): Promise<SearchIndexRunSummary> {
+    const documents = await this.rebuildDocuments(personIds);
+    const embeddings = await this.rebuildEmbeddings(documents.personIds);
+
+    return {
+      documents,
+      embeddings
+    };
+  }
+}
+
+export async function runSearchIndexWorker(
+  personIds?: string[],
+  db?: SeekuDatabase,
+  config: SearchIndexWorkerConfig = {}
+) {
+  const ownedConnection = db ? null : createDatabaseConnection();
+  const database = db ?? ownedConnection!.db;
+
+  try {
+    const worker = new SearchIndexWorker(database, config);
+    return await worker.rebuildDocuments(personIds);
+  } finally {
+    await ownedConnection?.close();
+  }
+}
+
+export async function runSearchEmbeddingWorker(
+  personIds?: string[],
+  db?: SeekuDatabase,
+  config: SearchIndexWorkerConfig = {}
+) {
+  const ownedConnection = db ? null : createDatabaseConnection();
+  const database = db ?? ownedConnection!.db;
+
+  try {
+    const worker = new SearchIndexWorker(database, config);
+    return await worker.rebuildEmbeddings(personIds);
+  } finally {
+    await ownedConnection?.close();
+  }
+}
+
+export async function runSearchRebuildWorker(
+  personIds?: string[],
+  db?: SeekuDatabase,
+  config: SearchIndexWorkerConfig = {}
+) {
+  const ownedConnection = db ? null : createDatabaseConnection();
+  const database = db ?? ownedConnection!.db;
+
+  try {
+    const worker = new SearchIndexWorker(database, config);
+    return await worker.rebuild(personIds);
+  } finally {
+    await ownedConnection?.close();
+  }
+}

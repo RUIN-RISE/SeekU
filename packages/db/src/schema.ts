@@ -221,3 +221,47 @@ export type PersonAlias = typeof personAliases.$inferSelect;
 export type NewPersonAlias = typeof personAliases.$inferInsert;
 export type EvidenceItem = typeof evidenceItems.$inferSelect;
 export type NewEvidenceItem = typeof evidenceItems.$inferInsert;
+
+// Search infrastructure tables
+
+export interface RankFeatures {
+  evidenceCount: number;
+  projectCount: number;
+  repoCount: number;
+  followerCount: number;
+  freshness: number;
+}
+
+export const searchDocuments = pgTable("search_documents", {
+  personId: uuid("person_id")
+    .notNull()
+    .references(() => persons.id, { onDelete: "cascade" })
+    .primaryKey(),
+  docText: text("doc_text").notNull(),
+  facetRole: text("facet_role").array().notNull().default(sql`'{}'::text[]`),
+  facetLocation: text("facet_location").array().notNull().default(sql`'{}'::text[]`),
+  facetSource: text("facet_source").array().notNull().default(sql`'{}'::text[]`),
+  facetTags: text("facet_tags").array().notNull().default(sql`'{}'::text[]`),
+  rankFeatures: jsonb("rank_features")
+    .$type<RankFeatures>()
+    .default(sql`'{}'::jsonb`)
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+});
+
+export const searchEmbeddings = pgTable("search_embeddings", {
+  personId: uuid("person_id")
+    .notNull()
+    .references(() => persons.id, { onDelete: "cascade" })
+    .primaryKey(),
+  // Note: embedding stored as text in schema, actual vector(4096) created via migration
+  embedding: text("embedding").notNull(),
+  embeddingModel: text("embedding_model").notNull(),
+  embeddingDimension: numeric("embedding_dimension").notNull(),
+  embeddedAt: timestamp("embedded_at", { withTimezone: true }).defaultNow().notNull()
+});
+
+export type SearchDocument = typeof searchDocuments.$inferSelect;
+export type NewSearchDocument = typeof searchDocuments.$inferInsert;
+export type SearchEmbedding = typeof searchEmbeddings.$inferSelect;
+export type NewSearchEmbedding = typeof searchEmbeddings.$inferInsert;

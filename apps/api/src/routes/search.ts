@@ -1,0 +1,233 @@
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+
+import {
+  and,
+  evidenceItems,
+  eq,
+  inArray,
+  persons,
+  searchDocuments,
+  type EvidenceItem,
+  type SearchDocument,
+  type SeekuDatabase
+} from "@seeku/db";
+import { SiliconFlowProvider } from "@seeku/llm";
+import {
+  HybridRetriever,
+  QueryPlanner,
+  Reranker,
+  type QueryIntent,
+  type RerankResult,
+  type RetrieverFilters
+} from "@seeku/search";
+
+interface SearchRequestBody {
+  query: string;
+  limit?: number;
+  offset?: number;
+  filters?: {
+    locations?: string[];
+    sources?: string[];
+  };
+}
+
+interface SearchResultCard {
+  personId: string;
+  name: string;
+  headline: string | null;
+  matchScore: number;
+  matchReasons: string[];
+  evidencePreview: Array<{
+    type: string;
+    title: string | null;
+    url: string | null;
+    stars?: number;
+  }>;
+}
+
+interface SearchResponseBody {
+  results: SearchResultCard[];
+  total: number;
+  intent: QueryIntent;
+}
+
+interface SearchServices {
+  provider: SiliconFlowProvider;
+  planner: QueryPlanner;
+  retriever: HybridRetriever;
+  reranker: Reranker;
+}
+
+const DEFAULT_LIMIT = 20;
+const MAX_LIMIT = 50;
+const serviceCache = new WeakMap<SeekuDatabase, SearchServices>();
+
+function parseFilters(input: unknown): RetrieverFilters {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return {};
+  }
+
+  const value = input as { locations?: unknown; sources?: unknown };
+  const normalize = (items: unknown): string[] | undefined => {
+    if (!Array.isArray(items)) {
+      return undefined;
+    }
+
+    const normalized = items
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean);
+
+    return normalized.length > 0 ? [...new Set(normalized)] : undefined;
+  };
+
+  return {
+    locations: normalize(value.locations),
+    sources: normalize(value.sources)
+  };
+}
+
+function parseBody(body: unknown): SearchRequestBody {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new Error("Request body must be an object.");
+  }
+
+  const value = body as Record<string, unknown>;
+  const query = typeof value.query === "string" ? value.query.trim() : "";
+  const limit = typeof value.limit === "number" ? value.limit : DEFAULT_LIMIT;
+  const offset = typeof value.offset === "number" ? value.offset : 0;
+
+  if (!query) {
+    throw new Error("query is required.");
+  }
+
+  return {
+    query,
+    limit: Math.max(1, Math.min(MAX_LIMIT, Math.floor(limit))),
+    offset: Math.max(0, Math.floor(offset)),
+    filters: parseFilters(value.filters)
+  };
+}
+
+function getSearchServices(db: SeekuDatabase): SearchServices {
+  const cached = serviceCache.get(db);
+  if (cached) {
+    return cached;
+  }
+
+  const provider = SiliconFlowProvider.fromEnv();
+  const services: SearchServices = {
+    provider,
+    planner: new QueryPlanner({ provider }),
+    retriever: new HybridRetriever({ db, provider, limit: MAX_LIMIT }),
+    reranker: new Reranker()
+  };
+
+  serviceCache.set(db, services);
+  return services;
+}
+
+function groupEvidence(items: EvidenceItem[]): Map<string, EvidenceItem[]> {
+  const grouped = new Map<string, EvidenceItem[]>();
+
+  for (const item of items) {
+    const current = grouped.get(item.personId) ?? [];
+    current.push(item);
+    grouped.set(item.personId, current);
+  }
+
+  return grouped;
+}
+
+function buildResponseCard(
+  result: RerankResult,
+  person: { primaryName: string; primaryHeadline: string | null } | undefined,
+  evidence: EvidenceItem[]
+): SearchResultCard {
+  return {
+    personId: result.personId,
+    name: person?.primaryName ?? "Unknown",
+    headline: person?.primaryHeadline ?? null,
+    matchScore: result.finalScore,
+    matchReasons:
+      result.matchReasons.length > 0
+        ? result.matchReasons
+        : ["matched by hybrid keyword and semantic retrieval"],
+    evidencePreview: evidence.slice(0, 3).map((item) => ({
+      type: item.evidenceType,
+      title: item.title ?? null,
+      url: item.url ?? null,
+      stars:
+        typeof item.metadata?.stargazers_count === "number"
+          ? item.metadata.stargazers_count
+          : undefined
+    }))
+  };
+}
+
+async function handleSearch(
+  db: SeekuDatabase,
+  request: FastifyRequest,
+  reply: FastifyReply
+): Promise<SearchResponseBody | ReturnType<FastifyReply["status"]>> {
+  let body: SearchRequestBody;
+
+  try {
+    body = parseBody(request.body);
+  } catch (error) {
+    return reply.status(400).send({
+      error: "invalid_request",
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
+
+  const services = getSearchServices(db);
+  const intent = await services.planner.parse(body.query);
+  const queryEmbedding = await services.provider.embed(intent.rawQuery);
+  const retrieved = await services.retriever.retrieve(intent, {
+    filters: body.filters,
+    embedding: queryEmbedding.embedding
+  });
+
+  if (retrieved.length === 0) {
+    return {
+      results: [],
+      total: 0,
+      intent
+    };
+  }
+
+  const personIds = retrieved.map((item) => item.personId);
+  const [documents, evidence, people] = await Promise.all([
+    db.select().from(searchDocuments).where(inArray(searchDocuments.personId, personIds)),
+    db.select().from(evidenceItems).where(inArray(evidenceItems.personId, personIds)),
+    db
+      .select({
+        id: persons.id,
+        primaryName: persons.primaryName,
+        primaryHeadline: persons.primaryHeadline
+      })
+      .from(persons)
+      .where(and(eq(persons.searchStatus, "active"), inArray(persons.id, personIds)))
+  ]);
+
+  const documentMap = new Map<string, SearchDocument>(
+    documents.map((document) => [document.personId, document])
+  );
+  const evidenceMap = groupEvidence(evidence);
+  const personMap = new Map(people.map((person) => [person.id, person]));
+  const reranked = services.reranker.rerank(retrieved, intent, documentMap, evidenceMap);
+  const paged = reranked.slice(body.offset ?? 0, (body.offset ?? 0) + (body.limit ?? DEFAULT_LIMIT));
+
+  return {
+    results: paged.map((result) =>
+      buildResponseCard(result, personMap.get(result.personId), evidenceMap.get(result.personId) ?? [])
+    ),
+    total: reranked.length,
+    intent
+  };
+}
+
+export function registerSearchRoutes(server: FastifyInstance, db: SeekuDatabase) {
+  server.post("/search", async (request, reply) => handleSearch(db, request, reply));
+}

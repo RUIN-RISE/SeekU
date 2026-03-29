@@ -3,7 +3,10 @@ import "dotenv/config";
 import {
   runEvidenceStorageWorker,
   runGithubSync,
-  runIdentityResolutionWorker
+  runIdentityResolutionWorker,
+  runSearchEmbeddingWorker,
+  runSearchIndexWorker,
+  runSearchRebuildWorker
 } from "@seeku/workers";
 
 import { runBonjourSyncJob } from "./index.js";
@@ -87,9 +90,30 @@ async function main() {
       .map((value) => value.trim())
       .filter(Boolean);
     result = await runEvidenceStorageWorker(personIds);
+  } else if (command === "search-index") {
+    const personIds = parsed.args
+      .get("person-ids")
+      ?.split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    result = await runSearchIndexWorker(personIds);
+  } else if (command === "search-embeddings") {
+    const personIds = parsed.args
+      .get("person-ids")
+      ?.split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    result = await runSearchEmbeddingWorker(personIds);
+  } else if (command === "rebuild-search") {
+    const personIds = parsed.args
+      .get("person-ids")
+      ?.split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    result = await runSearchRebuildWorker(personIds);
   } else {
     throw new Error(
-      "Unknown command. Use one of: sync-bonjour, sync-github, resolve-identities, store-evidence"
+      "Unknown command. Use one of: sync-bonjour, sync-github, resolve-identities, store-evidence, search-index, search-embeddings, rebuild-search"
     );
   }
 

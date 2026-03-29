@@ -1,3 +1,4 @@
+export { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
@@ -6,6 +7,15 @@ import * as schema from "./schema.js";
 
 export * from "./schema.js";
 export * from "./repositories.js";
+
+// Re-export search-related types
+export type {
+  SearchDocument,
+  NewSearchDocument,
+  SearchEmbedding,
+  NewSearchEmbedding,
+  RankFeatures
+} from "./schema.js";
 
 export type SeekuDatabase = PostgresJsDatabase<typeof schema>;
 

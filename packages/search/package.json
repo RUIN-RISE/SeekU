@@ -1,28 +1,21 @@
 {
-  "name": "@seeku/workers",
+  "name": "@seeku/search",
   "version": "0.0.1",
-  "private": true,
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    }
-  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "lint": "echo 'No lint configured for @seeku/workers'",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@seeku/adapters": "workspace:*",
     "@seeku/db": "workspace:*",
-    "@seeku/identity": "workspace:*",
     "@seeku/llm": "workspace:*",
-    "@seeku/search": "workspace:*",
     "@seeku/shared": "workspace:*",
     "drizzle-orm": "^0.30.10"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "typescript": "^5.8.2"
   }
 }
