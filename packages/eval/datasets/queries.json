@@ -1,0 +1,352 @@
+[
+  {
+    "id": "q001",
+    "text": "寻找北京的AI算法工程师，有PyTorch经验",
+    "category": "role_skill_location",
+    "expectedRoles": ["engineer", "algorithm"],
+    "expectedSkills": ["pytorch", "ai"]
+  },
+  {
+    "id": "q002",
+    "text": "需要RAG系统开发经验的高级工程师",
+    "category": "skill_experience",
+    "expectedRoles": ["engineer"],
+    "expectedSkills": ["rag", "llm"]
+  },
+  {
+    "id": "q003",
+    "text": "上海的大模型推理优化专家",
+    "category": "role_skill_location",
+    "expectedRoles": ["researcher", "engineer"],
+    "expectedSkills": ["llm", "inference", "optimization"]
+  },
+  {
+    "id": "q004",
+    "text": "Python机器学习工程师",
+    "category": "pure_skill",
+    "expectedRoles": ["engineer"],
+    "expectedSkills": ["python", "machine-learning"]
+  },
+  {
+    "id": "q005",
+    "text": "深圳的计算机视觉算法研究员",
+    "category": "role_skill_location",
+    "expectedRoles": ["researcher"],
+    "expectedSkills": ["computer-vision", "algorithm"]
+  },
+  {
+    "id": "q006",
+    "text": "NLP方向的研究科学家，有论文发表经验",
+    "category": "complex_combination",
+    "expectedRoles": ["researcher", "scientist"],
+    "expectedSkills": ["nlp", "research"]
+  },
+  {
+    "id": "q007",
+    "text": "Transformer架构专家",
+    "category": "pure_skill",
+    "expectedRoles": ["researcher", "engineer"],
+    "expectedSkills": ["transformer", "deep-learning"]
+  },
+  {
+    "id": "q008",
+    "text": "杭州的深度学习工程师",
+    "category": "role_location",
+    "expectedRoles": ["engineer"],
+    "expectedSkills": ["deep-learning"]
+  },
+  {
+    "id": "q009",
+    "text": "大语言模型微调经验丰富的工程师",
+    "category": "skill_experience",
+    "expectedRoles": ["engineer"],
+    "expectedSkills": ["llm", "fine-tuning"]
+  },
+  {
+    "id": "q010",
+    "text": "生成式AI产品负责人",
+    "category": "role_location",
+    "expectedRoles": ["lead", "product"],
+    "expectedSkills": ["generative-ai"]
+  },
+  {
+    "id": "q011",
+    "text": "北京的多模态算法研究员",
+    "category": "role_skill_location",
+    "expectedRoles": ["researcher"],
+    "expectedSkills": ["multimodal", "algorithm"]
+  },
+  {
+    "id": "q012",
+    "text": "PyTorch框架贡献者",
+    "category": "niche_domain",
+    "expectedRoles": ["engineer", "researcher"],
+    "expectedSkills": ["pytorch", "open-source"]
+  },
+  {
+    "id": "q013",
+    "text": "推荐系统算法专家",
+    "category": "pure_skill",
+    "expectedRoles": ["engineer", "researcher"],
+    "expectedSkills": ["recommendation-system", "algorithm"]
+  },
+  {
+    "id": "q014",
+    "text": "强化学习研究工程师",
+    "category": "skill_experience",
+    "expectedRoles": ["researcher", "engineer"],
+    "expectedSkills": ["reinforcement-learning"]
+  },
+  {
+    "id": "q015",
+    "text": "上海的AI创业公司CTO",
+    "category": "role_location",
+    "expectedRoles": ["cto", "founder"],
+    "expectedSkills": ["ai", "leadership"]
+  },
+  {
+    "id": "q016",
+    "text": "Agent开发经验丰富的工程师",
+    "category": "niche_domain",
+    "expectedRoles": ["engineer"],
+    "expectedSkills": ["agent", "llm"]
+  },
+  {
+    "id": "q017",
+    "text": "广州的AI后端开发工程师",
+    "category": "role_skill_location",
+    "expectedRoles": ["engineer"],
+    "expectedSkills": ["backend", "ai"]
+  },
+  {
+    "id": "q018",
+    "text": "知识图谱构建专家",
+    "category": "pure_skill",
+    "expectedRoles": ["engineer", "researcher"],
+    "expectedSkills": ["knowledge-graph", "nlp"]
+  },
+  {
+    "id": "q019",
+    "text": "有开源项目贡献的AI工程师",
+    "category": "complex_combination",
+    "expectedRoles": ["engineer"],
+    "expectedSkills": ["ai", "open-source"]
+  },
+  {
+    "id": "q020",
+    "text": "语音识别算法研究员",
+    "category": "skill_experience",
+    "expectedRoles": ["researcher"],
+    "expectedSkills": ["speech-recognition", "algorithm"]
+  },
+  {
+    "id": "q021",
+    "text": "深圳的自动驾驶感知算法工程师",
+    "category": "role_skill_location",
+    "expectedRoles": ["engineer"],
+    "expectedSkills": ["autonomous-driving", "perception", "algorithm"]
+  },
+  {
+    "id": "q022",
+    "text": "机器学习平台开发工程师",
+    "category": "role_location",
+    "expectedRoles": ["engineer"],
+    "expectedSkills": ["ml-platform", "infrastructure"]
+  },
+  {
+    "id": "q023",
+    "text": "图像生成模型研究专家",
+    "category": "pure_skill",
+    "expectedRoles": ["researcher"],
+    "expectedSkills": ["image-generation", "diffusion"]
+  },
+  {
+    "id": "q024",
+    "text": "北京的可解释AI研究员",
+    "category": "niche_domain",
+    "expectedRoles": ["researcher"],
+    "expectedSkills": ["explainable-ai", "interpretability"]
+  },
+  {
+    "id": "q025",
+    "text": "大模型应用开发工程师，熟悉LangChain",
+    "category": "skill_experience",
+    "expectedRoles": ["engineer"],
+    "expectedSkills": ["llm", "langchain"]
+  },
+  {
+    "id": "q026",
+    "text": "上海的NLP算法工程师",
+    "category": "role_skill_location",
+    "expectedRoles": ["engineer"],
+    "expectedSkills": ["nlp", "algorithm"]
+  },
+  {
+    "id": "q027",
+    "text": "数据科学家，有AI产品落地经验",
+    "category": "complex_combination",
+    "expectedRoles": ["scientist"],
+    "expectedSkills": ["data-science", "ai-product"]
+  },
+  {
+    "id": "q028",
+    "text": "分布式训练工程师",
+    "category": "pure_skill",
+    "expectedRoles": ["engineer"],
+    "expectedSkills": ["distributed-training", "infrastructure"]
+  },
+  {
+    "id": "q029",
+    "text": "杭州的AI基础架构工程师",
+    "category": "role_location",
+    "expectedRoles": ["engineer"],
+    "expectedSkills": ["ai-infrastructure"]
+  },
+  {
+    "id": "q030",
+    "text": "对话系统开发专家",
+    "category": "skill_experience",
+    "expectedRoles": ["engineer", "researcher"],
+    "expectedSkills": ["dialogue-system", "nlp"]
+  },
+  {
+    "id": "q031",
+    "text": "北京AI研究院的高级研究员",
+    "category": "complex_combination",
+    "expectedRoles": ["researcher"],
+    "expectedSkills": ["ai", "research"]
+  },
+  {
+    "id": "q032",
+    "text": "图神经网络算法专家",
+    "category": "pure_skill",
+    "expectedRoles": ["researcher", "engineer"],
+    "expectedSkills": ["graph-neural-network", "algorithm"]
+  },
+  {
+    "id": "q033",
+    "text": "深圳的AI芯片软件工程师",
+    "category": "role_skill_location",
+    "expectedRoles": ["engineer"],
+    "expectedSkills": ["ai-chip", "software"]
+  },
+  {
+    "id": "q034",
+    "text": "模型压缩与量化专家",
+    "category": "niche_domain",
+    "expectedRoles": ["engineer", "researcher"],
+    "expectedSkills": ["model-compression", "quantization"]
+  },
+  {
+    "id": "q035",
+    "text": "AI产品经理，有大模型产品经验",
+    "category": "skill_experience",
+    "expectedRoles": ["product"],
+    "expectedSkills": ["ai", "llm"]
+  },
+  {
+    "id": "q036",
+    "text": "上海的计算机视觉工程师",
+    "category": "role_location",
+    "expectedRoles": ["engineer"],
+    "expectedSkills": ["computer-vision"]
+  },
+  {
+    "id": "q037",
+    "text": "文本Embedding模型研究专家",
+    "category": "pure_skill",
+    "expectedRoles": ["researcher"],
+    "expectedSkills": ["embedding", "nlp"]
+  },
+  {
+    "id": "q038",
+    "text": "北京的大模型训练工程师",
+    "category": "role_skill_location",
+    "expectedRoles": ["engineer"],
+    "expectedSkills": ["llm", "training"]
+  },
+  {
+    "id": "q039",
+    "text": "有顶级会议论文的AI研究员",
+    "category": "complex_combination",
+    "expectedRoles": ["researcher"],
+    "expectedSkills": ["ai", "research"]
+  },
+  {
+    "id": "q040",
+    "text": "AutoML算法工程师",
+    "category": "skill_experience",
+    "expectedRoles": ["engineer"],
+    "expectedSkills": ["automl", "algorithm"]
+  },
+  {
+    "id": "q041",
+    "text": "广州的机器学习研究员",
+    "category": "role_location",
+    "expectedRoles": ["researcher"],
+    "expectedSkills": ["machine-learning"]
+  },
+  {
+    "id": "q042",
+    "text": "联邦学习研究专家",
+    "category": "niche_domain",
+    "expectedRoles": ["researcher"],
+    "expectedSkills": ["federated-learning", "privacy"]
+  },
+  {
+    "id": "q043",
+    "text": "杭州的AI安全研究员",
+    "category": "role_skill_location",
+    "expectedRoles": ["researcher"],
+    "expectedSkills": ["ai-safety", "security"]
+  },
+  {
+    "id": "q044",
+    "text": "Prompt Engineering专家",
+    "category": "pure_skill",
+    "expectedRoles": ["engineer", "researcher"],
+    "expectedSkills": ["prompt-engineering", "llm"]
+  },
+  {
+    "id": "q045",
+    "text": "上海的大模型评测工程师",
+    "category": "role_skill_location",
+    "expectedRoles": ["engineer"],
+    "expectedSkills": ["llm", "evaluation"]
+  },
+  {
+    "id": "q046",
+    "text": "医疗AI算法研究员",
+    "category": "skill_experience",
+    "expectedRoles": ["researcher"],
+    "expectedSkills": ["medical-ai", "algorithm"]
+  },
+  {
+    "id": "q047",
+    "text": "北京的数据标注平台工程师",
+    "category": "role_skill_location",
+    "expectedRoles": ["engineer"],
+    "expectedSkills": ["data-annotation", "platform"]
+  },
+  {
+    "id": "q048",
+    "text": "视频理解算法专家",
+    "category": "pure_skill",
+    "expectedRoles": ["researcher", "engineer"],
+    "expectedSkills": ["video-understanding", "computer-vision"]
+  },
+  {
+    "id": "q049",
+    "text": "深圳的AI创业公司联合创始人",
+    "category": "complex_combination",
+    "expectedRoles": ["founder", "cto"],
+    "expectedSkills": ["ai", "startup"]
+  },
+  {
+    "id": "q050",
+    "text": "向量数据库开发工程师",
+    "category": "skill_experience",
+    "expectedRoles": ["engineer"],
+    "expectedSkills": ["vector-database", "infrastructure"]
+  }
+]
