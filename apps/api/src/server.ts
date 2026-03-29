@@ -1,6 +1,7 @@
 import "dotenv/config";
 
 import Fastify from "fastify";
+import cors from "@fastify/cors";
 
 import {
   createDatabaseConnection,
@@ -51,9 +52,13 @@ function inferSourceAndHandle(input: {
   };
 }
 
-export function buildApiServer(db?: SeekuDatabase) {
+export async function buildApiServer(db?: SeekuDatabase) {
   const fastify = Fastify({
     logger: true
+  });
+
+  await fastify.register(cors, {
+    origin: true
   });
 
   const ownedConnection = db ? null : createDatabaseConnection();
@@ -144,8 +149,8 @@ export function buildApiServer(db?: SeekuDatabase) {
 }
 
 async function main() {
-  const server = buildApiServer();
-  const port = Number(process.env.API_PORT ?? "3001");
+  const server = await buildApiServer();
+  const port = Number(process.env.API_PORT ?? "3000");
   await server.listen({
     host: "0.0.0.0",
     port
