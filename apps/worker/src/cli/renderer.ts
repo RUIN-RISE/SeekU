@@ -1,12 +1,12 @@
 import { Person, EvidenceItem, SearchDocument } from "@seeku/db";
-import { MultiDimensionProfile, ScoredCandidate, SearchConditions } from "./types.js";
+import {
+  ComparisonEntry,
+  MultiDimensionProfile,
+  ScoredCandidate,
+  SearchConditions
+} from "./types.js";
 import chalk from "chalk";
 import boxen from "boxen";
-
-interface ComparisonEntry {
-  candidate: ScoredCandidate;
-  profile: MultiDimensionProfile;
-}
 
 export class TerminalRenderer {
   renderProfile(
@@ -150,25 +150,60 @@ ${chalk.dim("下一步：back 返回 | o 打开 Bonjour | why 评分依据 | ref
     );
   }
 
-  renderComparison(entries: ComparisonEntry[]): string {
+  renderComparison(entries: ComparisonEntry[], conditions?: SearchConditions): string {
+    const recommended = [...entries].sort((left, right) => right.decisionScore - left.decisionScore)[0];
+    const contextLine = conditions
+      ? chalk.dim(`当前判断上下文：${this.formatConditionsSummary(conditions)}`)
+      : chalk.dim("当前判断上下文：未提供");
+
     const content = entries
       .map((entry) => {
-        const { candidate, profile } = entry;
+        const { candidate, profile, topEvidence } = entry;
+        const titlePrefix = entry.shortlistIndex ? `#${entry.shortlistIndex} ` : "";
+        const sourceBadge = this.formatSourceBadge(candidate.sources);
+        const freshness = this.formatFreshness(candidate.latestEvidenceAt, candidate.lastSyncedAt);
+        const bonjourLine = candidate.bonjourUrl
+          ? chalk.cyan(`🔗 Bonjour: ${candidate.bonjourUrl}`)
+          : chalk.dim("🔗 Bonjour: 无链接");
+        const evidenceLines =
+          topEvidence.length > 0
+            ? topEvidence
+                .map((item, index) => {
+                  const freshnessLabel = item.freshnessLabel
+                    ? chalk.dim(` · ${item.freshnessLabel}`)
+                    : "";
+                  return `  ${index + 1}. ${chalk.cyan(`[${item.sourceLabel}]`)} ${chalk.dim(`[${item.evidenceType}]`)} ${item.title}${freshnessLabel}`;
+                })
+                .join("\n")
+            : chalk.dim("  暂无可展示的高价值证据");
+
         return [
-          `${chalk.bold.blueBright(candidate.name)} ${chalk.dim("|")} ${candidate.headline || "No headline"}`,
-          `综合分 ${chalk.green(candidate.matchScore.toFixed(1))} | 技术 ${profile.dimensions.techMatch.toFixed(0)} | 项目 ${profile.dimensions.projectDepth.toFixed(0)} | 地点 ${profile.dimensions.locationMatch.toFixed(0)}`,
-          `为什么匹配：${candidate.matchReason || "与本轮条件相关"}`,
-          `摘要：${profile.summary}`
+          `${chalk.bold.blueBright(`${titlePrefix}${candidate.name}`)} ${chalk.dim("|")} ${candidate.headline || "No headline"}`,
+          `${chalk.bold(entry.decisionTag)} · 综合分 ${chalk.green(candidate.matchScore.toFixed(1))} · ${sourceBadge} ${freshness}`,
+          `六维判断：技术 ${profile.dimensions.techMatch.toFixed(0)} | 项目 ${profile.dimensions.projectDepth.toFixed(0)} | 地点 ${profile.dimensions.locationMatch.toFixed(0)} | 稳健 ${profile.dimensions.careerStability.toFixed(0)}`,
+          `为什么值得比较：${candidate.matchReason || "与本轮条件相关"}`,
+          bonjourLine,
+          `${chalk.bold("Top Evidence")}\n${evidenceLines}`,
+          `${chalk.bold("Recommendation")}：${entry.recommendation}`,
+          `${chalk.bold("Next Click")}：${entry.nextStep}`
         ].join("\n");
       })
-      .join(`\n${chalk.dim("-".repeat(64))}\n`);
+      .join(`\n${chalk.dim("─".repeat(72))}\n`);
 
-    return boxen(content, {
+    const recommendationBlock = recommended
+      ? [
+          `${chalk.bold("推荐先看")}：${chalk.blueBright(recommended.candidate.name)}`,
+          `${chalk.bold("理由")}：${recommended.recommendation}`,
+          `${chalk.bold("建议动作")}：${recommended.nextStep}`
+        ].join("\n")
+      : `${chalk.bold("推荐先看")}：暂无`;
+
+    return boxen([contextLine, "", content, "", recommendationBlock].join("\n"), {
       padding: 1,
       margin: 1,
       borderStyle: "round",
       borderColor: "green",
-      title: "Seeku Candidate Compare",
+      title: "Seeku Compare Workspace",
       titleAlignment: "center"
     });
   }
@@ -200,5 +235,59 @@ ${chalk.dim("下一步：back 返回 | o 打开 Bonjour | why 评分依据 | ref
       return `${Math.floor(daysDiff / 30)}个月前`;
     }
     return `${Math.floor(daysDiff / 365)}年前`;
+  }
+
+  private formatSourceBadge(sources: string[]): string {
+    if (!sources || sources.length === 0 || sources[0] === "Unknown") {
+      return chalk.dim("来源未知");
+    }
+
+    return sources
+      .map((source) => {
+        if (source === "Bonjour") {
+          return chalk.bgCyan.black(" Bonjour ");
+        }
+
+        if (source === "GitHub") {
+          return chalk.bgMagenta.white(" GitHub ");
+        }
+
+        return chalk.dim(source);
+      })
+      .join(" ");
+  }
+
+  private formatFreshness(latestEvidence?: Date, lastSynced?: Date): string {
+    const referenceDate = latestEvidence || lastSynced;
+    if (!referenceDate) {
+      return chalk.dim("新鲜度未知");
+    }
+
+    const daysDiff = Math.floor((Date.now() - referenceDate.getTime()) / (1000 * 60 * 60 * 24));
+    if (daysDiff <= 7) {
+      return chalk.greenBright(`新鲜 ${daysDiff}天`);
+    }
+
+    if (daysDiff <= 30) {
+      return chalk.green(`${daysDiff}天前`);
+    }
+
+    if (daysDiff <= 90) {
+      return chalk.yellow(`${daysDiff}天前`);
+    }
+
+    return chalk.dim(`${daysDiff}天前`);
+  }
+
+  private formatConditionsSummary(conditions: SearchConditions): string {
+    const parts = [
+      conditions.role ? `角色 ${conditions.role}` : "",
+      conditions.skills.length > 0 ? `技能 ${conditions.skills.join("/")}` : "",
+      conditions.locations.length > 0 ? `地点 ${conditions.locations.join("/")}` : "",
+      conditions.experience ? `经验 ${conditions.experience}` : "",
+      conditions.sourceBias ? `来源 ${conditions.sourceBias}` : ""
+    ].filter(Boolean);
+
+    return parts.join(" | ") || "未设置明确条件";
   }
 }

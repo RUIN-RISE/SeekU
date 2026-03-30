@@ -50,10 +50,67 @@ export interface ScoredCandidate {
   latestEvidenceAt?: Date; // Most recent evidence timestamp
 }
 
+export interface ComparisonEvidenceSummary {
+  evidenceType: string;
+  title: string;
+  sourceLabel: string;
+  freshnessLabel?: string;
+}
+
+export interface ComparisonEntry {
+  shortlistIndex?: number;
+  candidate: ScoredCandidate;
+  profile: MultiDimensionProfile;
+  topEvidence: ComparisonEvidenceSummary[];
+  decisionTag: "优先深看" | "继续比较" | "补充候选";
+  decisionScore: number;
+  recommendation: string;
+  nextStep: string;
+}
+
+export type ExportFormat = "md" | "csv" | "json";
+export type ExportTarget = "shortlist" | "pool";
+
+export interface ExportCandidateRecord {
+  shortlistIndex?: number;
+  name: string;
+  headline: string | null;
+  location: string | null;
+  company: string | null;
+  matchScore: number;
+  source: string;
+  freshness: string;
+  bonjourUrl?: string;
+  whyMatched: string;
+  decisionTag?: ComparisonEntry["decisionTag"];
+  recommendation?: string;
+  nextStep?: string;
+  topEvidence: ComparisonEvidenceSummary[];
+}
+
+export interface ExportArtifactFile {
+  format: ExportFormat;
+  label: string;
+  path: string;
+}
+
+export interface ExportArtifact {
+  target: ExportTarget;
+  format: ExportFormat;
+  generatedAt: string;
+  outputDir: string;
+  querySummary: string;
+  count: number;
+  files: ExportArtifactFile[];
+  records: ExportCandidateRecord[];
+}
+
 export interface ResultListCommand {
-  type: "view" | "compare" | "refine" | "sort" | "showMore" | "quit" | "help" | "add" | "pool" | "clear" | "history" | "undo" | "show" | "open";
+  type: "view" | "compare" | "refine" | "sort" | "showMore" | "quit" | "help" | "add" | "pool" | "clear" | "history" | "undo" | "show" | "open" | "back" | "export";
   indexes?: number[];
   sortMode?: SortMode;
+  exportFormat?: ExportFormat;
+  exportTarget?: ExportTarget;
 }
 
 export interface SearchHistoryEntry {

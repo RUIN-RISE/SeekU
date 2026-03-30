@@ -23,12 +23,16 @@ import chalk from "chalk";
 import ora, { type Ora } from "ora";
 import { ChatInterface } from "./chat.js";
 import { CLI_CONFIG } from "./config.js";
+import { ShortlistExporter } from "./exporter.js";
 import { ProfileGenerator } from "./profile-generator.js";
 import { TerminalRenderer } from "./renderer.js";
 import { HybridScoringEngine } from "./scorer.js";
 import { TerminalUI } from "./tui.js";
 import { withRetry } from "./retry.js";
 import {
+  ComparisonEntry,
+  ComparisonEvidenceSummary,
+  ExportCandidateRecord,
   MultiDimensionProfile,
   ResultListCommand,
   ScoredCandidate,
@@ -64,6 +68,7 @@ export class SearchWorkflow {
   private scorer: HybridScoringEngine;
   private generator: ProfileGenerator;
   private renderer: TerminalRenderer;
+  private exporter: ShortlistExporter;
   private cacheRepo: ProfileCacheRepository;
   private planner: QueryPlanner;
   private retriever: HybridRetriever;
@@ -82,6 +87,7 @@ export class SearchWorkflow {
     this.scorer = new HybridScoringEngine(llmProvider);
     this.generator = new ProfileGenerator(llmProvider);
     this.renderer = new TerminalRenderer();
+    this.exporter = new ShortlistExporter();
     this.cacheRepo = new ProfileCacheRepository(db);
     this.planner = new QueryPlanner({ provider: llmProvider });
     this.retriever = new HybridRetriever({
@@ -289,6 +295,10 @@ export class SearchWorkflow {
       return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
     }
 
+    if (command.type === "back") {
+      return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
+    }
+
     if (command.type === "quit") {
       return { type: "done", result: { type: "quit" } };
     }
@@ -363,6 +373,35 @@ export class SearchWorkflow {
       return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
     }
 
+    if (command.type === "export") {
+      const exportTarget = command.exportTarget || "shortlist";
+      const exportFormat = command.exportFormat || "md";
+      const targets = exportTarget === "pool"
+        ? [...this.comparePool]
+        : candidates.slice(0, state.visibleCount);
+
+      if (targets.length === 0) {
+        this.tui.displayExportEmpty(exportTarget);
+        return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
+      }
+
+      let comparisonEntries: ComparisonEntry[] = [];
+      if (exportTarget === "pool" && targets.length >= 2) {
+        await this.ensureProfiles(targets, conditions, "正在准备对比池导出...");
+        comparisonEntries = this.buildComparisonEntries(targets, candidates);
+      }
+
+      const artifact = await this.exporter.export({
+        format: exportFormat,
+        target: exportTarget,
+        querySummary: this.formatConditionsAsPrompt(conditions),
+        records: this.buildExportRecords(targets, candidates, comparisonEntries)
+      });
+
+      this.tui.displayExportSuccess(artifact);
+      return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
+    }
+
     if (command.type === "undo") {
       // Get previous conditions from history (skip current entry)
       if (this.searchHistory.length < 2) {
@@ -395,7 +434,7 @@ export class SearchWorkflow {
         : this.pickCandidates(candidates, command.indexes || []);
 
       if (targets.length < 2) {
-        this.tui.displayInvalidCommand("compare");
+        this.tui.displayCompareNeedsMoreCandidates(usePool ? this.comparePool.length : targets.length);
         return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
       }
 
@@ -408,18 +447,28 @@ export class SearchWorkflow {
       }
 
       await this.ensureProfiles(targets, conditions, "正在准备候选人对比...");
+      const comparisonEntries = this.buildComparisonEntries(targets, candidates);
       console.log(
-        this.renderer.renderComparison(
-          targets
-            .filter((candidate): candidate is HydratedCandidate & { profile: MultiDimensionProfile } => Boolean(candidate.profile))
-            .map((candidate) => ({
-              candidate,
-              profile: candidate.profile
-            }))
-        )
+        this.renderer.renderComparison(comparisonEntries, conditions)
       );
 
-      return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
+      while (true) {
+        const action = await this.tui.promptCompareAction();
+        if (action === "back") {
+          return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
+        }
+
+        if (action === "clear") {
+          this.comparePool = [];
+          this.tui.displayPoolCleared();
+          return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
+        }
+
+        if (action === "quit") {
+          return { type: "done", result: { type: "quit" } };
+        }
+      }
+
     }
 
     if (command.type === "view") {
@@ -1061,6 +1110,287 @@ export class SearchWorkflow {
     return snippets.slice(0, 2).join("，");
   }
 
+  private buildComparisonEntries(
+    targets: HydratedCandidate[],
+    allCandidates: HydratedCandidate[]
+  ): ComparisonEntry[] {
+    const entries = targets
+      .filter(
+        (candidate): candidate is HydratedCandidate & { profile: MultiDimensionProfile } =>
+          Boolean(candidate.profile)
+      )
+      .map((candidate) => {
+        const shortlistIndex = allCandidates.findIndex((item) => item.personId === candidate.personId);
+        const decisionScore = this.computeComparisonDecisionScore(candidate, candidate.profile);
+
+        return {
+          shortlistIndex: shortlistIndex >= 0 ? shortlistIndex + 1 : undefined,
+          candidate,
+          profile: candidate.profile,
+          topEvidence: this.buildComparisonEvidence(candidate._hydrated.evidence),
+          decisionScore
+        };
+      });
+
+    const rankedIds = [...entries]
+      .sort((left, right) => right.decisionScore - left.decisionScore)
+      .map((entry) => entry.candidate.personId);
+
+    return entries.map((entry) => {
+      const rank = rankedIds.indexOf(entry.candidate.personId);
+      const decisionTag = this.classifyComparisonDecisionTag(rank);
+
+      return {
+        ...entry,
+        decisionTag,
+        recommendation: this.buildComparisonRecommendation(
+          entry.candidate,
+          entry.profile,
+          decisionTag
+        ),
+        nextStep: this.buildComparisonNextStep(
+          entry.candidate,
+          entry.shortlistIndex,
+          decisionTag
+        )
+      };
+    });
+  }
+
+  private buildExportRecords(
+    targets: HydratedCandidate[],
+    allCandidates: HydratedCandidate[],
+    comparisonEntries: ComparisonEntry[] = []
+  ): ExportCandidateRecord[] {
+    const comparisonById = new Map(
+      comparisonEntries.map((entry) => [entry.candidate.personId, entry])
+    );
+
+    return targets.map((candidate) => {
+      const shortlistIndex = allCandidates.findIndex((item) => item.personId === candidate.personId);
+      const comparisonEntry = comparisonById.get(candidate.personId);
+      const freshnessDate = candidate.latestEvidenceAt ?? candidate.lastSyncedAt;
+
+      return {
+        shortlistIndex: shortlistIndex >= 0 ? shortlistIndex + 1 : undefined,
+        name: candidate.name,
+        headline: candidate.headline,
+        location: candidate.location,
+        company: candidate.company,
+        matchScore: candidate.matchScore,
+        source: this.formatExportSource(candidate.sources),
+        freshness: freshnessDate ? this.describeRelativeDate(freshnessDate) : "时间未知",
+        bonjourUrl: candidate.bonjourUrl,
+        whyMatched: candidate.matchReason || "与当前条件整体相关度较高",
+        decisionTag: comparisonEntry?.decisionTag,
+        recommendation: comparisonEntry?.recommendation,
+        nextStep: comparisonEntry?.nextStep,
+        topEvidence: comparisonEntry?.topEvidence || this.buildComparisonEvidence(candidate._hydrated.evidence)
+      };
+    });
+  }
+
+  private computeComparisonDecisionScore(
+    candidate: HydratedCandidate,
+    profile: MultiDimensionProfile
+  ): number {
+    let score = profile.overallScore * 0.7 + candidate.matchScore * 100 * 0.2;
+
+    const freshnessDate = candidate.latestEvidenceAt ?? candidate.lastSyncedAt;
+    if (freshnessDate) {
+      const ageInDays = Math.floor(
+        (Date.now() - freshnessDate.getTime()) / (1000 * 60 * 60 * 24)
+      );
+      if (ageInDays <= 7) {
+        score += 8;
+      } else if (ageInDays <= 30) {
+        score += 5;
+      } else if (ageInDays <= 90) {
+        score += 2;
+      }
+    }
+
+    if (candidate.sources.includes("Bonjour")) {
+      score += 4;
+    }
+
+    if (candidate.bonjourUrl) {
+      score += 4;
+    }
+
+    if (profile.dimensions.techMatch >= 80) {
+      score += 3;
+    }
+
+    if (profile.dimensions.projectDepth >= 70) {
+      score += 2;
+    }
+
+    return score;
+  }
+
+  private classifyComparisonDecisionTag(rank: number): ComparisonEntry["decisionTag"] {
+    if (rank === 0) {
+      return "优先深看";
+    }
+
+    if (rank === 1) {
+      return "继续比较";
+    }
+
+    return "补充候选";
+  }
+
+  private buildComparisonEvidence(evidence: EvidenceItem[]): ComparisonEvidenceSummary[] {
+    const priority: Record<string, number> = {
+      project: 0,
+      repository: 1,
+      experience: 2,
+      job_signal: 3,
+      profile_field: 4,
+      social: 5
+    };
+
+    return evidence
+      .map((item) => ({
+        item,
+        priority: priority[item.evidenceType] ?? 99
+      }))
+      .filter(({ item }) => Boolean(item.title?.trim() || item.description?.trim()))
+      .sort((left, right) => {
+        if (left.priority !== right.priority) {
+          return left.priority - right.priority;
+        }
+
+        const leftTime = left.item.occurredAt?.getTime() ?? 0;
+        const rightTime = right.item.occurredAt?.getTime() ?? 0;
+        return rightTime - leftTime;
+      })
+      .slice(0, 3)
+      .map(({ item }) => ({
+        evidenceType: item.evidenceType,
+        title: this.buildEvidenceHeadline(item),
+        sourceLabel: item.source === "bonjour" ? "Bonjour" : item.source === "github" ? "GitHub" : item.source,
+        freshnessLabel: item.occurredAt ? this.describeRelativeDate(item.occurredAt) : undefined
+      }));
+  }
+
+  private buildEvidenceHeadline(item: EvidenceItem): string {
+    const title = item.title?.trim();
+    const description = item.description?.trim();
+
+    if (item.evidenceType === "profile_field" && title && description) {
+      return this.truncateForDisplay(`${title}: ${description}`, 54);
+    }
+
+    if (title) {
+      return this.truncateForDisplay(title, 54);
+    }
+
+    return this.truncateForDisplay(description || "未命名证据", 54);
+  }
+
+  private buildComparisonRecommendation(
+    candidate: HydratedCandidate,
+    profile: MultiDimensionProfile,
+    decisionTag: ComparisonEntry["decisionTag"]
+  ): string {
+    const reasons: string[] = [];
+
+    if (profile.dimensions.techMatch >= 75) {
+      reasons.push("技术相关性强");
+    }
+
+    if (profile.dimensions.projectDepth >= 65) {
+      reasons.push("项目证据更扎实");
+    }
+
+    if (profile.dimensions.locationMatch >= 90) {
+      reasons.push("地点完全匹配");
+    }
+
+    if (candidate.latestEvidenceAt || candidate.lastSyncedAt) {
+      const freshnessDate = candidate.latestEvidenceAt ?? candidate.lastSyncedAt;
+      const freshnessText = freshnessDate ? this.describeRelativeDate(freshnessDate) : undefined;
+      if (freshnessText && freshnessText !== "时间未知") {
+        reasons.push(`资料${freshnessText}`);
+      }
+    }
+
+    if (reasons.length === 0 && candidate.bonjourUrl) {
+      reasons.push("Bonjour 资料完整，可直接深看");
+    }
+
+    const prefix =
+      decisionTag === "优先深看"
+        ? "建议优先打开"
+        : decisionTag === "继续比较"
+          ? "建议继续对照"
+          : "建议作为备选";
+
+    return `${prefix}：${reasons.slice(0, 2).join("，") || "信息完整，可继续判断"}`;
+  }
+
+  private buildComparisonNextStep(
+    candidate: HydratedCandidate,
+    shortlistIndex: number | undefined,
+    decisionTag: ComparisonEntry["decisionTag"]
+  ): string {
+    if (!shortlistIndex) {
+      return candidate.bonjourUrl ? "返回 shortlist 后打开 Bonjour 深看" : "返回 shortlist 后查看详情";
+    }
+
+    if (decisionTag === "优先深看") {
+      return candidate.bonjourUrl
+        ? `返回 shortlist 后先执行 v ${shortlistIndex}，再用 o ${shortlistIndex} 打开 Bonjour`
+        : `返回 shortlist 后先执行 v ${shortlistIndex} 深看细节`;
+    }
+
+    if (decisionTag === "继续比较") {
+      return `返回 shortlist 后执行 v ${shortlistIndex} 补充判断`;
+    }
+
+    return `保留在 pool 中，必要时再查看 #${shortlistIndex}`;
+  }
+
+  private describeRelativeDate(date: Date): string {
+    const ageInDays = Math.floor(
+      (Date.now() - date.getTime()) / (1000 * 60 * 60 * 24)
+    );
+
+    if (ageInDays <= 0) {
+      return "今天";
+    }
+
+    if (ageInDays === 1) {
+      return "昨天";
+    }
+
+    if (ageInDays <= 7) {
+      return `${ageInDays}天前`;
+    }
+
+    if (ageInDays <= 30) {
+      return `${Math.floor(ageInDays / 7)}周前`;
+    }
+
+    if (ageInDays <= 365) {
+      return `${Math.floor(ageInDays / 30)}个月前`;
+    }
+
+    return `${Math.floor(ageInDays / 365)}年前`;
+  }
+
+  private truncateForDisplay(value: string, maxLength: number): string {
+    const normalized = value.replace(/\s+/g, " ").trim();
+    const chars = Array.from(normalized);
+    if (chars.length <= maxLength) {
+      return normalized;
+    }
+
+    return `${chars.slice(0, maxLength - 3).join("")}...`;
+  }
+
   private pickCandidates(candidates: HydratedCandidate[], indexes: number[]): HydratedCandidate[] {
     return indexes
       .map((index) => candidates[index - 1])
@@ -1277,6 +1607,14 @@ export class SearchWorkflow {
     }
 
     return successful;
+  }
+
+  private formatExportSource(sources: string[]): string {
+    if (!sources || sources.length === 0 || sources[0] === "Unknown") {
+      return "来源未知";
+    }
+
+    return sources.join(" / ");
   }
 
   private formatConditionsAsPrompt(conditions: SearchConditions): string {

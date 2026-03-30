@@ -1,8 +1,21 @@
 import enquirer from "enquirer";
 import chalk from "chalk";
-import { DetailAction, ResultListCommand, ScoredCandidate, SearchConditions, SearchDraft, SortMode, ClarifyAction, SearchHistoryEntry } from "./types.js";
+import {
+  ClarifyAction,
+  DetailAction,
+  ExportArtifact,
+  ExportFormat,
+  ExportTarget,
+  ResultListCommand,
+  ScoredCandidate,
+  SearchConditions,
+  SearchDraft,
+  SearchHistoryEntry,
+  SortMode
+} from "./types.js";
 
 const { Input } = enquirer as unknown as { Input: any };
+type CompareAction = "back" | "clear" | "quit";
 
 interface ShortlistViewOptions {
   sortMode: SortMode;
@@ -122,7 +135,7 @@ export class TerminalUI {
     const poolHint = options.poolCount && options.poolCount > 0
       ? chalk.dim(` | pool ${options.poolCount}人`)
       : "";
-    console.log(chalk.dim(`动作：v 2 详情 | o 2 打开 Bonjour | c 1 3 对比 | add 1 pool | sort tech | r refine | m 更多 | q 退出${poolHint}`));
+    console.log(chalk.dim(`动作：v 2 详情 | o 2 打开 Bonjour | c 1 3 决策对比 | add 1 pool | export md | sort tech | r refine | m 更多 | q 退出${poolHint}`));
   }
 
   private formatSourceBadge(sources: string[]): string {
@@ -202,6 +215,26 @@ export class TerminalUI {
     return "back";
   }
 
+  async promptCompareAction(): Promise<CompareAction> {
+    console.log(chalk.dim("动作：back 返回 shortlist | clear 清空对比池 | q 退出"));
+    const raw = await this.promptLine("compare>", "back");
+    const normalized = raw.trim().toLowerCase();
+
+    if (normalized === "" || normalized === "back" || normalized === "b") {
+      return "back";
+    }
+
+    if (normalized === "clear") {
+      return "clear";
+    }
+
+    if (normalized === "q" || normalized === "quit" || normalized === "exit") {
+      return "quit";
+    }
+
+    return "back";
+  }
+
   displayNoResults(conditions: SearchConditions) {
     console.log(chalk.yellow("\n这一轮没有找到合适候选人。"));
     console.log(chalk.dim(`当前条件：${this.formatConditionsSummary(conditions)}`));
@@ -213,20 +246,36 @@ export class TerminalUI {
     console.log(chalk.dim("输入 `help` 查看可用动作。"));
   }
 
+  displayCompareNeedsMoreCandidates(poolCount: number) {
+    if (poolCount <= 0) {
+      console.log(chalk.yellow("\n对比池为空，使用 `add N` 把候选人加入对比池。"));
+      console.log(chalk.dim("例如：add 1，然后 add 2，再输入 c 进入决策对比。"));
+      return;
+    }
+
+    console.log(chalk.yellow(`\n当前对比池只有 ${poolCount} 人，决策对比至少需要 2 人。`));
+    console.log(chalk.dim("继续使用 `add N` 补一个候选人，再输入 c。"));
+  }
+
   displayHelp() {
     console.log(chalk.dim("\nshortlist 命令："));
     console.log(chalk.dim("  v 2           查看第 2 位候选人"));
-    console.log(chalk.dim("  c 1 3         对比第 1 和第 3 位候选人"));
+    console.log(chalk.dim("  c 1 3         进入第 1 和第 3 位的决策对比视图"));
     console.log(chalk.dim("  add 1         把第 1 位加入对比池"));
     console.log(chalk.dim("  pool          查看当前对比池"));
     console.log(chalk.dim("  clear         清空对比池"));
     console.log(chalk.dim("  history       查看搜索历史"));
     console.log(chalk.dim("  undo          回到上一轮搜索条件"));
     console.log(chalk.dim("  show          显示当前筛选条件"));
+    console.log(chalk.dim("  export md     导出当前 shortlist 为 Markdown"));
+    console.log(chalk.dim("  export csv    导出当前 shortlist 为 CSV"));
+    console.log(chalk.dim("  export json   导出当前 shortlist 为 JSON"));
+    console.log(chalk.dim("  export pool md 导出当前对比池"));
     console.log(chalk.dim("  sort tech     按技术匹配排序"));
     console.log(chalk.dim("  sort project  按项目深度排序"));
     console.log(chalk.dim("  sort location 按地点匹配排序"));
     console.log(chalk.dim("  r             基于当前结果继续 refine"));
+    console.log(chalk.dim("  back          返回 shortlist 当前结果"));
     console.log(chalk.dim("  m             展示更多结果"));
     console.log(chalk.dim("  q             退出"));
   }
@@ -237,7 +286,7 @@ export class TerminalUI {
 
   displayPoolEmpty() {
     console.log(chalk.yellow("\n对比池为空。"));
-    console.log(chalk.dim("使用 `add N` 把候选人加入对比池。"));
+    console.log(chalk.dim("使用 `add N` 把候选人加入对比池，例如：add 1。"));
   }
 
   displayPool(candidates: ScoredCandidate[]) {
@@ -248,11 +297,33 @@ export class TerminalUI {
       console.log(chalk.dim(`   ${candidate.matchReason || "与条件匹配"}`));
     });
     console.log(chalk.dim("-".repeat(40)));
-    console.log(chalk.dim("动作：c 对比池内候选人 | clear 清空 | back 返回"));
+    console.log(chalk.dim("下一步：输入 c 进入决策对比 | export pool md 导出对比池 | clear 清空对比池 | back 返回 shortlist"));
   }
 
   displayPoolCleared() {
     console.log(chalk.green("\n对比池已清空。"));
+  }
+
+  displayExportSuccess(artifact: ExportArtifact) {
+    const primaryFile = artifact.files[0];
+    const targetLabel = artifact.target === "pool" ? "对比池" : "shortlist";
+    const formatLabel = this.formatExportLabel(artifact.format);
+
+    console.log(chalk.green(`\n✓ 已导出${targetLabel}（${artifact.count} 人，${formatLabel}）`));
+    console.log(chalk.dim(`目录：${artifact.outputDir}`));
+    if (primaryFile) {
+      console.log(chalk.dim(`文件：${primaryFile.path}`));
+    }
+  }
+
+  displayExportEmpty(target: ExportTarget) {
+    if (target === "pool") {
+      console.log(chalk.yellow("\n对比池为空，暂时无法导出。"));
+      console.log(chalk.dim("先用 `add N` 加入候选人，再执行 `export pool md`。"));
+      return;
+    }
+
+    console.log(chalk.yellow("\n当前 shortlist 没有可导出的候选人。"));
   }
 
   displayHistory(history: SearchHistoryEntry[]) {
@@ -348,6 +419,10 @@ export class TerminalUI {
       return { type: "show" };
     }
 
+    if (normalized === "back" || normalized === "b") {
+      return { type: "back" };
+    }
+
     const [command, ...rest] = normalized.split(/\s+/);
     const indexes = rest
       .map((value) => Number(value))
@@ -373,12 +448,67 @@ export class TerminalUI {
       return { type: "add", indexes };
     }
 
+    if (command === "export" || command === "e") {
+      const exportTarget = this.parseExportTarget(rest);
+      const exportFormat = this.parseExportFormat(rest);
+
+      if (!exportTarget && !exportFormat && rest.length > 0) {
+        return { type: "help" };
+      }
+
+      return {
+        type: "export",
+        exportFormat: exportFormat || "md",
+        exportTarget: exportTarget || "shortlist"
+      };
+    }
+
     // open: open Bonjour profile in browser
     if ((command === "o" || command === "open") && indexes.length > 0) {
       return { type: "open", indexes: [indexes[0]] };
     }
 
     return { type: "help" };
+  }
+
+  private parseExportFormat(tokens: string[]): ExportFormat | undefined {
+    if (tokens.includes("md") || tokens.includes("markdown")) {
+      return "md";
+    }
+
+    if (tokens.includes("csv")) {
+      return "csv";
+    }
+
+    if (tokens.includes("json")) {
+      return "json";
+    }
+
+    return undefined;
+  }
+
+  private parseExportTarget(tokens: string[]): ExportTarget | undefined {
+    if (tokens.includes("pool") || tokens.includes("compare")) {
+      return "pool";
+    }
+
+    if (tokens.includes("shortlist") || tokens.includes("list")) {
+      return "shortlist";
+    }
+
+    return undefined;
+  }
+
+  private formatExportLabel(format: ExportFormat): string {
+    if (format === "md") {
+      return "Markdown";
+    }
+
+    if (format === "csv") {
+      return "CSV";
+    }
+
+    return "JSON";
   }
 
   private formatConditionsSummary(conditions: SearchConditions): string {
