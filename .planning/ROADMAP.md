@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Search & Embeddings** - Retrieval: query parsing, hybrid search, reranking, embeddings
 - [x] **Phase 4: UI & Evaluation** - Validation: web interface, candidate display, benchmark system
 - [x] **Phase 5: CLI Interactive Search** - Conversational CLI: intelligent chat, multi-dimensional profiles, keyboard TUI
-- [ ] **Phase 05.1: CLI UX Optimization** - UX enhancement: loading states, parallel preload, unified config, retry mechanism
+- [x] **Phase 05.1: CLI UX Optimization** - UX enhancement: loading states, parallel preload, unified config, retry mechanism, and acceptance hotfixes for CLI startup/caching/timeouts
 - [ ] **Phase 6: Conversational & Compliance Polish** - UX enhancement: conversational refinement, profile claims
 
 ## Phase Details
@@ -123,21 +123,24 @@ Plans:
 
 ### Phase 05.1: CLI UX Optimization (INSERTED)
 
-**Goal:** CLI loading state awareness with ora spinner, parallel preloading with promisePool factory pattern, unified configuration management with Zod validation, and LLM retry mechanism with exponential backoff
-**Requirements**: CLI-UX-01, CLI-UX-02, CLI-UX-03, CLI-UX-04
+**Goal:** Transform Seeku CLI from single-shot search tool into conversational search assistant with session loop: clarify → search → shortlist → detail/compare/refine → search
+**Requirements**: CLI-UX-01, CLI-UX-02, CLI-UX-03, CLI-UX-04, CLI-SESSION-01
 **Depends on:** Phase 5
 **Success Criteria** (what must be TRUE):
-  1. Users see ora spinner during LLM calls with phase-aware text updates
-  2. Background preload runs while user interacts with candidates
-  3. Configuration validated at startup with environment variable override support
-  4. LLM calls retry on transient errors with exponential backoff
-**Plans**: 4 plans in 3 waves
+  1. `seeku` enters interactive session directly; `seeku "query"` carries initial requirement
+  2. Pre-search clarification with understanding echo and user action choices
+  3. Command-based shortlist: `v N`, `c N M`, `sort mode`, `r`, `m`, `q`
+  4. Detail page with next actions: `back`, `why`, `refine`, `q`
+  5. Session loop supports continuous refine without restart
+**Plans**: 4 plans + acceptance fixes + session UX refactor
 
 Plans:
-- [ ] 05.1-01-PLAN.md — Unified config: config.ts with Zod validation, env var override, fast-fail (CLI-UX-03)
-- [ ] 05.1-02-PLAN.md — ora spinner: loading state integration, enquirer compatibility (CLI-UX-01)
-- [ ] 05.1-03-PLAN.md — Retry mechanism: retry.ts with isRetryable, exponential backoff (CLI-UX-04)
-- [ ] 05.1-04-PLAN.md — Parallel preload: promisePool factory, background caching (CLI-UX-02)
+- [x] 05.1-01-PLAN.md — Unified config: config.ts with Zod validation, env var override, fast-fail (CLI-UX-03)
+- [x] 05.1-02-PLAN.md — ora spinner: loading state integration, enquirer compatibility (CLI-UX-01)
+- [x] 05.1-03-PLAN.md — Retry mechanism: retry.ts with isRetryable, exponential backoff (CLI-UX-04)
+- [x] 05.1-04-PLAN.md — Parallel preload: promisePool factory, background caching (CLI-UX-02)
+- [x] 05.1-ACCEPTANCE-FIX-SUMMARY.md — Claude review findings remediation: startup UX, query-scoped cache, prompt timeout cleanup
+- [x] CLI-SESSION-UX-CHANGE-REPORT.md — Session loop refactor: clarify → search → shortlist → detail → refine (CLI-SESSION-01)
 
 ### Phase 6: Conversational & Compliance Polish (Future)
 **Goal**: Users can refine searches conversationally and claim profile ownership
@@ -162,8 +165,8 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 05.1 → 6
 | 3. Search & Embeddings | 7/7 | ✅ Completed | 2026-03-29 |
 | 4. UI & Evaluation | 8/8 | ✅ Completed | 2026-03-29 |
 | 5. CLI Interactive Search | 6/6 | ✅ Completed | 2026-03-29 |
-| 05.1. CLI UX Optimization | 0/4 | ⏳ Planned | - |
+| 05.1. CLI UX Optimization | 4/4 | ✅ Completed | 2026-03-30 |
 | 6. Conversational & Compliance Polish | 0/TBD | ⏸️ Pending | - |
 
 ---
-*Last updated: 2026-03-30 - Phase 05.1 CLI UX Optimization planned (4 plans in 3 waves)*
+*Last updated: 2026-03-30 - Phase 05.1 CLI UX Optimization completed and handed back for Claude review*
