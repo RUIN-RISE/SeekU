@@ -72,11 +72,25 @@ function extractLocations(person: Person, evidence: EvidenceItem[]): string[] {
   const locations: Set<string> = new Set();
 
   if (person.primaryLocation) {
+    // Add full path
     locations.add(person.primaryLocation.toLowerCase());
+
+    // Split and add each segment: "中国 / 浙江省 / 杭州市" -> ["中国", "浙江省", "杭州市"]
+    const parts = person.primaryLocation.split("/").map((s) => s.trim()).filter(Boolean);
+    parts.forEach((part) => locations.add(part.toLowerCase()));
+
+    // Add normalized short names: "浙江省" -> "浙江", "杭州市" -> "杭州"
+    parts.forEach((part) => {
+      // Remove 省/市/区/县 suffix
+      const normalized = part.replace(/(省|市|区|县|自治区|特别行政区)$/, "");
+      if (normalized && normalized !== part) {
+        locations.add(normalized.toLowerCase());
+      }
+    });
   }
 
   // From evidence metadata (location field)
-  evidence.forEach(e => {
+  evidence.forEach((e) => {
     const loc = e.metadata?.location as string | undefined;
     if (loc) locations.add(loc.toLowerCase());
   });

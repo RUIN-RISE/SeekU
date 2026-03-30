@@ -72,17 +72,58 @@ function buildFilterConditions(intent: QueryIntent, filters?: RetrieverFilters):
     ...(intent.sourceBias ? [intent.sourceBias] : [])
   ]);
 
+  // Location filter: use lenient matching (array overlap OR text ILIKE)
+  // Expand locations to include both Chinese and English variants
   if (locations.length > 0) {
-    conditions.push(sql`${searchDocuments.facetLocation} && ${toTextArray(locations)}`);
+    const expandedLocations = expandLocationVariants(locations);
+    const locationClauses = expandedLocations.map((loc) => [
+      sql`${searchDocuments.facetLocation} && ${toTextArray([loc])}`,
+      sql`${searchDocuments.facetLocation}::text ILIKE ${`%${loc}%`}`,
+      sql`${persons.primaryLocation} ILIKE ${`%${loc}%`}`
+    ]).flat();
+
+    conditions.push(sql`(${sql.join(locationClauses, sql.raw(" OR "))})`);
   }
 
-  if (sources.length > 0) {
-    conditions.push(sql`${searchDocuments.facetSource} && ${toTextArray(sources)}`);
-  }
+  // Source filter: TEMPORARILY DISABLED as facetSource is mostly empty
+  // TODO: Re-enable when facetSource coverage improves
+  // if (sources.length > 0) {
+  //   conditions.push(sql`${searchDocuments.facetSource} && ${toTextArray(sources)}`);
+  // }
 
   conditions.push(...buildMustHaveConditions(intent));
 
   return conditions;
+}
+
+// Chinese-English location mapping
+const LOCATION_VARIANTS: Record<string, string[]> = {
+  hangzhou: ["杭州", "hangzhou"],
+  beijing: ["北京", "beijing"],
+  shanghai: ["上海", "shanghai"],
+  shenzhen: ["深圳", "shenzhen"],
+  guangzhou: ["广州", "guangzhou"],
+  china: ["中国", "china"],
+  singapore: ["新加坡", "singapore"],
+  杭州: ["杭州", "hangzhou"],
+  北京: ["北京", "beijing"],
+  上海: ["上海", "shanghai"],
+  深圳: ["深圳", "shenzhen"],
+  广州: ["广州", "guangzhou"],
+  中国: ["中国", "china"],
+  新加坡: ["新加坡", "singapore"]
+};
+
+function expandLocationVariants(locations: string[]): string[] {
+  const expanded = new Set<string>();
+  for (const loc of locations) {
+    expanded.add(loc);
+    const variants = LOCATION_VARIANTS[loc.toLowerCase()];
+    if (variants) {
+      variants.forEach((v) => expanded.add(v));
+    }
+  }
+  return Array.from(expanded);
 }
 
 function buildKeywordQuery(intent: QueryIntent): string {

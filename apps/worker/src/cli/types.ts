@@ -3,10 +3,19 @@ export interface SearchConditions {
   locations: string[];
   experience?: string;
   role?: string;
+  sourceBias?: "bonjour" | "github";
   limit: number;
 }
 
 export type MissingField = "skills" | "locations" | "experience";
+export type ClarifyAction = "search" | "add" | "relax" | "restart" | "quit";
+export type SortMode = "overall" | "tech" | "project" | "location";
+export type DetailAction = "back" | "refine" | "why" | "quit";
+
+export interface SearchDraft {
+  conditions: SearchConditions;
+  missing: MissingField[];
+}
 
 export interface DimensionScores {
   techMatch: number;
@@ -33,4 +42,17 @@ export interface ScoredCandidate {
   experienceYears: number | null;
   matchScore: number;
   profile?: MultiDimensionProfile;
+  matchReason?: string;
+}
+
+export interface ResultListCommand {
+  type: "view" | "compare" | "refine" | "sort" | "showMore" | "quit" | "help" | "add" | "pool" | "clear" | "history" | "undo" | "show";
+  indexes?: number[];
+  sortMode?: SortMode;
+}
+
+export interface SearchHistoryEntry {
+  conditions: SearchConditions;
+  resultCount: number;
+  timestamp: Date;
 }

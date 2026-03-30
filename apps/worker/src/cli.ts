@@ -1,4 +1,13 @@
-import "dotenv/config";
+import { config } from "dotenv";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { dirname } from "node:path";
+
+// Load .env from project root (monorepo aware, ESM compatible)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+config({ path: resolve(__dirname, "../../../.env") });
+import chalk from "chalk";
 
 import {
   runEvidenceStorageWorker,
@@ -56,6 +65,19 @@ function parseCursor(raw: string | undefined) {
 async function main() {
   const [, , command, ...rest] = process.argv;
   const parsed = parseArgs(rest);
+  const knownCommands = new Set([
+    "help",
+    "version",
+    "sync-bonjour",
+    "sync-github",
+    "resolve-identities",
+    "store-evidence",
+    "search-index",
+    "search-embeddings",
+    "rebuild-search",
+    "search",
+    "show"
+  ]);
 
   const limit = Number(parsed.args.get("limit") ?? "20");
   const handles = parsed.args.get("handles")?.split(",").map((value) => value.trim());
@@ -63,6 +85,22 @@ async function main() {
   const jobName = parsed.args.get("job-name");
 
   let result: unknown;
+
+  if (!command) {
+    await runInteractiveSearch();
+    return;
+  }
+
+  if (!knownCommands.has(command)) {
+    await runInteractiveSearch([command, ...rest].join(" ").trim());
+    return;
+  }
+
+  if (command === "version") {
+    console.log(chalk.bold("Seeku CLI v1.1.0"));
+    console.log(chalk.dim("Search Assistant Edition"));
+    return;
+  }
 
   if (command === "sync-bonjour") {
     result = await runBonjourSyncJob({
@@ -119,7 +157,7 @@ async function main() {
     const json = parsed.flags.has("json");
     const interactive = parsed.flags.has("interactive");
 
-    if (interactive) {
+    if (interactive || (!json && !query)) {
       await runInteractiveSearch();
       return;
     }
@@ -129,10 +167,28 @@ async function main() {
     const personId = parsed.args.get("personId") ?? parsed.positionals[0] ?? "";
     const json = parsed.flags.has("json");
     result = await runShowCli({ personId, json });
+  } else if (!command || command === "help") {
+    console.log(chalk.bold("\n📖 Seeku CLI Usage Guide\n"));
+    console.log(chalk.yellow("Commands:"));
+    console.log(`  ${chalk.cyan("seeku")}                 🚀 启动会话式人才搜索助手`);
+    console.log(`  ${chalk.cyan('seeku "query"')}         带初始需求进入会话式搜索`);
+    console.log(`  ${chalk.cyan("search [query]")}        直接进行脚本式人才搜索 (支持 --json)`);
+    console.log(`  ${chalk.cyan("show [id]")}            查看指定人才的深度画像`);
+    console.log(`  ${chalk.cyan("version")}              显示当前版本信息`);
+    console.log(`  ${chalk.cyan("help")}                 显示此帮助信息`);
+    
+    console.log(chalk.yellow("\nSync Commands (Pipeline):"));
+    console.log(`  ${chalk.dim("sync-bonjour, sync-github, resolve-identities, ...")}`);
+
+    console.log(chalk.yellow("\nOptions:"));
+    console.log(`  ${chalk.dim("--limit <num>")}         设置返回结果数量 (默认: 10)`);
+    console.log(`  ${chalk.dim("--json")}                以 JSON 格式输出结果`);
+    console.log("");
+    return;
   } else {
-    throw new Error(
-      "Unknown command. Use one of: sync-bonjour, sync-github, resolve-identities, store-evidence, search-index, search-embeddings, rebuild-search, search, show"
-    );
+    console.log(chalk.red(`\n❌ Unknown command: "${command}"`));
+    console.log(chalk.dim("Type 'seeku help' to see available commands.\n"));
+    process.exit(1);
   }
 
   if (result !== undefined) {

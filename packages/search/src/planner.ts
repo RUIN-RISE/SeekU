@@ -171,7 +171,7 @@ function heuristicIntent(query: string): QueryIntent {
   }
 
   const locationMatches = normalized.match(
-    /\b(beijing|shanghai|shenzhen|hangzhou|guangzhou|china|singapore|remote)\b/g
+    /(beijing|shanghai|shenzhen|hangzhou|guangzhou|china|singapore|remote|北京|上海|深圳|杭州|广州|中国|新加坡|远程)/g
   );
   for (const location of locationMatches ?? []) {
     locations.add(location);
