@@ -11,7 +11,7 @@ import {
   uuid
 } from "drizzle-orm/pg-core";
 
-export const sourceName = pgEnum("source_name", ["bonjour", "github"]);
+export const sourceName = pgEnum("source_name", ["bonjour", "github", "web"]);
 export const syncStatus = pgEnum("sync_status", [
   "running",
   "succeeded",
@@ -26,7 +26,8 @@ export const evidenceType = pgEnum("evidence_type", [
   "job_signal",
   "education",
   "experience",
-  "profile_field"
+  "profile_field",
+  "summary"
 ]);
 export const searchStatus = pgEnum("search_status", ["active", "hidden", "claimed"]);
 

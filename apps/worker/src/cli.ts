@@ -14,9 +14,11 @@ import {
   runEvidenceStorageWorker,
   runGithubSync,
   runIdentityResolutionWorker,
+  runProfileEnrichmentWorker,
   runSearchEmbeddingWorker,
   runSearchIndexWorker,
   runSearchRebuildWorker,
+  runSocialGraphWorker,
   runSourceProfileRepairWorker
 } from "@seeku/workers";
 
@@ -75,6 +77,8 @@ async function main() {
     "resolve-identities",
     "store-evidence",
     "backfill-person-fields",
+    "enrich-profiles",
+    "mine-network",
     "repair-source-payloads",
     "search-index",
     "search-embeddings",
@@ -141,6 +145,20 @@ async function main() {
       .map((value) => value.trim())
       .filter(Boolean);
     result = await runBackfillPersonFieldsWorker(personIds);
+  } else if (command === "enrich-profiles") {
+    const personIds = parsed.args
+      .get("person-ids")
+      ?.split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    result = await runProfileEnrichmentWorker({
+      limit,
+      personIds
+    });
+  } else if (command === "mine-network") {
+    result = await runSocialGraphWorker({
+      limit
+    });
   } else if (command === "repair-source-payloads") {
     const source = parsed.args.get("source");
     result = await runSourceProfileRepairWorker({

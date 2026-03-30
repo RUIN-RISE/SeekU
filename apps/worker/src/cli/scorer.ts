@@ -32,7 +32,8 @@ const EVIDENCE_TYPE_WEIGHTS: Record<EvidenceItem["evidenceType"], number> = {
   community_post: 12,
   education: 10,
   social: 8,
-  profile_field: 5
+  profile_field: 5,
+  summary: 5
 };
 
 export class HybridScoringEngine {

@@ -1,4 +1,4 @@
-export { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+export { and, desc, eq, gt, inArray, isNull, lt, not, or, sql } from "drizzle-orm";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";

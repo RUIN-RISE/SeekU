@@ -1,5 +1,5 @@
-export type SourceName = "bonjour" | "github";
-export type AliasType = "github" | "x" | "jike" | "website" | "other";
+export type SourceName = "bonjour" | "github" | "web";
+export type AliasType = "github" | "x" | "jike" | "website" | "person_id" | "other";
 export type SyncRunStatus = "succeeded" | "failed" | "partial";
 export type OptOutRequestStatus = "pending" | "processed" | "rejected";
 

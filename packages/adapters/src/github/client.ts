@@ -38,6 +38,13 @@ export interface GithubRepository {
   };
 }
 
+export interface GithubUserSummary {
+  login: string;
+  id: number;
+  avatar_url: string;
+  html_url: string;
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -138,6 +145,18 @@ export class GithubClient {
       sort: "updated",
       direction: "desc",
       type: "owner"
+    });
+  }
+
+  async fetchFollowingByUsername(username: string) {
+    return this.fetchWithRetry<GithubUserSummary[]>(`/users/${encodeURIComponent(username)}/following`, {
+      per_page: 30
+    });
+  }
+
+  async fetchFollowersByUsername(username: string) {
+    return this.fetchWithRetry<GithubUserSummary[]>(`/users/${encodeURIComponent(username)}/followers`, {
+      per_page: 30
     });
   }
 }

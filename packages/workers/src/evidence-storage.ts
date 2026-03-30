@@ -88,6 +88,12 @@ export async function storeEvidenceForPerson(db: SeekuDatabase, personId: string
         );
         itemsCreated += await persistEvidenceItems(db, personId, sourceProfile.id, extraction.items);
       }
+
+      if (sourceProfile.source === "web") {
+        const payload = coerceJsonObject(sourceProfile.normalizedPayload);
+        const extraction = (await import("@seeku/identity")).extractWebEvidence(payload);
+        itemsCreated += await persistEvidenceItems(db, personId, sourceProfile.id, extraction.items);
+      }
     } catch (error) {
       errors.push({
         message: error instanceof Error ? error.message : String(error)

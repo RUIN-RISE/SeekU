@@ -1,23 +1,35 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Mock dependencies
+const mockCreateDatabaseConnection = vi.fn();
+const mockClose = vi.fn();
+const mockPlannerParse = vi.fn();
+const mockRetrieverRetrieve = vi.fn();
+const mockRerankerRerank = vi.fn();
+const mockEmbed = vi.fn();
+const mockBuildQueryMatchExplanation = vi.fn();
+const mockDescribeRelativeDate = vi.fn();
+const mockFormatSourceLabel = vi.fn((source?: string) => {
+  if (source === "bonjour") return "Bonjour";
+  if (source === "github") return "GitHub";
+  if (source === "web") return "Web";
+  return source;
+});
+
+const personsTable = { table: "persons", id: "persons.id", searchStatus: "persons.searchStatus" };
+const evidenceItemsTable = { table: "evidence_items", personId: "evidence.personId" };
+const searchDocumentsTable = { table: "search_documents", personId: "documents.personId" };
+const personIdentitiesTable = { table: "person_identities", personId: "identities.personId", sourceProfileId: "identities.sourceProfileId" };
+const sourceProfilesTable = { table: "source_profiles", id: "profiles.id" };
+
+let queryResults = new Map<any, any[]>();
+
 vi.mock("@seeku/db", () => ({
-  createDatabaseConnection: vi.fn(() => ({
-    db: {
-      select: vi.fn(() => ({
-        from: vi.fn(() => ({
-          where: vi.fn(() => [])
-        })),
-        innerJoin: vi.fn(() => ({
-          where: vi.fn(() => [])
-        }))
-      }))
-    },
-    close: vi.fn()
-  })),
-  persons: { id: "persons", searchStatus: "searchStatus" },
-  evidenceItems: { personId: "personId" },
-  searchDocuments: { personId: "personId" },
+  createDatabaseConnection: mockCreateDatabaseConnection,
+  persons: personsTable,
+  evidenceItems: evidenceItemsTable,
+  searchDocuments: searchDocumentsTable,
+  personIdentities: personIdentitiesTable,
+  sourceProfiles: sourceProfilesTable,
   and: vi.fn((...args) => args),
   eq: vi.fn(() => ({})),
   inArray: vi.fn(() => ({}))
@@ -26,7 +38,7 @@ vi.mock("@seeku/db", () => ({
 vi.mock("@seeku/llm", () => ({
   SiliconFlowProvider: {
     fromEnv: vi.fn(() => ({
-      embed: vi.fn(async () => ({ embedding: [0.1, 0.2, 0.3] })),
+      embed: mockEmbed,
       chat: vi.fn(async () => ({ content: "test" }))
     }))
   }
@@ -34,26 +46,57 @@ vi.mock("@seeku/llm", () => ({
 
 vi.mock("@seeku/search", () => ({
   QueryPlanner: vi.fn(() => ({
-    parse: vi.fn(async () => ({
+    parse: mockPlannerParse
+  })),
+  HybridRetriever: vi.fn(() => ({
+    retrieve: mockRetrieverRetrieve
+  })),
+  Reranker: vi.fn(() => ({
+    rerank: mockRerankerRerank
+  }))
+}));
+
+vi.mock("./cli/workflow.js", () => ({
+  buildQueryMatchExplanation: mockBuildQueryMatchExplanation,
+  describeRelativeDate: mockDescribeRelativeDate,
+  formatSourceLabel: mockFormatSourceLabel
+}));
+
+function createMockDb() {
+  return {
+    select: vi.fn(() => ({
+      from: vi.fn((table) => ({
+        where: vi.fn(() => queryResults.get(table) ?? [])
+      }))
+    }))
+  };
+}
+
+describe("CLI Search", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    queryResults = new Map();
+    mockClose.mockResolvedValue(undefined);
+    mockCreateDatabaseConnection.mockReturnValue({
+      db: createMockDb(),
+      close: mockClose
+    });
+    mockEmbed.mockResolvedValue({ embedding: [0.1, 0.2, 0.3] });
+    mockPlannerParse.mockResolvedValue({
       rawQuery: "test query",
       roles: [],
       skills: ["python"],
       locations: [],
       mustHaves: [],
       niceToHaves: []
-    }))
-  })),
-  HybridRetriever: vi.fn(() => ({
-    retrieve: vi.fn(async () => [])
-  })),
-  Reranker: vi.fn(() => ({
-    rerank: vi.fn(() => [])
-  }))
-}));
-
-describe("CLI Search", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+    });
+    mockRetrieverRetrieve.mockResolvedValue([]);
+    mockRerankerRerank.mockReturnValue([]);
+    mockBuildQueryMatchExplanation.mockReturnValue({
+      summary: "技术命中：python",
+      reasons: ["技术命中：python"]
+    });
+    mockDescribeRelativeDate.mockReturnValue("3天前");
   });
 
   afterEach(() => {
@@ -75,7 +118,6 @@ describe("CLI Search", () => {
     it("should accept limit parameter", async () => {
       const { runSearchCli } = await import("./search-cli.js");
 
-      // Should not throw
       await expect(runSearchCli({
         query: "Python",
         limit: 5,
@@ -92,6 +134,84 @@ describe("CLI Search", () => {
       });
 
       expect(result).toBe("No results found.");
+    });
+
+    it("should include parity metadata in json search results", async () => {
+      queryResults = new Map<any, any[]>([
+        [searchDocumentsTable, [{
+          personId: "person-1",
+          docText: "Python builder in Hangzhou",
+          facetSource: ["bonjour"],
+          facetLocation: ["杭州"],
+          facetRole: [],
+          facetTags: []
+        }]],
+        [evidenceItemsTable, [{
+          personId: "person-1",
+          evidenceType: "project",
+          title: "Built Hangzhou automation stack",
+          description: "Used python heavily",
+          source: "bonjour",
+          occurredAt: new Date("2026-03-27T00:00:00.000Z")
+        }]],
+        [personsTable, [{
+          id: "person-1",
+          primaryName: "Ada",
+          primaryHeadline: "Python Engineer",
+          primaryLocation: "杭州",
+          summary: "Builds automation systems",
+          updatedAt: new Date("2026-03-30T00:00:00.000Z")
+        }]],
+        [personIdentitiesTable, [{
+          personId: "person-1",
+          sourceProfileId: "profile-1"
+        }]],
+        [sourceProfilesTable, [{
+          id: "profile-1",
+          source: "bonjour",
+          canonicalUrl: "https://bonjour.bio/ada"
+        }]]
+      ]);
+      mockRetrieverRetrieve.mockResolvedValue([{ personId: "person-1" }]);
+      mockRerankerRerank.mockReturnValue([{
+        personId: "person-1",
+        finalScore: 0.82,
+        matchReasons: ["skill evidence: python"]
+      }]);
+      mockBuildQueryMatchExplanation.mockReturnValue({
+        summary: "地点命中：杭州，技术命中：python",
+        reasons: ["地点命中：杭州", "技术命中：python"]
+      });
+      mockDescribeRelativeDate.mockReturnValue("3天前");
+
+      const { runSearchCli } = await import("./search-cli.js");
+      const result = await runSearchCli({
+        query: "杭州 python",
+        json: true
+      });
+
+      if (!Array.isArray(result)) {
+        throw new Error("Expected JSON array output");
+      }
+
+      expect(result[0]).toMatchObject({
+        personId: "person-1",
+        name: "Ada",
+        headline: "Python Engineer",
+        location: "杭州",
+        matchScore: 0.82,
+        matchReasons: ["skill evidence: python"],
+        matchReason: "地点命中：杭州，技术命中：python",
+        whyMatched: "地点命中：杭州，技术命中：python",
+        source: "Bonjour",
+        sources: ["Bonjour"],
+        freshness: "3天前",
+        bonjourUrl: "https://bonjour.bio/ada"
+      });
+      expect(result[0]?.lastSyncedAt).toBe("2026-03-30T00:00:00.000Z");
+      expect(result[0]?.latestEvidenceAt).toBe("2026-03-27T00:00:00.000Z");
+      expect(mockBuildQueryMatchExplanation).toHaveBeenCalledTimes(1);
+      expect(mockDescribeRelativeDate).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -116,7 +236,6 @@ describe("CLI Search", () => {
 describe("CLI Argument Parsing", () => {
   it("should parse basic command arguments", () => {
     const testArgv = ["node", "cli.ts", "search", "Python developer"];
-    // Test that we can parse args
     expect(testArgv.length).toBeGreaterThan(3);
   });
 

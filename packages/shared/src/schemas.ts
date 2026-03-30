@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-export const SourceNameSchema = z.enum(["bonjour", "github"]);
-export const AliasTypeSchema = z.enum(["github", "x", "jike", "website", "other"]);
+export const SourceNameSchema = z.enum(["bonjour", "github", "web"]);
+export const AliasTypeSchema = z.enum(["github", "x", "jike", "website", "person_id", "other"]);
 export const OptOutRequestStatusSchema = z.enum(["pending", "processed", "rejected"]);
 
 export const AliasSchema = z.object({

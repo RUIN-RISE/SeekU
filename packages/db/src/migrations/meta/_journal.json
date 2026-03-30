@@ -8,6 +8,13 @@
       "when": 1774795597926,
       "tag": "0000_wooden_wendell_rand",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1774886480000,
+      "tag": "0001_add_web_and_summary",
+      "breakpoints": true
     }
   ]
 }
