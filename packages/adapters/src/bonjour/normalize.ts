@@ -26,6 +26,26 @@ function trimToUndefined(value: string | undefined) {
   return trimmed ? trimmed : undefined;
 }
 
+const MAX_HEADLINE_LENGTH = 60;
+
+function firstLine(value: string | undefined) {
+  return value?.split(/\r?\n/)[0];
+}
+
+function clampHeadline(value: string | undefined) {
+  const normalized = trimToUndefined(firstLine(value)?.replace(/\s+/g, " "));
+  if (!normalized) {
+    return undefined;
+  }
+
+  const chars = Array.from(normalized);
+  if (chars.length <= MAX_HEADLINE_LENGTH) {
+    return normalized;
+  }
+
+  return `${chars.slice(0, MAX_HEADLINE_LENGTH - 3).join("")}...`;
+}
+
 function normalizeHandleishUrl(value: string) {
   try {
     const url = new URL(value);
@@ -93,6 +113,15 @@ function buildSummary(profile: BonjourProfile) {
   ]).join("\n\n") || undefined;
 }
 
+export function buildHeadline(profile: BonjourProfile) {
+  return (
+    clampHeadline(profile.basicInfo?.role) ||
+    clampHeadline(profile.basicInfo?.current_doing) ||
+    clampHeadline(profile.bio) ||
+    clampHeadline(buildSummary(profile))
+  );
+}
+
 function normalizeCanonicalHandle(profile: BonjourProfile) {
   return trimToUndefined(profile.user_link)?.replace(/^\/+/, "") ?? profile.profile_link;
 }
@@ -122,7 +151,7 @@ export function normalizeBonjourProfile(profile: BonjourProfile): NormalizedProf
     sourceHandle,
     canonicalUrl: `https://bonjour.bio/${sourceHandle}`,
     displayName: trimToUndefined(profile.name),
-    headline: trimToUndefined(profile.bio),
+    headline: buildHeadline(profile),
     bio: trimToUndefined(profile.description),
     summary: buildSummary(profile),
     avatarUrl: trimToUndefined(profile.avatar),

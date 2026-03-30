@@ -1,5 +1,6 @@
 import type { Person, PersonIdentity, SeekuDatabase, SourceProfile } from "@seeku/db";
 import {
+  coerceJsonObject,
   createPerson,
   createPersonIdentity,
   ensurePersonAliasesFromProfile,
@@ -13,9 +14,45 @@ import type { MatchResult } from "./types.js";
 
 export const AUTO_MERGE_THRESHOLD = 0.9;
 export const REVIEW_THRESHOLD = 0.7;
+const MAX_HEADLINE_LENGTH = 60;
 
 function getNormalizedProfile(profile: SourceProfile) {
-  return profile.normalizedPayload as unknown as NormalizedProfile;
+  return coerceJsonObject(profile.normalizedPayload) as unknown as NormalizedProfile;
+}
+
+function clampHeadline(value: string | undefined) {
+  const normalized = value
+    ?.split(/\r?\n/)[0]
+    ?.replace(/\s+/g, " ")
+    ?.trim();
+
+  if (!normalized) {
+    return undefined;
+  }
+
+  const chars = Array.from(normalized);
+  if (chars.length <= MAX_HEADLINE_LENGTH) {
+    return normalized;
+  }
+
+  return `${chars.slice(0, MAX_HEADLINE_LENGTH - 3).join("")}...`;
+}
+
+function deriveHeadlineFromProfile(profile: SourceProfile) {
+  const normalized = getNormalizedProfile(profile);
+  const rawMetadata = coerceJsonObject(normalized.rawMetadata);
+  const basicInfo = coerceJsonObject(rawMetadata.basicInfo);
+
+  const role = typeof basicInfo.role === "string" ? basicInfo.role : undefined;
+  const currentDoing =
+    typeof basicInfo.current_doing === "string" ? basicInfo.current_doing : undefined;
+
+  return (
+    clampHeadline(role) ||
+    clampHeadline(currentDoing) ||
+    clampHeadline(profile.headline || normalized.headline || profile.bio || normalized.bio) ||
+    clampHeadline(normalized.summary)
+  );
 }
 
 export function resolveConflict(preferred?: string | null, fallback?: string | null) {
@@ -39,12 +76,20 @@ export function selectPrimaryName(profiles: SourceProfile[]) {
 }
 
 export function selectPrimaryHeadline(profiles: SourceProfile[]) {
-  const bonjour = profiles.find((profile) => profile.source === "bonjour" && profile.headline?.trim());
-  if (bonjour?.headline) {
-    return bonjour.headline.trim();
+  const bonjour = profiles.find((profile) => profile.source === "bonjour");
+  const bonjourHeadline = bonjour ? deriveHeadlineFromProfile(bonjour) : undefined;
+  if (bonjourHeadline) {
+    return bonjourHeadline;
   }
 
-  return profiles.find((profile) => profile.headline?.trim())?.headline?.trim();
+  for (const profile of profiles) {
+    const headline = deriveHeadlineFromProfile(profile);
+    if (headline) {
+      return headline;
+    }
+  }
+
+  return undefined;
 }
 
 export function buildMergedSummary(profiles: SourceProfile[]) {
@@ -153,12 +198,10 @@ export async function attachProfilesToPerson(
   }
 
   const mergedProfiles = profiles;
+  const mergedHeadline = selectPrimaryHeadline(mergedProfiles);
   const updated = await updatePerson(db, personId, {
     primaryName: resolveConflict(selectPrimaryName(mergedProfiles), existingPerson.primaryName),
-    primaryHeadline: resolveConflict(
-      selectPrimaryHeadline(mergedProfiles),
-      existingPerson.primaryHeadline
-    ),
+    primaryHeadline: resolveConflict(mergedHeadline, existingPerson.primaryHeadline),
     summary: resolveConflict(buildMergedSummary(mergedProfiles), existingPerson.summary),
     primaryLocation: resolveConflict(
       selectPrimaryLocation(mergedProfiles),

@@ -7,9 +7,11 @@ import {
   listAllPersons,
   lt,
   or,
+  personIdentities,
   persons,
   searchDocuments,
   searchEmbeddings,
+  sourceProfiles,
   type EvidenceItem,
   type NewSearchDocument,
   type NewSearchEmbedding,
@@ -92,6 +94,33 @@ export class SearchIndexWorker {
     return this.db.select().from(evidenceItems).where(inArray(evidenceItems.personId, personIds));
   }
 
+  private async loadSourceHints(personIds: string[]) {
+    if (personIds.length === 0) {
+      return new Map<string, string[]>();
+    }
+
+    const rows = await this.db
+      .select({
+        personId: personIdentities.personId,
+        source: sourceProfiles.source
+      })
+      .from(personIdentities)
+      .innerJoin(sourceProfiles, eq(sourceProfiles.id, personIdentities.sourceProfileId))
+      .where(inArray(personIdentities.personId, personIds));
+
+    const hintsByPerson = new Map<string, string[]>();
+
+    for (const row of rows) {
+      const current = hintsByPerson.get(row.personId) ?? [];
+      if (!current.includes(row.source)) {
+        current.push(row.source);
+      }
+      hintsByPerson.set(row.personId, current);
+    }
+
+    return hintsByPerson;
+  }
+
   private async upsertDocument(document: NewSearchDocument) {
     await this.db
       .insert(searchDocuments)
@@ -128,8 +157,15 @@ export class SearchIndexWorker {
   async rebuildDocuments(personIds?: string[]): Promise<SearchDocumentSyncSummary> {
     const people = await this.resolvePersons(personIds);
     const ids = people.map((person) => person.id);
-    const evidence = await this.loadEvidence(ids);
-    const documents = await buildAllSearchDocuments(people, groupEvidence(evidence));
+    const [evidence, sourceHintsByPerson] = await Promise.all([
+      this.loadEvidence(ids),
+      this.loadSourceHints(ids)
+    ]);
+    const documents = await buildAllSearchDocuments(
+      people,
+      groupEvidence(evidence),
+      sourceHintsByPerson
+    );
 
     for (const document of documents) {
       await this.upsertDocument(document);

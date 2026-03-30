@@ -9,6 +9,30 @@ function hash(value: string) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+const ROLE_SIGNAL_PATTERN =
+  /(co[- ]?founder|founder|联合创始人|创始人|合伙人|partner|investor|\bvc\b|投资|产品经理|product manager|\bpm\b|backend|frontend|full[- ]?stack|后端|前端|全栈|engineer|工程师|developer|开发者|开发|researcher|研究|研究员|designer|设计|运营|operations?|sales|销售|consultant|顾问|讲师|teacher|student|学生|creator|创作者|aigcer|agent|rag|llm|ai\b|智能体|infra|增长)/i;
+
+function extractRoleSignals(value: string | undefined): string[] {
+  const normalized = value?.trim();
+  if (!normalized) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      normalized
+        .replace(/\r?\n+/g, "\n")
+        .replace(/[|｜;；]+/g, "\n")
+        .replace(/[，,、]+/g, "\n")
+        .replace(/\s*[\/／]\s*/g, "\n")
+        .split("\n")
+        .map((segment) => segment.trim())
+        .filter((segment) => segment.length > 0 && Array.from(segment).length <= 40)
+        .filter((segment) => ROLE_SIGNAL_PATTERN.test(segment))
+    )
+  );
+}
+
 export function extractBonjourProjects(profile: BonjourProfile): EvidenceItemInput[] {
   return (profile.creations ?? [])
     .filter((creation) => creation.url || creation.title)
@@ -106,17 +130,22 @@ export function extractBonjourProfileFields(profile: BonjourProfile): EvidenceIt
 
   return fields
     .filter((field) => field.value?.trim())
-    .map((field) => ({
-      source: "bonjour" as const,
-      sourceProfileId: profile._id,
-      evidenceType: "profile_field" as EvidenceType,
-      title: field.title,
-      description: field.value?.trim(),
-      metadata: {
-        field: field.title.toLowerCase().replace(/\s+/g, "_")
-      },
-      evidenceHash: hash(`bonjour:profile_field:${profile._id}:${field.title}:${field.value}`)
-    }));
+    .map((field) => {
+      const roleSignals = extractRoleSignals(field.value);
+
+      return {
+        source: "bonjour" as const,
+        sourceProfileId: profile._id,
+        evidenceType: "profile_field" as EvidenceType,
+        title: field.title,
+        description: field.value?.trim(),
+        metadata: {
+          field: field.title.toLowerCase().replace(/\s+/g, "_"),
+          ...(roleSignals.length > 0 ? { roleSignals } : {})
+        },
+        evidenceHash: hash(`bonjour:profile_field:${profile._id}:${field.title}:${field.value}`)
+      };
+    });
 }
 
 export function extractAllBonjourEvidence(

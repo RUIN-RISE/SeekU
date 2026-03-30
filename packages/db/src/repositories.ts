@@ -36,7 +36,7 @@ export interface CompleteSyncRunInput {
 
 export interface UpsertSourceProfileInput {
   profile: NormalizedProfile;
-  rawPayload: Record<string, unknown>;
+  rawPayload: unknown;
   profileHash: string;
   lastSyncRunId?: string;
   isDeleted?: boolean;
@@ -89,12 +89,51 @@ export interface CreateEvidenceItemInput {
   evidenceHash: string;
 }
 
-function toRecord(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return {};
+const JSON_PARSE_MAX_DEPTH = 3;
+
+function unwrapJsonString(value: unknown): string | null {
+  if (typeof value === "string") {
+    return value;
   }
 
-  return value as Record<string, unknown>;
+  if (value instanceof String) {
+    return value.valueOf();
+  }
+
+  return null;
+}
+
+export function coerceJsonObject(value: unknown): Record<string, unknown> {
+  let current = value;
+
+  for (let depth = 0; depth < JSON_PARSE_MAX_DEPTH; depth += 1) {
+    if (current && typeof current === "object" && !Array.isArray(current)) {
+      return current as Record<string, unknown>;
+    }
+
+    const stringValue = unwrapJsonString(current);
+    if (stringValue === null) {
+      return {};
+    }
+
+    const trimmed = stringValue.trim();
+    if (!trimmed) {
+      return {};
+    }
+
+    try {
+      current = JSON.parse(trimmed);
+    } catch {
+      return {};
+    }
+  }
+
+  return {};
+}
+
+function toJsonbSql(value: unknown) {
+  const json = JSON.stringify(coerceJsonObject(value)).replace(/'/g, "''");
+  return sql.raw(`'${json}'::jsonb`);
 }
 
 function toNumericString(value: number | undefined, fallback = 0) {
@@ -142,7 +181,10 @@ export async function getSourceSyncRun(db: SeekuDatabase, runId: string) {
 }
 
 export async function upsertSourceProfile(db: SeekuDatabase, input: UpsertSourceProfileInput) {
-  const normalizedPayload = JSON.parse(JSON.stringify(input.profile)) as Record<string, unknown>;
+  // Deep copy to ensure plain object for DB and omit undefined/complex types
+  // Note: This will strip any 'undefined' values but keep 'null'
+  const normalizedPayload = coerceJsonObject(JSON.parse(JSON.stringify(input.profile)));
+  const rawPayload = coerceJsonObject(input.rawPayload);
 
   const [profile] = await db
     .insert(sourceProfiles)
@@ -156,8 +198,8 @@ export async function upsertSourceProfile(db: SeekuDatabase, input: UpsertSource
       bio: input.profile.bio,
       locationText: input.profile.locationText,
       avatarUrl: input.profile.avatarUrl,
-      rawPayload: input.rawPayload,
-      normalizedPayload,
+      rawPayload: toJsonbSql(rawPayload),
+      normalizedPayload: toJsonbSql(normalizedPayload),
       profileHash: input.profileHash,
       lastSyncRunId: input.lastSyncRunId,
       isDeleted: input.isDeleted ?? false
@@ -172,8 +214,8 @@ export async function upsertSourceProfile(db: SeekuDatabase, input: UpsertSource
         bio: input.profile.bio,
         locationText: input.profile.locationText,
         avatarUrl: input.profile.avatarUrl,
-        rawPayload: input.rawPayload,
-        normalizedPayload,
+        rawPayload: toJsonbSql(rawPayload),
+        normalizedPayload: toJsonbSql(normalizedPayload),
         profileHash: input.profileHash,
         lastSeenAt: sql`now()`,
         lastSyncedAt: sql`now()`,
@@ -571,7 +613,7 @@ export function profileToUpsertPayload(
 ): UpsertSourceProfileInput {
   return {
     profile,
-    rawPayload: toRecord(rawPayload),
+    rawPayload: coerceJsonObject(rawPayload),
     profileHash,
     lastSyncRunId,
     isDeleted
@@ -582,7 +624,7 @@ export function extractAliasesFromNormalizedProfile(profile: SourceProfile | Nor
   const normalized =
     "source" in profile && "aliases" in profile
       ? profile
-      : ((profile.normalizedPayload ?? {}) as unknown as NormalizedProfile);
+      : (coerceJsonObject(profile.normalizedPayload) as unknown as NormalizedProfile);
 
   return (normalized.aliases ?? []) as Alias[];
 }

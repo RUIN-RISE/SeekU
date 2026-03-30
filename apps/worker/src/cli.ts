@@ -10,12 +10,14 @@ config({ path: resolve(__dirname, "../../../.env") });
 import chalk from "chalk";
 
 import {
+  runBackfillPersonFieldsWorker,
   runEvidenceStorageWorker,
   runGithubSync,
   runIdentityResolutionWorker,
   runSearchEmbeddingWorker,
   runSearchIndexWorker,
-  runSearchRebuildWorker
+  runSearchRebuildWorker,
+  runSourceProfileRepairWorker
 } from "@seeku/workers";
 
 import { runBonjourSyncJob } from "./index.js";
@@ -72,6 +74,8 @@ async function main() {
     "sync-github",
     "resolve-identities",
     "store-evidence",
+    "backfill-person-fields",
+    "repair-source-payloads",
     "search-index",
     "search-embeddings",
     "rebuild-search",
@@ -130,6 +134,20 @@ async function main() {
       .map((value) => value.trim())
       .filter(Boolean);
     result = await runEvidenceStorageWorker(personIds);
+  } else if (command === "backfill-person-fields") {
+    const personIds = parsed.args
+      .get("person-ids")
+      ?.split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    result = await runBackfillPersonFieldsWorker(personIds);
+  } else if (command === "repair-source-payloads") {
+    const source = parsed.args.get("source");
+    result = await runSourceProfileRepairWorker({
+      source: source === "bonjour" || source === "github" ? source : undefined,
+      handles,
+      limit
+    });
   } else if (command === "search-index") {
     const personIds = parsed.args
       .get("person-ids")
@@ -178,7 +196,7 @@ async function main() {
     console.log(`  ${chalk.cyan("help")}                 显示此帮助信息`);
     
     console.log(chalk.yellow("\nSync Commands (Pipeline):"));
-    console.log(`  ${chalk.dim("sync-bonjour, sync-github, resolve-identities, ...")}`);
+    console.log(`  ${chalk.dim("sync-bonjour, sync-github, resolve-identities, store-evidence, backfill-person-fields, repair-source-payloads, ...")}`);
 
     console.log(chalk.yellow("\nOptions:"));
     console.log(`  ${chalk.dim("--limit <num>")}         设置返回结果数量 (默认: 10)`);

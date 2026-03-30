@@ -1,4 +1,5 @@
 import {
+  coerceJsonObject,
   createDatabaseConnection,
   createEvidenceItem,
   getSourceProfileById,
@@ -12,6 +13,21 @@ import {
   type EvidenceItemInput
 } from "@seeku/identity";
 import type { BonjourProfile, GithubProfile, GithubRepository } from "@seeku/adapters";
+
+function coerceGithubPayload(value: unknown): {
+  profile?: GithubProfile;
+  repositories?: GithubRepository[];
+} {
+  const payload = coerceJsonObject(value);
+  const repositories = Array.isArray(payload.repositories)
+    ? (payload.repositories as GithubRepository[])
+    : [];
+
+  return {
+    profile: payload.profile as GithubProfile | undefined,
+    repositories
+  };
+}
 
 async function persistEvidenceItems(
   db: SeekuDatabase,
@@ -56,16 +72,16 @@ export async function storeEvidenceForPerson(db: SeekuDatabase, personId: string
 
     try {
       if (sourceProfile.source === "bonjour") {
-        const rawProfile = sourceProfile.rawPayload as unknown as BonjourProfile;
+        const rawProfile = coerceJsonObject(sourceProfile.rawPayload) as unknown as BonjourProfile;
         const extraction = extractAllBonjourEvidence(rawProfile);
         itemsCreated += await persistEvidenceItems(db, personId, sourceProfile.id, extraction.items);
       }
 
       if (sourceProfile.source === "github") {
-        const rawPayload = sourceProfile.rawPayload as {
-          profile: GithubProfile;
-          repositories: GithubRepository[];
-        };
+        const rawPayload = coerceGithubPayload(sourceProfile.rawPayload);
+        if (!rawPayload.profile) {
+          throw new Error("GitHub payload missing profile object.");
+        }
         const extraction = extractAllGithubEvidence(
           rawPayload.profile,
           rawPayload.repositories ?? []

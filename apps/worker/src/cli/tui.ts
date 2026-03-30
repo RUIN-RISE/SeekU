@@ -97,10 +97,24 @@ export class TerminalUI {
     console.log(chalk.dim("=".repeat(72)));
 
     candidates.slice(0, options.showingCount).forEach((candidate, index) => {
+      // Source badge
+      const sourceBadge = this.formatSourceBadge(candidate.sources);
+
+      // Freshness indicator
+      const freshness = this.formatFreshness(candidate.latestEvidenceAt, candidate.lastSyncedAt);
+
+      // Bonjour link hint
+      const linkHint = candidate.bonjourUrl
+        ? chalk.cyan(`🔗 ${candidate.bonjourUrl}`)
+        : "";
+
       console.log(
-        `${chalk.bold(`${index + 1}.`)} ${chalk.blueBright(candidate.name)}  ${chalk.green(candidate.matchScore.toFixed(1))}`
+        `${chalk.bold(`${index + 1}.`)} ${chalk.blueBright(candidate.name)}  ${chalk.green(candidate.matchScore.toFixed(1))}  ${sourceBadge} ${freshness}`
       );
       console.log(`   ${chalk.dim(candidate.location || "地点未知")} · ${candidate.headline || "No headline"}`);
+      if (linkHint) {
+        console.log(`   ${linkHint}`);
+      }
       console.log(`   ${chalk.yellow("为什么匹配")}：${candidate.matchReason || "与本轮条件高度相关"}`);
     });
 
@@ -108,7 +122,51 @@ export class TerminalUI {
     const poolHint = options.poolCount && options.poolCount > 0
       ? chalk.dim(` | pool ${options.poolCount}人`)
       : "";
-    console.log(chalk.dim(`动作：v 2 查看详情 | c 1 3 对比 | add 1 加入pool | pool 查看pool${poolHint} | sort tech | r 重新收敛 | m 更多 | q 退出`));
+    console.log(chalk.dim(`动作：v 2 详情 | o 2 打开 Bonjour | c 1 3 对比 | add 1 pool | sort tech | r refine | m 更多 | q 退出${poolHint}`));
+  }
+
+  private formatSourceBadge(sources: string[]): string {
+    if (!sources || sources.length === 0 || sources[0] === "Unknown") {
+      return chalk.dim("来源未知");
+    }
+
+    const badges = sources.map((source) => {
+      if (source === "Bonjour") {
+        return chalk.bgCyan.black(" Bonjour ");
+      }
+      if (source === "GitHub") {
+        return chalk.bgMagenta.white(" GitHub ");
+      }
+      return chalk.dim(source);
+    });
+
+    return badges.join(" ");
+  }
+
+  private formatFreshness(latestEvidence?: Date, lastSynced?: Date): string {
+    if (!latestEvidence && !lastSynced) {
+      return chalk.dim("新鲜度未知");
+    }
+
+    const now = new Date();
+    const referenceDate = latestEvidence || lastSynced;
+
+    if (!referenceDate) {
+      return chalk.dim("新鲜度未知");
+    }
+
+    const daysDiff = Math.floor((now.getTime() - referenceDate.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (daysDiff <= 7) {
+      return chalk.greenBright(`新鲜 ${daysDiff}天`);
+    }
+    if (daysDiff <= 30) {
+      return chalk.green(`${daysDiff}天前`);
+    }
+    if (daysDiff <= 90) {
+      return chalk.yellow(`${daysDiff}天前`);
+    }
+    return chalk.dim(`${daysDiff}天前`);
   }
 
   async promptShortlistAction(): Promise<ResultListCommand> {
@@ -117,12 +175,16 @@ export class TerminalUI {
   }
 
   async promptDetailAction(name: string): Promise<DetailAction> {
-    console.log(chalk.dim(`动作：back 返回结果页 | why 看评分依据 | refine 继续收敛 | q 退出`));
+    console.log(chalk.dim(`动作：back 返回 | o 打开 Bonjour | why 看评分依据 | refine 继续收敛 | q 退出`));
     const raw = await this.promptLine(`${name}>`, "back");
     const normalized = raw.trim().toLowerCase();
 
     if (normalized === "" || normalized === "back" || normalized === "b") {
       return "back";
+    }
+
+    if (normalized === "o" || normalized === "open") {
+      return "open";
     }
 
     if (normalized === "why" || normalized === "w") {
@@ -309,6 +371,11 @@ export class TerminalUI {
 
     if (command === "add" && indexes.length > 0) {
       return { type: "add", indexes };
+    }
+
+    // open: open Bonjour profile in browser
+    if ((command === "o" || command === "open") && indexes.length > 0) {
+      return { type: "open", indexes: [indexes[0]] };
     }
 
     return { type: "help" };

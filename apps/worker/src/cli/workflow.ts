@@ -10,7 +10,11 @@ import {
   persons,
   searchDocuments,
   evidenceItems,
-  type SearchDocument
+  sourceProfiles,
+  personIdentities,
+  type SearchDocument,
+  type SourceProfile,
+  type PersonIdentity
 } from "@seeku/db";
 import type { LLMProvider } from "@seeku/llm";
 import { QueryPlanner, HybridRetriever, Reranker, type QueryIntent } from "@seeku/search";
@@ -437,6 +441,39 @@ export class SearchWorkflow {
       return { type: "done", result: { type: "refine", prompt: detailOutcome.prompt } };
     }
 
+    if (command.type === "open") {
+      const target = this.pickCandidates(candidates, command.indexes || [1])[0];
+      if (!target) {
+        this.tui.displayInvalidCommand("open");
+        return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
+      }
+
+      if (!target.bonjourUrl) {
+        console.log(chalk.yellow(`\n${target.name} 没有 Bonjour 链接。`));
+        return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
+      }
+
+      console.log(chalk.cyan(`\n🔗 Bonjour: ${target.bonjourUrl}`));
+      console.log(chalk.dim("尝试在浏览器中打开..."));
+
+      // Try to open URL in browser
+      const openCommand = process.platform === "darwin"
+        ? "open"
+        : process.platform === "win32"
+          ? "start"
+          : "xdg-open";
+
+      try {
+        const { spawn } = await import("node:child_process");
+        spawn(openCommand, [target.bonjourUrl], { stdio: "ignore", detached: true });
+        console.log(chalk.green("✓ 已在浏览器中打开 Bonjour 页面。"));
+      } catch {
+        console.log(chalk.yellow("无法自动打开，请手动复制链接。"));
+      }
+
+      return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
+    }
+
     this.tui.displayInvalidCommand(command.type);
     return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
   }
@@ -456,7 +493,13 @@ export class SearchWorkflow {
         selected._hydrated.person,
         selected._hydrated.evidence,
         profile,
-        selected.matchReason
+        selected.matchReason,
+        {
+          sources: selected.sources,
+          bonjourUrl: selected.bonjourUrl,
+          lastSyncedAt: selected.lastSyncedAt,
+          latestEvidenceAt: selected.latestEvidenceAt
+        }
       )
     );
 
@@ -468,6 +511,31 @@ export class SearchWorkflow {
 
       if (action === "quit") {
         return { type: "quit" };
+      }
+
+      if (action === "open") {
+        if (!selected.bonjourUrl) {
+          console.log(chalk.yellow(`\n${selected.name} 没有 Bonjour 链接。`));
+          continue;
+        }
+
+        console.log(chalk.cyan(`\n🔗 Bonjour: ${selected.bonjourUrl}`));
+        console.log(chalk.dim("尝试在浏览器中打开..."));
+
+        const openCommand = process.platform === "darwin"
+          ? "open"
+          : process.platform === "win32"
+            ? "start"
+            : "xdg-open";
+
+        try {
+          const { spawn } = await import("node:child_process");
+          spawn(openCommand, [selected.bonjourUrl], { stdio: "ignore", detached: true });
+          console.log(chalk.green("✓ 已在浏览器中打开 Bonjour 页面。"));
+        } catch {
+          console.log(chalk.yellow("无法自动打开，请手动复制链接。"));
+        }
+        continue;
       }
 
       if (action === "why") {
@@ -576,14 +644,36 @@ export class SearchWorkflow {
     }
 
     const personIds = retrieved.map((result) => result.personId);
-    const [documents, evidence, people] = await Promise.all([
+    const [documents, evidence, people, identities] = await Promise.all([
       this.db.select().from(searchDocuments).where(inArray(searchDocuments.personId, personIds)),
       this.db.select().from(evidenceItems).where(inArray(evidenceItems.personId, personIds)),
       this.db
         .select()
         .from(persons)
-        .where(and(eq(persons.searchStatus, "active"), inArray(persons.id, personIds)))
+        .where(and(eq(persons.searchStatus, "active"), inArray(persons.id, personIds))),
+      // Get person identities to fetch source profiles (for Bonjour URL)
+      this.db
+        .select()
+        .from(personIdentities)
+        .where(inArray(personIdentities.personId, personIds))
     ]);
+
+    // Fetch source profiles for Bonjour URLs
+    const sourceProfileIds = identities.map((identity) => identity.sourceProfileId);
+    const sourceProfileRows = sourceProfileIds.length > 0
+      ? await this.db.select().from(sourceProfiles).where(inArray(sourceProfiles.id, sourceProfileIds))
+      : [];
+    const sourceProfileMap = new Map<string, SourceProfile>(
+      sourceProfileRows.map((profile) => [profile.id, profile as SourceProfile])
+    );
+
+    // Build identity map: personId -> identities
+    const identityMap = new Map<string, PersonIdentity[]>();
+    for (const identity of identities) {
+      const entries = identityMap.get(identity.personId) ?? [];
+      entries.push(identity as PersonIdentity);
+      identityMap.set(identity.personId, entries);
+    }
 
     const documentMap = new Map<string, SearchDocument>(documents.map((document) => [document.personId, document as SearchDocument]));
     const evidenceMap = new Map<string, EvidenceItem[]>();
@@ -601,7 +691,34 @@ export class SearchWorkflow {
         throw new Error(`Candidate ${result.personId} not found in database.`);
       }
 
+      const document = documentMap.get(result.personId);
       const candidateEvidence = evidenceMap.get(result.personId) || [];
+      const personIdentities = identityMap.get(result.personId) || [];
+
+      // Find Bonjour URL from source profiles
+      const bonjourIdentity = personIdentities.find((identity) => {
+        const profile = sourceProfileMap.get(identity.sourceProfileId);
+        return profile?.source === "bonjour";
+      });
+      const bonjourUrl = bonjourIdentity
+        ? sourceProfileMap.get(bonjourIdentity.sourceProfileId)?.canonicalUrl
+        : undefined;
+
+      // Backfill source badge from identity-derived Bonjour URL when facetSource is sparse.
+      const sources = document?.facetSource && document.facetSource.length > 0
+        ? document.facetSource.map((source) => source === "bonjour" ? "Bonjour" : "GitHub")
+        : bonjourUrl
+          ? ["Bonjour"]
+          : ["Unknown"];
+
+      // Latest evidence timestamp
+      const latestEvidenceAt = candidateEvidence.length > 0
+        ? candidateEvidence
+            .map((item) => item.occurredAt)
+            .filter((date): date is Date => Boolean(date))
+            .sort((a, b) => b.getTime() - a.getTime())[0]
+        : undefined;
+
       return {
         personId: result.personId,
         name: person.primaryName,
@@ -611,6 +728,10 @@ export class SearchWorkflow {
         experienceYears: null,
         matchScore: result.finalScore,
         matchReason: this.buildMatchReason(person, candidateEvidence, result.finalScore, conditions),
+        sources,
+        bonjourUrl,
+        lastSyncedAt: person.updatedAt,
+        latestEvidenceAt,
         _hydrated: {
           person,
           evidence: candidateEvidence
@@ -675,7 +796,28 @@ export class SearchWorkflow {
     }
 
     const personIds = rows.map((row) => row.person.id);
-    const evidence = await this.db.select().from(evidenceItems).where(inArray(evidenceItems.personId, personIds));
+    const [evidence, identities] = await Promise.all([
+      this.db.select().from(evidenceItems).where(inArray(evidenceItems.personId, personIds)),
+      this.db.select().from(personIdentities).where(inArray(personIdentities.personId, personIds))
+    ]);
+
+    // Fetch source profiles for Bonjour URLs
+    const sourceProfileIds = identities.map((identity) => identity.sourceProfileId);
+    const sourceProfileRows = sourceProfileIds.length > 0
+      ? await this.db.select().from(sourceProfiles).where(inArray(sourceProfiles.id, sourceProfileIds))
+      : [];
+    const sourceProfileMap = new Map<string, SourceProfile>(
+      sourceProfileRows.map((profile) => [profile.id, profile as SourceProfile])
+    );
+
+    // Build identity map: personId -> identities
+    const identityMap = new Map<string, PersonIdentity[]>();
+    for (const identity of identities) {
+      const entries = identityMap.get(identity.personId) ?? [];
+      entries.push(identity as PersonIdentity);
+      identityMap.set(identity.personId, entries);
+    }
+
     const evidenceMap = new Map<string, EvidenceItem[]>();
     for (const item of evidence) {
       const entries = evidenceMap.get(item.personId) ?? [];
@@ -688,7 +830,31 @@ export class SearchWorkflow {
         const person = row.person as Person;
         const document = row.document as SearchDocument;
         const candidateEvidence = evidenceMap.get(person.id) || [];
+        const personIdentities = identityMap.get(person.id) || [];
         const heuristicScore = this.computeFallbackScore(person, document, candidateEvidence, conditions);
+
+        // Find Bonjour URL
+        const bonjourIdentity = personIdentities.find((identity) => {
+          const profile = sourceProfileMap.get(identity.sourceProfileId);
+          return profile?.source === "bonjour";
+        });
+        const bonjourUrl = bonjourIdentity
+          ? sourceProfileMap.get(bonjourIdentity.sourceProfileId)?.canonicalUrl
+          : undefined;
+
+        const sources = document.facetSource?.length > 0
+          ? document.facetSource.map((source) => source === "bonjour" ? "Bonjour" : "GitHub")
+          : bonjourUrl
+            ? ["Bonjour"]
+            : ["Unknown"];
+
+        // Latest evidence timestamp
+        const latestEvidenceAt = candidateEvidence.length > 0
+          ? candidateEvidence
+              .map((item) => item.occurredAt)
+              .filter((date): date is Date => Boolean(date))
+              .sort((a, b) => b.getTime() - a.getTime())[0]
+          : undefined;
 
         return {
           personId: person.id,
@@ -699,6 +865,10 @@ export class SearchWorkflow {
           experienceYears: null,
           matchScore: heuristicScore,
           matchReason: this.buildFallbackReason(person, document, candidateEvidence, conditions),
+          sources,
+          bonjourUrl,
+          lastSyncedAt: person.updatedAt,
+          latestEvidenceAt,
           _hydrated: {
             person,
             evidence: candidateEvidence

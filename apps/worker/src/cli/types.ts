@@ -10,7 +10,7 @@ export interface SearchConditions {
 export type MissingField = "skills" | "locations" | "experience";
 export type ClarifyAction = "search" | "add" | "relax" | "restart" | "quit";
 export type SortMode = "overall" | "tech" | "project" | "location";
-export type DetailAction = "back" | "refine" | "why" | "quit";
+export type DetailAction = "back" | "refine" | "why" | "quit" | "open";
 
 export interface SearchDraft {
   conditions: SearchConditions;
@@ -43,10 +43,15 @@ export interface ScoredCandidate {
   matchScore: number;
   profile?: MultiDimensionProfile;
   matchReason?: string;
+  // P0: Source & Freshness visibility
+  sources: string[]; // ["Bonjour", "GitHub", ...]
+  bonjourUrl?: string; // Bonjour profile link
+  lastSyncedAt?: Date; // When person data was last updated
+  latestEvidenceAt?: Date; // Most recent evidence timestamp
 }
 
 export interface ResultListCommand {
-  type: "view" | "compare" | "refine" | "sort" | "showMore" | "quit" | "help" | "add" | "pool" | "clear" | "history" | "undo" | "show";
+  type: "view" | "compare" | "refine" | "sort" | "showMore" | "quit" | "help" | "add" | "pool" | "clear" | "history" | "undo" | "show" | "open";
   indexes?: number[];
   sortMode?: SortMode;
 }
