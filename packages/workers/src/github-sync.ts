@@ -41,11 +41,26 @@ function computeGithubSyncHash(profile: GithubProfile, repositories: GithubRepos
     .digest("hex");
 }
 
+function isValidAlias(alias: unknown): alias is { type: string; value: string } {
+  return (
+    alias !== null &&
+    typeof alias === "object" &&
+    typeof (alias as Record<string, unknown>).type === "string" &&
+    typeof (alias as Record<string, unknown>).value === "string"
+  );
+}
+
 function extractGithubHandlesFromNormalizedProfile(profile: {
   normalizedPayload: Record<string, unknown>;
-}) {
-  const normalized = profile.normalizedPayload as unknown as NormalizedProfile;
-  return (normalized.aliases ?? [])
+}): string[] {
+  const aliases = profile.normalizedPayload.aliases;
+  
+  if (!Array.isArray(aliases)) {
+    return [];
+  }
+  
+  return aliases
+    .filter(isValidAlias)
     .filter((alias) => alias.type === "github")
     .map((alias) => {
       try {

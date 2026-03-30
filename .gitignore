@@ -2,6 +2,12 @@ node_modules
 dist
 .turbo
 .env
+.env.local
+*.log
 *.tsbuildinfo
+.next
 apps/web/.next
 output
+.planning
+.claude-design
+.gemini

@@ -57,11 +57,20 @@ function toTextArray(values: string[]) {
   )}]::text[]`;
 }
 
+function escapeLikePattern(term: string): string {
+  // Escape special LIKE pattern characters to prevent injection
+  return term.replace(/[%_\\]/g, "\\$&");
+}
+
 function buildMustHaveConditions(intent: QueryIntent): SQL[] {
   return intent.mustHaves
     .map((term) => term.trim())
     .filter(Boolean)
-    .map((term) => sql`${searchDocuments.docText} ILIKE ${`%${term}%`}`);
+    .slice(0, 20) // Limit number of conditions to prevent query explosion
+    .map((term) => {
+      const escaped = escapeLikePattern(term);
+      return sql`${searchDocuments.docText} ILIKE ${`%${escaped}%`}`;
+    });
 }
 
 function buildFilterConditions(intent: QueryIntent, filters?: RetrieverFilters): SQL[] {

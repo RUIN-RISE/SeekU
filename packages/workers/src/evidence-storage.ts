@@ -72,7 +72,13 @@ export async function storeEvidenceForPerson(db: SeekuDatabase, personId: string
 
     try {
       if (sourceProfile.source === "bonjour") {
-        const rawProfile = coerceJsonObject(sourceProfile.rawPayload) as unknown as BonjourProfile;
+        const rawPayload = coerceJsonObject(sourceProfile.rawPayload);
+        // Validate BonjourProfile structure before casting
+        if (!rawPayload || typeof rawPayload !== "object" || !("profile_id" in rawPayload || "_id" in rawPayload)) {
+          console.warn(`[EvidenceStorage] Invalid Bonjour payload for profile ${sourceProfile.id}`);
+          continue;
+        }
+        const rawProfile = rawPayload as unknown as BonjourProfile;
         const extraction = extractAllBonjourEvidence(rawProfile);
         itemsCreated += await persistEvidenceItems(db, personId, sourceProfile.id, extraction.items);
       }

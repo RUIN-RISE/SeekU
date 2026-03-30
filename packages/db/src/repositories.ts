@@ -620,13 +620,34 @@ export function profileToUpsertPayload(
   };
 }
 
-export function extractAliasesFromNormalizedProfile(profile: SourceProfile | NormalizedProfile) {
-  const normalized =
-    "source" in profile && "aliases" in profile
-      ? profile
-      : (coerceJsonObject(profile.normalizedPayload) as unknown as NormalizedProfile);
-
-  return (normalized.aliases ?? []) as Alias[];
+export function extractAliasesFromNormalizedProfile(profile: SourceProfile | NormalizedProfile): Alias[] {
+  // Type guard to check if profile is already NormalizedProfile
+  if ("source" in profile && "aliases" in profile) {
+    return profile.aliases ?? [];
+  }
+  
+  // Otherwise, coerce from normalizedPayload
+  const coerced = coerceJsonObject(profile.normalizedPayload);
+  
+  // Validate that coerced result has expected structure
+  if (!coerced || typeof coerced !== "object") {
+    return [];
+  }
+  
+  const aliases = coerced.aliases;
+  if (!Array.isArray(aliases)) {
+    return [];
+  }
+  
+  // Filter and validate each alias
+  return aliases.filter((alias): alias is Alias => {
+    return (
+      alias !== null &&
+      typeof alias === "object" &&
+      typeof alias.type === "string" &&
+      typeof alias.value === "string"
+    );
+  });
 }
 
 export async function ensurePersonAliasesFromProfile(

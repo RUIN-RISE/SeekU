@@ -3,8 +3,51 @@ import type { Alias, NormalizedProfile } from "@seeku/shared";
 
 import type { MatchResult, MatchReason, ProfileMatchInput } from "./types.js";
 
-function getNormalizedProfile(profile: SourceProfile) {
-  return profile.normalizedPayload as unknown as NormalizedProfile;
+function isValidAlias(alias: unknown): alias is Alias {
+  return (
+    alias !== null &&
+    typeof alias === "object" &&
+    typeof (alias as Record<string, unknown>).type === "string" &&
+    typeof (alias as Record<string, unknown>).value === "string" &&
+    typeof (alias as Record<string, unknown>).confidence === "number"
+  );
+}
+
+function isValidNormalizedProfile(payload: unknown): payload is NormalizedProfile {
+  if (!payload || typeof payload !== "object") {
+    return false;
+  }
+  
+  const p = payload as Record<string, unknown>;
+  
+  // Check required fields
+  if (typeof p.source !== "string") return false;
+  if (typeof p.sourceHandle !== "string") return false;
+  if (typeof p.canonicalUrl !== "string") return false;
+  if (!Array.isArray(p.aliases)) return false;
+  
+  // Validate source is valid SourceName
+  const validSources = ["bonjour", "github", "web"] as const;
+  if (!validSources.includes(p.source as typeof validSources[number])) return false;
+  
+  return true;
+}
+
+function getNormalizedProfile(profile: SourceProfile): NormalizedProfile | null {
+  const payload = profile.normalizedPayload;
+  
+  if (isValidNormalizedProfile(payload)) {
+    return payload;
+  }
+  
+  // Fallback: try to coerce and validate
+  const coerced = typeof payload === "string" ? JSON.parse(payload) : payload;
+  
+  if (isValidNormalizedProfile(coerced)) {
+    return coerced;
+  }
+  
+  return null;
 }
 
 function normalizeAliasValue(value: string) {
@@ -16,14 +59,24 @@ function normalizeAliasValue(value: string) {
   }
 }
 
-function findAliases(profile: SourceProfile, aliasType: Alias["type"]) {
-  return (getNormalizedProfile(profile).aliases ?? []).filter((alias) => alias.type === aliasType);
+function findAliases(profile: SourceProfile, aliasType: Alias["type"]): Alias[] {
+  const normalized = getNormalizedProfile(profile);
+  if (!normalized) return [];
+  return (normalized.aliases ?? []).filter((alias) => alias.type === aliasType);
 }
 
 export function findExplicitLinks(profile: SourceProfile) {
   const normalized = getNormalizedProfile(profile);
   const githubHandles = new Set<string>();
   const bonjourHandles = new Set<string>();
+
+  if (!normalized) {
+    return {
+      githubHandles: [...githubHandles],
+      bonjourHandles: [...bonjourHandles],
+      confidence: 0
+    };
+  }
 
   for (const alias of normalized.aliases ?? []) {
     if (alias.type === "github") {
