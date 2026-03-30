@@ -60,6 +60,17 @@ interface DetailOutcome {
   prompt?: string;
 }
 
+interface RefineContextCandidate {
+  shortlistIndex: number;
+  personId: string;
+  name: string;
+  headline: string | null;
+  location: string | null;
+  sources: string[];
+  matchReason?: string;
+  summary?: string;
+}
+
 const SKIPPED_QUERY_VALUES = new Set(["不限", "skip", "none"]);
 
 export class SearchWorkflow {
@@ -206,7 +217,7 @@ export class SearchWorkflow {
 
       if (candidates.length === 0) {
         this.tui.displayNoResults(conditions);
-        const prompt = await this.chat.askFreeform("想怎么调整这轮搜索？直接输入新的 refine 指令，或按 Enter 重新开始");
+        const prompt = await this.chat.askFreeform("想怎么调整这轮搜索？例如：去掉销售 / 更看重最近活跃 / 更偏 Bonjour");
         if (!prompt) {
           return { type: "restart" };
         }
@@ -242,7 +253,7 @@ export class SearchWorkflow {
         continue;
       }
 
-      conditions = await this.reviseSessionConditions(conditions, result.prompt || "");
+      conditions = await this.reviseSessionConditions(conditions, result.prompt || "", candidates);
       sortMode = "overall";
     }
   }
@@ -312,7 +323,7 @@ export class SearchWorkflow {
     }
 
     if (command.type === "refine") {
-      const prompt = await this.chat.askFreeform("想怎么继续 refine？例如：地点放宽到上海/杭州，或更偏推理框架");
+      const prompt = command.prompt || await this.chat.askFreeform("想怎么继续 refine？例如：去掉销售 / 更看重最近活跃 / 像 2 号但更偏后端");
       if (!prompt) {
         return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
       }
@@ -323,6 +334,7 @@ export class SearchWorkflow {
     if (command.type === "sort") {
       const nextSortMode = command.sortMode || "overall";
       await this.sortCandidates(candidates, nextSortMode, conditions);
+      this.tui.displaySortApplied(nextSortMode);
       return {
         type: "continue",
         sortMode: nextSortMode,
@@ -594,7 +606,7 @@ export class SearchWorkflow {
 
       if (action === "refine") {
         const prompt = await this.chat.askFreeform(
-          `想基于 ${selected.name} 怎么继续收敛？例如：只看更偏推理框架的人`
+          `想基于 ${selected.name} 怎么继续收敛？例如：去掉销售 / 更看重最近活跃 / 更偏 Bonjour`
         );
         if (!prompt) {
           continue;
@@ -636,12 +648,32 @@ export class SearchWorkflow {
       });
     };
 
+    const candidateAnchor = conditions.candidateAnchor
+      ? {
+          shortlistIndex:
+            typeof conditions.candidateAnchor.shortlistIndex === "number" &&
+            conditions.candidateAnchor.shortlistIndex > 0
+              ? conditions.candidateAnchor.shortlistIndex
+              : undefined,
+          personId: conditions.candidateAnchor.personId?.trim() || undefined,
+          name: conditions.candidateAnchor.name?.trim() || undefined
+        }
+      : undefined;
+
     return {
       skills: dedupe(conditions.skills),
       locations: dedupe(conditions.locations),
       experience: conditions.experience?.trim() || undefined,
       role: conditions.role?.trim() || undefined,
       sourceBias: conditions.sourceBias,
+      mustHave: dedupe(conditions.mustHave),
+      niceToHave: dedupe(conditions.niceToHave),
+      exclude: dedupe(conditions.exclude),
+      preferFresh: Boolean(conditions.preferFresh),
+      candidateAnchor:
+        candidateAnchor?.shortlistIndex || candidateAnchor?.personId || candidateAnchor?.name
+          ? candidateAnchor
+          : undefined,
       limit: conditions.limit || CLI_CONFIG.ui.defaultLimit
     };
   }
@@ -652,7 +684,15 @@ export class SearchWorkflow {
       ...conditions.locations,
       conditions.experience ?? "",
       conditions.role ?? "",
-      conditions.sourceBias ?? ""
+      conditions.sourceBias ?? "",
+      ...conditions.mustHave.map((value) => `must have ${value}`),
+      ...conditions.niceToHave.map((value) => `prefer ${value}`),
+      ...conditions.exclude.map((value) => `exclude ${value}`),
+      conditions.preferFresh ? "prefer recent active profiles" : "",
+      conditions.candidateAnchor?.name ? `similar to ${conditions.candidateAnchor.name}` : "",
+      conditions.candidateAnchor?.shortlistIndex
+        ? `similar to shortlist ${conditions.candidateAnchor.shortlistIndex}`
+        : ""
     ]
       .map((value) => value.trim())
       .filter((value) => value.length > 0 && !SKIPPED_QUERY_VALUES.has(value.toLowerCase()))
@@ -671,7 +711,16 @@ export class SearchWorkflow {
       locations: normalizeArray(conditions.locations),
       experience: conditions.experience?.trim().toLowerCase() ?? "",
       role: conditions.role?.trim().toLowerCase() ?? "",
-      sourceBias: conditions.sourceBias ?? ""
+      sourceBias: conditions.sourceBias ?? "",
+      mustHave: normalizeArray(conditions.mustHave),
+      niceToHave: normalizeArray(conditions.niceToHave),
+      exclude: normalizeArray(conditions.exclude),
+      preferFresh: conditions.preferFresh,
+      candidateAnchor: {
+        shortlistIndex: conditions.candidateAnchor?.shortlistIndex ?? "",
+        personId: conditions.candidateAnchor?.personId?.trim().toLowerCase() ?? "",
+        name: conditions.candidateAnchor?.name?.trim().toLowerCase() ?? ""
+      }
     };
 
     return createHash("sha1").update(JSON.stringify(payload)).digest("hex");
@@ -733,8 +782,23 @@ export class SearchWorkflow {
     }
     const personMap = new Map<string, Person>(people.map((person) => [person.id, person as Person]));
 
-    const reranked = this.reranker.rerank(retrieved, intent, documentMap, evidenceMap);
-    const hydrated = reranked.slice(0, limit).map((result) => {
+    const filteredRetrieved = retrieved.filter((result) => {
+      const person = personMap.get(result.personId);
+      if (!person) {
+        return false;
+      }
+
+      return this.matchesSearchState(
+        person,
+        documentMap.get(result.personId),
+        evidenceMap.get(result.personId) || [],
+        conditions
+      );
+    });
+
+    const reranked = this.reranker.rerank(filteredRetrieved, intent, documentMap, evidenceMap);
+    const hydrationWindow = conditions.preferFresh ? Math.min(reranked.length, limit * 2) : limit;
+    const hydrated = reranked.slice(0, hydrationWindow).map((result) => {
       const person = personMap.get(result.personId);
       if (!person) {
         throw new Error(`Candidate ${result.personId} not found in database.`);
@@ -788,7 +852,8 @@ export class SearchWorkflow {
       };
     });
 
-    return hydrated.length > 0 ? hydrated : this.performFallbackSearch(conditions);
+    const ordered = this.applySearchStateOrdering(hydrated, conditions).slice(0, limit);
+    return ordered.length > 0 ? ordered : this.performFallbackSearch(conditions);
   }
 
   private mergeIntentWithConditions(intent: QueryIntent, conditions: SearchConditions): QueryIntent {
@@ -813,9 +878,13 @@ export class SearchWorkflow {
       mustHaves: unique([
         ...intent.mustHaves,
         ...(conditions.role ? [conditions.role] : []),
-        ...conditions.skills
+        ...conditions.skills,
+        ...conditions.mustHave
       ]),
-      niceToHaves: unique(intent.niceToHaves)
+      niceToHaves: unique([
+        ...intent.niceToHaves,
+        ...conditions.niceToHave
+      ])
     };
   }
 
@@ -874,6 +943,10 @@ export class SearchWorkflow {
       evidenceMap.set(item.personId, entries);
     }
 
+    const fallbackDocumentMap = new Map<string, SearchDocument>(
+      rows.map((row) => [row.person.id, row.document as SearchDocument])
+    );
+
     const scored = rows
       .map((row) => {
         const person = row.person as Person;
@@ -924,10 +997,18 @@ export class SearchWorkflow {
           }
         } satisfies HydratedCandidate;
       })
+      .filter((candidate) =>
+        this.matchesSearchState(
+          candidate._hydrated.person,
+          fallbackDocumentMap.get(candidate.personId),
+          candidate._hydrated.evidence,
+          conditions
+        )
+      )
       .sort((left, right) => right.matchScore - left.matchScore)
       .slice(0, conditions.limit);
 
-    return scored;
+    return this.applySearchStateOrdering(scored, conditions);
   }
 
   private computeFallbackScore(
@@ -936,14 +1017,7 @@ export class SearchWorkflow {
     evidence: EvidenceItem[],
     conditions: SearchConditions
   ): number {
-    const context = [
-      person.primaryHeadline || "",
-      person.summary || "",
-      document.docText || "",
-      ...evidence.slice(0, 8).map((item) => `${item.title || ""} ${item.description || ""}`)
-    ]
-      .join(" ")
-      .toLowerCase();
+    const context = this.buildSearchStateContext(person, document, evidence.slice(0, 8));
 
     let score = 35;
 
@@ -969,7 +1043,60 @@ export class SearchWorkflow {
       score += Math.round((matchedSkills.length / conditions.skills.length) * 25);
     }
 
+    if (conditions.niceToHave.length > 0) {
+      const matchedNiceToHave = conditions.niceToHave.filter((term) => context.includes(term.toLowerCase()));
+      score += Math.min(10, matchedNiceToHave.length * 4);
+    }
+
     return Math.min(100, score);
+  }
+
+  private matchesSearchState(
+    person: Person,
+    document: SearchDocument | undefined,
+    evidence: EvidenceItem[],
+    conditions: SearchConditions
+  ): boolean {
+    const context = this.buildSearchStateContext(person, document, evidence);
+
+    if (conditions.mustHave.length > 0) {
+      const hasMissingMustHave = conditions.mustHave.some(
+        (term) => !context.includes(term.toLowerCase())
+      );
+      if (hasMissingMustHave) {
+        return false;
+      }
+    }
+
+    if (conditions.exclude.length > 0) {
+      const hasExcludedTerm = conditions.exclude.some(
+        (term) => context.includes(term.toLowerCase())
+      );
+      if (hasExcludedTerm) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private buildSearchStateContext(
+    person: Person,
+    document: SearchDocument | undefined,
+    evidence: EvidenceItem[]
+  ): string {
+    return [
+      person.primaryName || "",
+      person.primaryHeadline || "",
+      person.primaryLocation || "",
+      person.summary || "",
+      document?.docText || "",
+      ...(document?.facetRole || []),
+      ...(document?.facetTags || []),
+      ...evidence.map((item) => `${item.title || ""} ${item.description || ""}`)
+    ]
+      .join(" ")
+      .toLowerCase();
   }
 
   private buildFallbackReason(
@@ -1399,12 +1526,120 @@ export class SearchWorkflow {
 
   private async reviseSessionConditions(
     current: SearchConditions,
-    prompt: string
+    prompt: string,
+    candidates: HydratedCandidate[] = []
   ): Promise<SearchConditions> {
+    const refineContext = this.buildRefineContextCandidates(candidates);
     this.spinner.start("正在更新这轮搜索条件...");
-    const updated = await this.chat.reviseConditions(current, prompt, "edit");
+    const updated = await this.chat.reviseConditions(
+      current,
+      prompt,
+      "edit",
+      refineContext.length > 0 ? { shortlist: refineContext } : undefined
+    );
     this.spinner.stop();
-    return this.normalizeConditions(updated);
+    return this.normalizeConditions(
+      this.resolveCandidateAnchorWithContext(prompt, updated, refineContext)
+    );
+  }
+
+  private buildRefineContextCandidates(candidates: HydratedCandidate[]): RefineContextCandidate[] {
+    return candidates
+      .slice(0, 8)
+      .map((candidate, index) => ({
+        shortlistIndex: index + 1,
+        personId: candidate.personId,
+        name: candidate.name,
+        headline: candidate.headline,
+        location: candidate.location,
+        sources: candidate.sources,
+        matchReason: candidate.matchReason,
+        summary: candidate.profile?.summary
+      }));
+  }
+
+  private resolveCandidateAnchorWithContext(
+    prompt: string,
+    conditions: SearchConditions,
+    context: RefineContextCandidate[]
+  ): SearchConditions {
+    const anchor = conditions.candidateAnchor ? { ...conditions.candidateAnchor } : undefined;
+    const indexMatch = prompt.match(/(?:像|参考|类似)\s*(\d+)\s*号/);
+    const index = indexMatch?.[1] ? Number(indexMatch[1]) : anchor?.shortlistIndex;
+    const byIndex = typeof index === "number"
+      ? context.find((candidate) => candidate.shortlistIndex === index)
+      : undefined;
+    const byName = context.find((candidate) =>
+      prompt.toLowerCase().includes(candidate.name.toLowerCase())
+    );
+    const resolved = byIndex || byName;
+
+    if (!resolved) {
+      return conditions;
+    }
+
+    return {
+      ...conditions,
+      candidateAnchor: {
+        shortlistIndex: resolved.shortlistIndex,
+        personId: resolved.personId,
+        name: resolved.name
+      }
+    };
+  }
+
+  private applySearchStateOrdering(
+    candidates: HydratedCandidate[],
+    conditions: SearchConditions
+  ): HydratedCandidate[] {
+    if (!conditions.preferFresh && !conditions.sourceBias) {
+      return candidates;
+    }
+
+    return [...candidates].sort((left, right) => {
+      const delta =
+        this.computeSearchStateOrderingScore(right, conditions) -
+        this.computeSearchStateOrderingScore(left, conditions);
+
+      if (delta !== 0) {
+        return delta;
+      }
+
+      return right.matchScore - left.matchScore;
+    });
+  }
+
+  private computeSearchStateOrderingScore(
+    candidate: HydratedCandidate,
+    conditions: SearchConditions
+  ): number {
+    let score = candidate.matchScore * 100;
+
+    if (conditions.sourceBias) {
+      const expectedSource = conditions.sourceBias === "bonjour" ? "Bonjour" : "GitHub";
+      if (candidate.sources.includes(expectedSource)) {
+        score += 18;
+      }
+    }
+
+    if (conditions.preferFresh) {
+      const referenceDate = candidate.latestEvidenceAt ?? candidate.lastSyncedAt;
+      if (referenceDate) {
+        const ageInDays = Math.floor(
+          (Date.now() - referenceDate.getTime()) / (1000 * 60 * 60 * 24)
+        );
+
+        if (ageInDays <= 7) {
+          score += 20;
+        } else if (ageInDays <= 30) {
+          score += 12;
+        } else if (ageInDays <= 90) {
+          score += 5;
+        }
+      }
+    }
+
+    return score;
   }
 
   private async sortCandidates(
@@ -1413,7 +1648,13 @@ export class SearchWorkflow {
     conditions: SearchConditions
   ): Promise<void> {
     if (sortMode === "overall") {
-      candidates.sort((left, right) => right.matchScore - left.matchScore);
+      const ordered = this.applySearchStateOrdering(candidates, conditions);
+      candidates.splice(0, candidates.length, ...ordered);
+      return;
+    }
+
+    if (this.isRerankOnlySortMode(sortMode)) {
+      candidates.sort((left, right) => this.compareRerankOnlyCandidates(left, right, sortMode));
       return;
     }
 
@@ -1435,6 +1676,55 @@ export class SearchWorkflow {
     };
 
     candidates.sort((left, right) => scoreOf(right) - scoreOf(left));
+  }
+
+  private isRerankOnlySortMode(
+    sortMode: SortMode
+  ): sortMode is Extract<SortMode, "fresh" | "source" | "evidence"> {
+    return sortMode === "fresh" || sortMode === "source" || sortMode === "evidence";
+  }
+
+  private compareRerankOnlyCandidates(
+    left: HydratedCandidate,
+    right: HydratedCandidate,
+    sortMode: Extract<SortMode, "fresh" | "source" | "evidence">
+  ): number {
+    const compositeDelta =
+      this.scorer.scoreRerankCandidate(sortMode, right, right._hydrated.evidence) -
+      this.scorer.scoreRerankCandidate(sortMode, left, left._hydrated.evidence);
+
+    if (Math.abs(compositeDelta) > 0.001) {
+      return compositeDelta;
+    }
+
+    const leftSignals = this.buildRerankSignals(left);
+    const rightSignals = this.buildRerankSignals(right);
+    const tieBreakerOrder: Record<
+      Extract<SortMode, "fresh" | "source" | "evidence">,
+      Array<keyof ReturnType<SearchWorkflow["buildRerankSignals"]>>
+    > = {
+      fresh: ["fresh", "evidence", "source", "match"],
+      source: ["source", "fresh", "evidence", "match"],
+      evidence: ["evidence", "fresh", "source", "match"]
+    };
+
+    for (const key of tieBreakerOrder[sortMode]) {
+      const delta = rightSignals[key] - leftSignals[key];
+      if (delta !== 0) {
+        return delta;
+      }
+    }
+
+    return 0;
+  }
+
+  private buildRerankSignals(candidate: HydratedCandidate) {
+    return {
+      fresh: this.scorer.scoreFreshness(candidate),
+      source: this.scorer.scoreSourcePriority(candidate),
+      evidence: this.scorer.scoreEvidenceStrength(candidate._hydrated.evidence),
+      match: this.scorer.normalizeMatchScore(candidate.matchScore)
+    };
   }
 
   private async ensureProfiles(
@@ -1638,6 +1928,28 @@ export class SearchWorkflow {
 
     if (conditions.sourceBias) {
       parts.push(`来源 ${conditions.sourceBias}`);
+    }
+
+    if (conditions.mustHave.length > 0) {
+      parts.push(`必须项 ${conditions.mustHave.join(" / ")}`);
+    }
+
+    if (conditions.niceToHave.length > 0) {
+      parts.push(`优先项 ${conditions.niceToHave.join(" / ")}`);
+    }
+
+    if (conditions.exclude.length > 0) {
+      parts.push(`排除项 ${conditions.exclude.join(" / ")}`);
+    }
+
+    if (conditions.preferFresh) {
+      parts.push("偏好最近活跃");
+    }
+
+    if (conditions.candidateAnchor?.name) {
+      parts.push(`参考候选 ${conditions.candidateAnchor.name}`);
+    } else if (conditions.candidateAnchor?.shortlistIndex) {
+      parts.push(`参考 shortlist #${conditions.candidateAnchor.shortlistIndex}`);
     }
 
     return parts.length > 0 ? parts.join("，") : "不限条件";

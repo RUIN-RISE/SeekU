@@ -285,7 +285,16 @@ ${chalk.dim("下一步：back 返回 | o 打开 Bonjour | why 评分依据 | ref
       conditions.skills.length > 0 ? `技能 ${conditions.skills.join("/")}` : "",
       conditions.locations.length > 0 ? `地点 ${conditions.locations.join("/")}` : "",
       conditions.experience ? `经验 ${conditions.experience}` : "",
-      conditions.sourceBias ? `来源 ${conditions.sourceBias}` : ""
+      conditions.sourceBias ? `来源 ${conditions.sourceBias}` : "",
+      conditions.mustHave.length > 0 ? `必须 ${conditions.mustHave.join("/")}` : "",
+      conditions.niceToHave.length > 0 ? `优先 ${conditions.niceToHave.join("/")}` : "",
+      conditions.exclude.length > 0 ? `排除 ${conditions.exclude.join("/")}` : "",
+      conditions.preferFresh ? "最近活跃优先" : "",
+      conditions.candidateAnchor?.name
+        ? `参考 ${conditions.candidateAnchor.name}`
+        : conditions.candidateAnchor?.shortlistIndex
+          ? `参考 #${conditions.candidateAnchor.shortlistIndex}`
+          : ""
     ].filter(Boolean);
 
     return parts.join(" | ") || "未设置明确条件";

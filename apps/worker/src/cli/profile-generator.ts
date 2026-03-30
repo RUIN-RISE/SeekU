@@ -3,6 +3,8 @@ import type { LLMProvider } from "@seeku/llm";
 import { SiliconFlowProvider } from "@seeku/llm";
 import { MultiDimensionProfile } from "./types.js";
 import { ProfileSummarySchema, sanitizeForPrompt, safeParseJSON } from "./schemas.js";
+import { CLI_CONFIG } from "./config.js";
+import { withRetry } from "./retry.js";
 
 export class ProfileGenerator {
   constructor(private llm: LLMProvider) {}
@@ -54,10 +56,22 @@ CRITICAL RULES:
 `;
 
     try {
-      const response = await this.llm.chat([
-        { role: "system", content: "You are a professional talent profiler. You output only valid JSON." },
-        { role: "user", content: summaryPrompt }
-      ]);
+      const response = await withRetry(
+        async () => {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), CLI_CONFIG.llm.timeoutMs);
+
+          try {
+            return await this.llm.chat([
+              { role: "system", content: "You are a professional talent profiler. You output only valid JSON." },
+              { role: "user", content: summaryPrompt }
+            ], { signal: controller.signal });
+          } finally {
+            clearTimeout(timeoutId);
+          }
+        },
+        { maxRetries: CLI_CONFIG.llm.maxRetries }
+      );
 
       const result = safeParseJSON(
         response.content,
@@ -74,7 +88,11 @@ CRITICAL RULES:
         highlights: result.data.highlights ?? ["Expertise in relevant technologies", "Proven project experience", "Active professional profile"]
       };
     } catch (e) {
-      console.warn("Failed to generate profile details:", e instanceof Error ? e.message : String(e));
+      if (e instanceof Error && e.name === "AbortError") {
+        console.warn("Profile generation timed out after", CLI_CONFIG.llm.timeoutMs, "ms");
+      } else {
+        console.warn("Failed to generate profile details:", e instanceof Error ? e.message : String(e));
+      }
       return {
         ...profile,
         summary: "Detailed profile summary could not be generated at this time.",

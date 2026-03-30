@@ -1,21 +1,39 @@
 import { Person, EvidenceItem } from "@seeku/db";
 import type { LLMProvider } from "@seeku/llm";
 import { SiliconFlowProvider } from "@seeku/llm";
-import { SearchConditions, DimensionScores, MultiDimensionProfile } from "./types.js";
+import {
+  SearchConditions,
+  DimensionScores,
+  MultiDimensionProfile,
+  ScoredCandidate,
+  SortMode
+} from "./types.js";
 import { LLMScoresSchema, sanitizeForPrompt, safeParseJSON } from "./schemas.js";
+import { CLI_CONFIG } from "./config.js";
+import { withRetry } from "./retry.js";
 
-// Scoring weights configuration (extracted for easy tuning)
-export const SCORING_WEIGHTS = {
-  techMatch: 0.30,
-  projectDepth: 0.25,
-  academicImpact: 0.15,
-  careerStability: 0.10,
-  communityReputation: 0.10,
-  locationMatch: 0.10
-} as const;
+// Scoring weights configuration (centralized in config.ts)
+const SCORING_WEIGHTS = CLI_CONFIG.scoring.weights;
 
-// Timeout for LLM calls
-const LLM_TIMEOUT_MS = 8000;
+// Timeout for LLM calls (centralized in config.ts)
+const LLM_TIMEOUT_MS = CLI_CONFIG.llm.timeoutMs;
+
+type RerankOnlySortMode = Extract<SortMode, "fresh" | "source" | "evidence">;
+type CandidateRerankSignals = Pick<
+  ScoredCandidate,
+  "matchScore" | "sources" | "bonjourUrl" | "lastSyncedAt" | "latestEvidenceAt"
+>;
+
+const EVIDENCE_TYPE_WEIGHTS: Record<EvidenceItem["evidenceType"], number> = {
+  project: 24,
+  repository: 22,
+  experience: 16,
+  job_signal: 14,
+  community_post: 12,
+  education: 10,
+  social: 8,
+  profile_field: 5
+};
 
 export class HybridScoringEngine {
   constructor(private llm: LLMProvider) {}
@@ -68,22 +86,37 @@ export class HybridScoringEngine {
         }
       }
 
-      // Year-based matching (simplified heuristic)
+      // Year-based matching (Improved heuristic)
+      // TODO: Extract actual dates from evidence and calculate real seniority.
+      // Current heuristic: combines keyword matching with evidence count/type.
       const yearMatch = exp.match(/(\d+)/);
       if (yearMatch) {
-        const years = parseInt(yearMatch[1]);
-        // Look for experience evidence count as proxy
-        const expEvidence = evidence.filter(e => e.evidenceType === "experience");
-        if (expEvidence.length >= years / 2) {
-          bonus += 10;
-        }
+         const requestedValue = parseInt(yearMatch[1]);
+         const requestedYears = isNaN(requestedValue) ? 0 : requestedValue;
+         
+         const relevantEvidence = evidence.filter(e => 
+           e.evidenceType === "experience" || 
+           e.evidenceType === "project" || 
+           e.evidenceType === "education"
+         );
+         
+         // Heuristic: Roughly 0.7 pieces of evidence per year of experience
+         if (requestedYears > 0 && relevantEvidence.length >= requestedYears * 0.7) {
+           bonus += 10;
+         }
       }
     }
 
     // Match role (e.g., "AI工程师", "后端开发")
     if (conditions.role) {
-      const role = conditions.role.toLowerCase();
-      if (context.includes(role) || headline.includes(role)) {
+      const roleLower = conditions.role.toLowerCase();
+      // Match whole words to prevent "AI" matching "FAIL"
+      // Added support for more delimiters like backslashes, slashes, CJK dashes, and underscores
+      const contextWords = context.split(/[\s,.'"\-_—\\/|]+/);
+      const headlineWords = headline.split(/[\s,.'"\-_—\\/|]+/);
+      
+      if (contextWords.some(w => w.toLowerCase() === roleLower) || 
+          headlineWords.some(w => w.toLowerCase() === roleLower)) {
         bonus += 15;
       }
     }
@@ -129,8 +162,6 @@ export class HybridScoringEngine {
   // --- LLM Based Scores (40% Weighting) ---
 
   async scoreByLLM(candidate: Person, evidence: EvidenceItem[]): Promise<Partial<DimensionScores>> {
-    const controller = new AbortController();
-
     try {
       // Sanitize external data to prevent prompt injection
       const safeName = sanitizeForPrompt(candidate.primaryName || "Unknown", "name");
@@ -159,15 +190,23 @@ Return ONLY a JSON object:
 CRITICAL: Return ONLY the JSON, no markdown, no explanation.
 `;
 
-      // Set timeout and pass signal to LLM
-      const timeoutId = setTimeout(() => controller.abort(), LLM_TIMEOUT_MS);
-
-      const response = await this.llm.chat([
-        { role: "system", content: "You are an expert technical recruiter. You output only valid JSON." },
-        { role: "user", content: prompt }
-      ], { signal: controller.signal }); // Critical: pass signal!
-
-      clearTimeout(timeoutId);
+      const response = await withRetry(
+        async () => {
+          // ISSUE-V3: P2 Create fresh AbortController and timeout for EACH retry attempt
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), LLM_TIMEOUT_MS);
+          
+          try {
+            return await this.llm.chat([
+              { role: "system", content: "You are an expert technical recruiter. You output only valid JSON." },
+              { role: "user", content: prompt }
+            ], { signal: controller.signal });
+          } finally {
+            clearTimeout(timeoutId);
+          }
+        },
+        { maxRetries: CLI_CONFIG.llm.maxRetries }
+      );
 
       const result = safeParseJSON(
         response.content,
@@ -234,5 +273,158 @@ CRITICAL: Return ONLY the JSON, no markdown, no explanation.
       highlights: [],
       summary: ""
     };
+  }
+
+  scoreRerankCandidate(
+    sortMode: RerankOnlySortMode,
+    candidate: CandidateRerankSignals,
+    evidence: EvidenceItem[] = []
+  ): number {
+    const normalizedMatch = this.normalizeMatchScore(candidate.matchScore);
+    const freshnessScore = this.scoreFreshness(candidate);
+    const sourceScore = this.scoreSourcePriority(candidate);
+    const evidenceScore = this.scoreEvidenceStrength(evidence);
+
+    if (sortMode === "fresh") {
+      return freshnessScore * 0.75 + evidenceScore * 0.15 + normalizedMatch * 0.1;
+    }
+
+    if (sortMode === "source") {
+      return sourceScore * 0.7 + freshnessScore * 0.15 + evidenceScore * 0.1 + normalizedMatch * 0.05;
+    }
+
+    return evidenceScore * 0.72 + freshnessScore * 0.16 + sourceScore * 0.07 + normalizedMatch * 0.05;
+  }
+
+  scoreFreshness(candidate: Pick<CandidateRerankSignals, "latestEvidenceAt" | "lastSyncedAt">): number {
+    const referenceDate = candidate.latestEvidenceAt ?? candidate.lastSyncedAt;
+    if (!referenceDate) {
+      return 0;
+    }
+
+    const ageInDays = this.getAgeInDays(referenceDate);
+    let score = 0;
+
+    if (ageInDays <= 7) {
+      score = 100;
+    } else if (ageInDays <= 30) {
+      score = 86;
+    } else if (ageInDays <= 90) {
+      score = 68;
+    } else if (ageInDays <= 180) {
+      score = 46;
+    } else if (ageInDays <= 365) {
+      score = 24;
+    } else {
+      score = 8;
+    }
+
+    if (candidate.latestEvidenceAt) {
+      score += 6;
+    }
+
+    return Math.min(100, score);
+  }
+
+  scoreSourcePriority(candidate: Pick<CandidateRerankSignals, "sources" | "bonjourUrl">): number {
+    if (!candidate.sources || candidate.sources.length === 0 || candidate.sources[0] === "Unknown") {
+      return candidate.bonjourUrl ? 78 : 10;
+    }
+
+    let score = 20;
+
+    if (candidate.sources.includes("Bonjour")) {
+      score += 52;
+    }
+
+    if (candidate.bonjourUrl) {
+      score += 18;
+    }
+
+    if (candidate.sources.includes("GitHub")) {
+      score += 8;
+    }
+
+    if (candidate.sources.length > 1) {
+      score += 6;
+    }
+
+    return Math.min(100, score);
+  }
+
+  scoreEvidenceStrength(evidence: EvidenceItem[]): number {
+    if (evidence.length === 0) {
+      return 0;
+    }
+
+    const rankedEvidence = [...evidence]
+      .sort((left, right) => {
+        const delta =
+          (EVIDENCE_TYPE_WEIGHTS[right.evidenceType] ?? 4) -
+          (EVIDENCE_TYPE_WEIGHTS[left.evidenceType] ?? 4);
+
+        if (delta !== 0) {
+          return delta;
+        }
+
+        return (right.occurredAt?.getTime() ?? 0) - (left.occurredAt?.getTime() ?? 0);
+      })
+      .slice(0, 8);
+
+    let score = 0;
+    const uniqueTypes = new Set<string>();
+    const uniqueSources = new Set<string>();
+
+    for (const item of rankedEvidence) {
+      uniqueTypes.add(item.evidenceType);
+      if (item.source) {
+        uniqueSources.add(item.source);
+      }
+
+      const typeWeight = EVIDENCE_TYPE_WEIGHTS[item.evidenceType] ?? 4;
+      const recencyMultiplier = this.getEvidenceRecencyMultiplier(item.occurredAt);
+      const contentBonus = item.title?.trim() || item.description?.trim() ? 2 : 0;
+      score += typeWeight * recencyMultiplier + contentBonus;
+    }
+
+    score += Math.min(12, uniqueTypes.size * 3);
+    score += Math.min(6, uniqueSources.size * 2);
+    score += Math.min(8, evidence.length);
+
+    return Math.min(100, Math.round(score));
+  }
+
+  normalizeMatchScore(matchScore: number): number {
+    if (!Number.isFinite(matchScore)) {
+      return 0;
+    }
+
+    const normalized = matchScore <= 1.5 ? matchScore * 100 : matchScore;
+    return Math.max(0, Math.min(100, normalized));
+  }
+
+  private getAgeInDays(date: Date): number {
+    return Math.max(
+      0,
+      Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24))
+    );
+  }
+
+  private getEvidenceRecencyMultiplier(date?: Date | null): number {
+    if (!date) {
+      return 0.55;
+    }
+
+    const ageInDays = this.getAgeInDays(date);
+    if (ageInDays <= 30) {
+      return 1;
+    }
+    if (ageInDays <= 90) {
+      return 0.85;
+    }
+    if (ageInDays <= 365) {
+      return 0.65;
+    }
+    return 0.45;
   }
 }

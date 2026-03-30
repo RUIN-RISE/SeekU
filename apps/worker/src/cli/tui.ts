@@ -102,7 +102,10 @@ export class TerminalUI {
       overall: "综合分",
       tech: "技术匹配",
       project: "项目深度",
-      location: "地点匹配"
+      location: "地点匹配",
+      fresh: "新鲜度",
+      source: "来源优先级",
+      evidence: "证据强度"
     };
 
     console.log(`\n${chalk.bold(`Top ${options.showingCount}`)} / ${options.totalCount} | ${chalk.bold("排序")}：${sortLabel[options.sortMode]}`);
@@ -135,7 +138,7 @@ export class TerminalUI {
     const poolHint = options.poolCount && options.poolCount > 0
       ? chalk.dim(` | pool ${options.poolCount}人`)
       : "";
-    console.log(chalk.dim(`动作：v 2 详情 | o 2 打开 Bonjour | c 1 3 决策对比 | add 1 pool | export md | sort tech | r refine | m 更多 | q 退出${poolHint}`));
+    console.log(chalk.dim(`动作：v 2 详情 | o 2 打开 Bonjour | c 1 3 决策对比 | add 1 pool | export md | sort fresh/source/evidence | r 去掉销售 | m 更多 | q 退出${poolHint}`));
   }
 
   private formatSourceBadge(sources: string[]): string {
@@ -271,13 +274,36 @@ export class TerminalUI {
     console.log(chalk.dim("  export csv    导出当前 shortlist 为 CSV"));
     console.log(chalk.dim("  export json   导出当前 shortlist 为 JSON"));
     console.log(chalk.dim("  export pool md 导出当前对比池"));
+    console.log(chalk.dim("  sort overall  恢复综合排序"));
     console.log(chalk.dim("  sort tech     按技术匹配排序"));
     console.log(chalk.dim("  sort project  按项目深度排序"));
     console.log(chalk.dim("  sort location 按地点匹配排序"));
+    console.log(chalk.dim("  sort fresh    按新鲜度重排当前 shortlist"));
+    console.log(chalk.dim("  sort source   按 Bonjour 优先重排当前 shortlist"));
+    console.log(chalk.dim("  sort evidence 按证据强度重排当前 shortlist"));
     console.log(chalk.dim("  r             基于当前结果继续 refine"));
+    console.log(chalk.dim("  r 去掉销售     直接输入自然语言 refine 指令"));
+    console.log(chalk.dim("  r 更看重最近活跃"));
+    console.log(chalk.dim("  r 像 2 号但更偏后端"));
+    console.log(chalk.dim("  提示：sort 只重排当前结果；refine 会触发新一轮搜索"));
     console.log(chalk.dim("  back          返回 shortlist 当前结果"));
     console.log(chalk.dim("  m             展示更多结果"));
     console.log(chalk.dim("  q             退出"));
+  }
+
+  displaySortApplied(sortMode: SortMode) {
+    const label: Record<SortMode, string> = {
+      overall: "综合排序",
+      tech: "技术匹配",
+      project: "项目深度",
+      location: "地点匹配",
+      fresh: "新鲜度",
+      source: "来源优先级",
+      evidence: "证据强度"
+    };
+
+    console.log(chalk.green(`\n✓ 已按${label[sortMode]}重排当前 shortlist。`));
+    console.log(chalk.dim("这是 rerank-only 操作，仅重排当前结果，不会重新搜索。"));
   }
 
   displayPoolAdded(name: string, poolCount: number) {
@@ -361,6 +387,17 @@ export class TerminalUI {
     console.log(`${chalk.blue("地点")}：${conditions.locations.length > 0 ? conditions.locations.join(" / ") : chalk.dim("未限制")}`);
     console.log(`${chalk.blue("经验")}：${conditions.experience || chalk.dim("未限制")}`);
     console.log(`${chalk.blue("来源")}：${conditions.sourceBias || chalk.dim("未限制")}`);
+    console.log(`${chalk.blue("必须项")}：${conditions.mustHave.length > 0 ? conditions.mustHave.join(" / ") : chalk.dim("未设置")}`);
+    console.log(`${chalk.blue("优先项")}：${conditions.niceToHave.length > 0 ? conditions.niceToHave.join(" / ") : chalk.dim("未设置")}`);
+    console.log(`${chalk.blue("排除项")}：${conditions.exclude.length > 0 ? conditions.exclude.join(" / ") : chalk.dim("未设置")}`);
+    console.log(`${chalk.blue("近期偏好")}：${conditions.preferFresh ? "优先最近活跃" : chalk.dim("无")}`);
+    console.log(`${chalk.blue("参考候选")}：${
+      conditions.candidateAnchor?.name
+        ? `${conditions.candidateAnchor.name}${conditions.candidateAnchor.shortlistIndex ? ` (#${conditions.candidateAnchor.shortlistIndex})` : ""}`
+        : conditions.candidateAnchor?.shortlistIndex
+          ? `#${conditions.candidateAnchor.shortlistIndex}`
+          : chalk.dim("无")
+    }`);
     console.log(`${chalk.blue("结果上限")}：${conditions.limit}`);
     console.log(chalk.dim("-".repeat(40)));
   }
@@ -432,14 +469,26 @@ export class TerminalUI {
       return { type: "view", indexes: [indexes[0]] };
     }
 
+    if ((command === "r" || command === "refine") && rest.length > 0) {
+      return { type: "refine", prompt: trimmed.slice(trimmed.indexOf(" ") + 1).trim() };
+    }
+
     // compare: with indexes OR use pool (empty indexes triggers pool usage in workflow)
     if (command === "c" || command === "compare") {
       return { type: "compare", indexes: indexes.length >= 2 ? indexes : undefined };
     }
 
     if (command === "sort") {
-      const mode = rest[0] as SortMode | undefined;
-      if (mode && ["overall", "tech", "project", "location"].includes(mode)) {
+      const token = rest[0];
+      const mode = token === "freshness"
+        ? "fresh"
+        : token === "sources"
+          ? "source"
+          : token === "evidence-strength"
+            ? "evidence"
+            : token as SortMode | undefined;
+
+      if (mode && ["overall", "tech", "project", "location", "fresh", "source", "evidence"].includes(mode)) {
         return { type: "sort", sortMode: mode };
       }
     }
@@ -517,7 +566,16 @@ export class TerminalUI {
       conditions.skills.length > 0 ? `技能 ${conditions.skills.join("/")}` : "",
       conditions.locations.length > 0 ? `地点 ${conditions.locations.join("/")}` : "",
       conditions.experience ? `经验 ${conditions.experience}` : "",
-      conditions.sourceBias ? `来源 ${conditions.sourceBias}` : ""
+      conditions.sourceBias ? `来源 ${conditions.sourceBias}` : "",
+      conditions.mustHave.length > 0 ? `必须 ${conditions.mustHave.join("/")}` : "",
+      conditions.niceToHave.length > 0 ? `优先 ${conditions.niceToHave.join("/")}` : "",
+      conditions.exclude.length > 0 ? `排除 ${conditions.exclude.join("/")}` : "",
+      conditions.preferFresh ? "最近活跃优先" : "",
+      conditions.candidateAnchor?.name
+        ? `参考 ${conditions.candidateAnchor.name}`
+        : conditions.candidateAnchor?.shortlistIndex
+          ? `参考 #${conditions.candidateAnchor.shortlistIndex}`
+          : ""
     ].filter(Boolean);
 
     return parts.join(" | ") || "未设置明确条件";

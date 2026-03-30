@@ -2,11 +2,23 @@ import { z } from "zod";
 
 // LLM Response Schemas for validation
 
+const CandidateAnchorSchema = z.object({
+  shortlistIndex: z.number().int().positive().optional().nullable().transform(v => v ?? undefined),
+  personId: z.string().optional().nullable().transform(v => v ?? undefined),
+  name: z.string().optional().nullable().transform(v => v ?? undefined)
+});
+
 export const ConditionsSchema = z.object({
   skills: z.array(z.string()).default([]),
   locations: z.array(z.string()).default([]),
   experience: z.string().optional().nullable().transform(v => v ?? undefined),
   role: z.string().optional().nullable().transform(v => v ?? undefined),
+  sourceBias: z.enum(["bonjour", "github"]).optional().nullable().transform(v => v ?? undefined),
+  mustHave: z.array(z.string()).default([]),
+  niceToHave: z.array(z.string()).default([]),
+  exclude: z.array(z.string()).default([]),
+  preferFresh: z.boolean().optional().nullable().transform(v => v ?? false),
+  candidateAnchor: CandidateAnchorSchema.optional().nullable().transform(v => v ?? undefined),
   limit: z.number().int().positive().max(100).nullable().optional()
 });
 
@@ -32,18 +44,41 @@ export const ProfileSummarySchema = z.object({
 
 export type ValidatedProfileSummary = z.infer<typeof ProfileSummarySchema>;
 
-/**
- * Sanitize user input to prevent prompt injection
- * Wraps content in XML tags and escapes special sequences
- */
 export function sanitizeForPrompt(input: string, tagName: string = "userInput"): string {
+  // Prevent ReDoS by limiting input length
+  const boundedInput = input.slice(0, 2000);
+  
   // Remove any existing XML-like tags that could interfere
-  const sanitized = input
-    .replace(/<\/?\w+>/g, "") // Remove XML tags
+  const sanitized = boundedInput
+    .replace(/<[^>]{1,50}>/g, "") // Non-greedy, length-bounded tag removal
     .replace(/---/g, "") // Remove markdown separators
     .replace(/```/g, ""); // Remove code blocks
 
   return `<${tagName}>${sanitized}</${tagName}>`;
+}
+
+/**
+ * Check if input is effectively empty (whitespace only or too short)
+ */
+export function isEmptyInput(input: string | undefined | null): boolean {
+  if (!input) return true;
+  const trimmed = input.trim();
+  return trimmed.length === 0;
+}
+
+/**
+ * Deduplicate array while preserving order
+ */
+export function dedupeArray(arr: string[]): string[] {
+  const seen = new Set<string>();
+  return arr.filter(item => {
+    const trimmed = item.trim();
+    if (trimmed === "") return false;
+    const normalized = trimmed.toLowerCase();
+    if (seen.has(normalized)) return false;
+    seen.add(normalized);
+    return true;
+  });
 }
 
 /**
@@ -56,7 +91,9 @@ export function safeParseJSON<T>(
 ): { success: true; data: T } | { success: false; data: T; error: string } {
   try {
     // Extract JSON from potential markdown code blocks
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    // P1 Fix: Use a more precise regex that handles one level of nesting to avoid greedy capture across blocks
+    // This matches a '{' followed by any characters that are not '{' or '}', OR a nested set of '{}', until the closing '}'
+    const jsonMatch = text.match(/\{(?:[^{}]|\{[^{}]*\})*\}/);
     if (!jsonMatch) {
       return { success: false, data: fallback, error: "No JSON object found" };
     }

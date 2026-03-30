@@ -4,12 +4,23 @@ export interface SearchConditions {
   experience?: string;
   role?: string;
   sourceBias?: "bonjour" | "github";
+  mustHave: string[];
+  niceToHave: string[];
+  exclude: string[];
+  preferFresh: boolean;
+  candidateAnchor?: SearchCandidateAnchor;
   limit: number;
+}
+
+export interface SearchCandidateAnchor {
+  shortlistIndex?: number;
+  personId?: string;
+  name?: string;
 }
 
 export type MissingField = "skills" | "locations" | "experience";
 export type ClarifyAction = "search" | "add" | "relax" | "restart" | "quit";
-export type SortMode = "overall" | "tech" | "project" | "location";
+export type SortMode = "overall" | "tech" | "project" | "location" | "fresh" | "source" | "evidence";
 export type DetailAction = "back" | "refine" | "why" | "quit" | "open";
 
 export interface SearchDraft {
@@ -111,6 +122,7 @@ export interface ResultListCommand {
   sortMode?: SortMode;
   exportFormat?: ExportFormat;
   exportTarget?: ExportTarget;
+  prompt?: string;
 }
 
 export interface SearchHistoryEntry {
