@@ -202,6 +202,25 @@ describe("SearchWorkflow shortlist command handling", () => {
     });
   });
 
+  it("skips background profile preloading in interactive tty mode", () => {
+    const { workflow } = createWorkflowHarness();
+    const originalIsTTY = process.stdin.isTTY;
+
+    Object.defineProperty(process.stdin, "isTTY", {
+      configurable: true,
+      value: true
+    });
+
+    try {
+      expect((workflow as any).shouldPreloadProfiles()).toBe(false);
+    } finally {
+      Object.defineProperty(process.stdin, "isTTY", {
+        configurable: true,
+        value: originalIsTTY
+      });
+    }
+  });
+
   it("supports compare view back path from the pool", async () => {
     const { workflow, handleShortlistCommand, mockRenderer, mockTui } = createWorkflowHarness();
     const first = createCandidate();

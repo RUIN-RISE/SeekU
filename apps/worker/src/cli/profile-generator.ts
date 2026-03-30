@@ -6,6 +6,11 @@ import { ProfileSummarySchema, sanitizeForPrompt, safeParseJSON } from "./schema
 import { CLI_CONFIG } from "./config.js";
 import { withRetry } from "./retry.js";
 
+interface ProfileGenerationOptions {
+  quiet?: boolean;
+  maxRetries?: number;
+}
+
 export class ProfileGenerator {
   constructor(private llm: LLMProvider) {}
 
@@ -18,7 +23,8 @@ export class ProfileGenerator {
     candidate: Person,
     evidence: EvidenceItem[],
     profile: MultiDimensionProfile,
-    conditions?: SearchConditions
+    conditions?: SearchConditions,
+    options: ProfileGenerationOptions = {}
   ): Promise<MultiDimensionProfile> {
     // Sanitize all external data
     const safeName = sanitizeForPrompt(candidate.primaryName || "未知候选人", "name");
@@ -85,7 +91,10 @@ ${searchLens}
             clearTimeout(timeoutId);
           }
         },
-        { maxRetries: CLI_CONFIG.llm.maxRetries }
+        {
+          maxRetries: options.maxRetries ?? CLI_CONFIG.llm.maxRetries,
+          quiet: options.quiet
+        }
       );
 
       const result = safeParseJSON(
@@ -103,10 +112,12 @@ ${searchLens}
         highlights: result.data.highlights ?? ["具备相关技术与项目实践", "资料显示有持续投入记录", "可作为后续深看的候选人"]
       };
     } catch (e) {
-      if (e instanceof Error && e.name === "AbortError") {
-        console.warn("Profile generation timed out after", CLI_CONFIG.llm.timeoutMs, "ms");
-      } else {
-        console.warn("Failed to generate profile details:", e instanceof Error ? e.message : String(e));
+      if (!options.quiet) {
+        if (e instanceof Error && e.name === "AbortError") {
+          console.warn("Profile generation timed out after", CLI_CONFIG.llm.timeoutMs, "ms");
+        } else {
+          console.warn("Failed to generate profile details:", e instanceof Error ? e.message : String(e));
+        }
       }
       return {
         ...profile,

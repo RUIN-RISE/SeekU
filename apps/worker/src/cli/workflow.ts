@@ -504,9 +504,11 @@ export class SearchWorkflow {
         timestamp: new Date()
       });
 
-      const preloadPromise = this.preloadProfiles(candidates, conditions);
+      const preloadPromise = this.shouldPreloadProfiles()
+        ? this.preloadProfiles(candidates, conditions)
+        : undefined;
       const result = await this.runShortlistLoop(candidates, conditions, sortMode);
-      preloadPromise.catch(() => {});
+      preloadPromise?.catch(() => {});
 
       if (result.type === "quit") {
         return result;
@@ -2183,7 +2185,11 @@ export class SearchWorkflow {
     personId: string,
     person: Person,
     evidence: EvidenceItem[],
-    conditions: SearchConditions
+    conditions: SearchConditions,
+    options: {
+      quiet?: boolean;
+      maxRetries?: number;
+    } = {}
   ): Promise<MultiDimensionProfile> {
     const profileCacheKey = this.buildProfileCacheKey(conditions);
     const processingKey = `${personId}:${profileCacheKey}`;
@@ -2216,11 +2222,17 @@ export class SearchWorkflow {
         }
 
         const rules = this.scorer.scoreByRules(person, evidence, conditions);
-        const llm = await this.scorer.scoreByLLM(person, evidence);
+        const llm = await this.scorer.scoreByLLM(person, evidence, {
+          quiet: options.quiet,
+          maxRetries: options.maxRetries
+        });
         const experienceBonus = this.scorer.calculateExperienceMatch(person, evidence, conditions);
         innerProfile = this.scorer.aggregate(rules, llm, experienceBonus);
 
-        innerProfile = await this.generator.generate(person, evidence, innerProfile, conditions);
+        innerProfile = await this.generator.generate(person, evidence, innerProfile, conditions, {
+          quiet: options.quiet,
+          maxRetries: options.maxRetries
+        });
         await this.cacheRepo.setProfile(personId, profileCacheKey, innerProfile, innerProfile.overallScore);
 
         return innerProfile;
@@ -2250,7 +2262,10 @@ export class SearchWorkflow {
     for (const candidate of candidates) {
       tasks.push(async () => {
         const { person, evidence } = candidate._hydrated;
-        const profile = await this.getOrGenerateProfile(candidate.personId, person, evidence, conditions);
+        const profile = await this.getOrGenerateProfile(candidate.personId, person, evidence, conditions, {
+          quiet: true,
+          maxRetries: 0
+        });
         candidate.profile = profile;
       });
     }
@@ -2289,6 +2304,10 @@ export class SearchWorkflow {
     }
 
     return successful;
+  }
+
+  private shouldPreloadProfiles(): boolean {
+    return !process.stdin.isTTY;
   }
 
   private formatExportSource(sources: string[]): string {

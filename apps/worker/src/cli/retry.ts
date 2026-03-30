@@ -5,6 +5,7 @@ export interface RetryOptions {
   maxRetries?: number;
   baseDelay?: number;
   factor?: number;
+  quiet?: boolean;
 }
 
 /**
@@ -48,6 +49,7 @@ export async function withRetry<T>(
   const maxRetries = options.maxRetries ?? CLI_CONFIG.llm.maxRetries;
   const baseDelay = options.baseDelay ?? 1000;
   const factor = options.factor ?? 2;
+  const quiet = options.quiet ?? false;
 
   let lastError: unknown;
 
@@ -62,7 +64,9 @@ export async function withRetry<T>(
       }
 
       const delay = baseDelay * Math.pow(factor, attempt);
-      console.warn(chalk.yellow(`\n⚠️  Operation failed, retrying in ${delay}ms (Attempt ${attempt + 1}/${maxRetries})...`));
+      if (!quiet) {
+        console.warn(chalk.yellow(`\n⚠️  Operation failed, retrying in ${delay}ms (Attempt ${attempt + 1}/${maxRetries})...`));
+      }
       
       await new Promise(resolve => setTimeout(resolve, delay));
     }

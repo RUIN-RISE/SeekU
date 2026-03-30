@@ -18,6 +18,11 @@ const SCORING_WEIGHTS = CLI_CONFIG.scoring.weights;
 // Timeout for LLM calls (centralized in config.ts)
 const LLM_TIMEOUT_MS = CLI_CONFIG.llm.timeoutMs;
 
+interface LLMExecutionOptions {
+  quiet?: boolean;
+  maxRetries?: number;
+}
+
 type RerankOnlySortMode = Extract<SortMode, "fresh" | "source" | "evidence">;
 type CandidateRerankSignals = Pick<
   ScoredCandidate,
@@ -162,7 +167,11 @@ export class HybridScoringEngine {
 
   // --- LLM Based Scores (40% Weighting) ---
 
-  async scoreByLLM(candidate: Person, evidence: EvidenceItem[]): Promise<Partial<DimensionScores>> {
+  async scoreByLLM(
+    candidate: Person,
+    evidence: EvidenceItem[],
+    options: LLMExecutionOptions = {}
+  ): Promise<Partial<DimensionScores>> {
     try {
       // Sanitize external data to prevent prompt injection
       const safeName = sanitizeForPrompt(candidate.primaryName || "Unknown", "name");
@@ -206,7 +215,10 @@ CRITICAL: Return ONLY the JSON, no markdown, no explanation.
             clearTimeout(timeoutId);
           }
         },
-        { maxRetries: CLI_CONFIG.llm.maxRetries }
+        {
+          maxRetries: options.maxRetries ?? CLI_CONFIG.llm.maxRetries,
+          quiet: options.quiet
+        }
       );
 
       const result = safeParseJSON(
@@ -226,10 +238,12 @@ CRITICAL: Return ONLY the JSON, no markdown, no explanation.
       };
     } catch (e) {
       // Check if it was aborted
-      if (e instanceof Error && e.name === "AbortError") {
-        console.warn("LLM scoring timed out after", LLM_TIMEOUT_MS, "ms");
-      } else {
-        console.warn("LLM scoring failed:", e instanceof Error ? e.message : String(e));
+      if (!options.quiet) {
+        if (e instanceof Error && e.name === "AbortError") {
+          console.warn("LLM scoring timed out after", LLM_TIMEOUT_MS, "ms");
+        } else {
+          console.warn("LLM scoring failed:", e instanceof Error ? e.message : String(e));
+        }
       }
 
       // Fallback with dynamic defaults based on evidence count
