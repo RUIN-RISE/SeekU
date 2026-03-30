@@ -22,6 +22,7 @@ export type MissingField = "skills" | "locations" | "experience";
 export type ClarifyAction = "search" | "add" | "relax" | "restart" | "quit";
 export type SortMode = "overall" | "tech" | "project" | "location" | "fresh" | "source" | "evidence";
 export type DetailAction = "back" | "refine" | "why" | "quit" | "open";
+export type ShortlistMoveDirection = "up" | "down";
 
 export interface SearchDraft {
   conditions: SearchConditions;
@@ -117,13 +118,41 @@ export interface ExportArtifact {
   records: ExportCandidateRecord[];
 }
 
+export interface ScriptSearchResultOutput {
+  personId: string;
+  name: string;
+  headline: string | null;
+  location: string | null;
+  matchScore: number;
+  matchReasons: string[];
+  matchReason: string;
+  whyMatched: string;
+  source: string;
+  sources: string[];
+  freshness: string;
+  bonjourUrl?: string;
+  lastSyncedAt?: string;
+  latestEvidenceAt?: string;
+}
+
+export interface ShortlistPromptState {
+  selectedIndex: number;
+  showingCount: number;
+}
+
+export interface ShortlistStatusMessage {
+  tone: "info" | "success" | "warning";
+  text: string;
+}
+
 export interface ResultListCommand {
-  type: "view" | "compare" | "refine" | "sort" | "showMore" | "quit" | "help" | "add" | "pool" | "clear" | "history" | "undo" | "show" | "open" | "back" | "export";
+  type: "view" | "compare" | "refine" | "sort" | "showMore" | "quit" | "help" | "add" | "pool" | "clear" | "history" | "undo" | "show" | "open" | "back" | "export" | "moveSelection";
   indexes?: number[];
   sortMode?: SortMode;
   exportFormat?: ExportFormat;
   exportTarget?: ExportTarget;
   prompt?: string;
+  direction?: ShortlistMoveDirection;
 }
 
 export interface SearchHistoryEntry {

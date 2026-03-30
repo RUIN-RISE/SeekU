@@ -39,6 +39,7 @@ import {
   SearchConditions,
   SearchDraft,
   SearchHistoryEntry,
+  ShortlistStatusMessage,
   SortMode
 } from "./types.js";
 
@@ -61,9 +62,17 @@ interface DetailOutcome {
   prompt?: string;
 }
 
-interface QueryMatchExplanation {
+export interface QueryMatchExplanation {
   summary: string;
   reasons: string[];
+}
+
+interface QueryMatchExplanationOptions {
+  score?: number;
+  retrievalReasons?: string[];
+  sources?: string[];
+  referenceDate?: Date;
+  experienceMatched?: boolean;
 }
 
 interface RefineContextCandidate {
@@ -78,6 +87,261 @@ interface RefineContextCandidate {
 }
 
 const SKIPPED_QUERY_VALUES = new Set(["不限", "skip", "none"]);
+
+function truncateDisplayValue(value: string, maxLength: number): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  const chars = Array.from(normalized);
+  if (chars.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${chars.slice(0, maxLength - 3).join("")}...`;
+}
+
+function buildSearchStateContextValue(
+  person: Pick<Person, "primaryName" | "primaryHeadline" | "primaryLocation" | "summary">,
+  document: Pick<SearchDocument, "docText" | "facetRole" | "facetTags"> | undefined,
+  evidence: Pick<EvidenceItem, "title" | "description">[]
+): string {
+  return [
+    person.primaryName || "",
+    person.primaryHeadline || "",
+    person.primaryLocation || "",
+    person.summary || "",
+    document?.docText || "",
+    ...(document?.facetRole || []),
+    ...(document?.facetTags || []),
+    ...evidence.map((item) => `${item.title || ""} ${item.description || ""}`)
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
+function findMatchedTermsValue(terms: string[], context: string): string[] {
+  return terms.filter((term) => context.includes(term.toLowerCase()));
+}
+
+function getMatchedLocationsValue(
+  person: Pick<Person, "primaryLocation">,
+  document: Pick<SearchDocument, "facetLocation"> | undefined,
+  conditions: SearchConditions
+): string[] {
+  if (conditions.locations.length === 0) {
+    return [];
+  }
+
+  const values = [
+    person.primaryLocation || "",
+    ...(document?.facetLocation || [])
+  ].map((value) => value.toLowerCase());
+
+  return conditions.locations.filter((location) =>
+    values.some((value) =>
+      value.includes(location.toLowerCase()) || location.toLowerCase().includes(value)
+    )
+  );
+}
+
+function buildEvidenceHeadlineValue(item: Pick<EvidenceItem, "evidenceType" | "title" | "description">): string {
+  const title = item.title?.trim();
+  const description = item.description?.trim();
+
+  if (item.evidenceType === "profile_field" && title && description) {
+    return truncateDisplayValue(`${title}: ${description}`, 54);
+  }
+
+  if (title) {
+    return truncateDisplayValue(title, 54);
+  }
+
+  return truncateDisplayValue(description || "未命名证据", 54);
+}
+
+function translateRetrievalReasonValue(reason: string): string | undefined {
+  const normalized = reason.trim();
+  if (!normalized) {
+    return undefined;
+  }
+
+  const roleMatch = normalized.match(/^role match:\s*(.+)$/i);
+  if (roleMatch?.[1]) {
+    return `检索角色命中：${roleMatch[1].trim()}`;
+  }
+
+  const skillMatch = normalized.match(/^skill evidence:\s*(.+)$/i);
+  if (skillMatch?.[1]) {
+    return `检索技能命中：${skillMatch[1].trim()}`;
+  }
+
+  const mustHaveMatch = normalized.match(/^must-have matched:\s*(.+)$/i);
+  if (mustHaveMatch?.[1]) {
+    return `检索必须项命中：${mustHaveMatch[1].trim()}`;
+  }
+
+  const projectMatch = normalized.match(/^project:\s*(.+)$/i);
+  if (projectMatch?.[1]) {
+    return `相关项目：${truncateDisplayValue(projectMatch[1].trim(), 36)}`;
+  }
+
+  if (normalized === "strong semantic similarity") {
+    return "语义相似度高";
+  }
+
+  if (normalized === "strong keyword overlap") {
+    return "关键词重合度高";
+  }
+
+  return undefined;
+}
+
+function buildRelevantEvidenceReasonValue(
+  evidence: Pick<EvidenceItem, "title" | "description" | "evidenceType">[],
+  conditions: SearchConditions
+): string | undefined {
+  const matchedEvidence = evidence.find((item) => {
+    if (!item.title && !item.description) {
+      return false;
+    }
+
+    const text = `${item.title || ""} ${item.description || ""}`.toLowerCase();
+    if (conditions.skills.length > 0) {
+      return conditions.skills.some((skill) => text.includes(skill.toLowerCase()));
+    }
+
+    return item.evidenceType === "project" || item.evidenceType === "repository";
+  });
+
+  const fallbackEvidence = matchedEvidence || evidence.find(
+    (item) =>
+      (item.evidenceType === "project" || item.evidenceType === "repository" || item.evidenceType === "experience") &&
+      Boolean(item.title || item.description)
+  );
+
+  if (!fallbackEvidence) {
+    return undefined;
+  }
+
+  return `相关证据：${buildEvidenceHeadlineValue(fallbackEvidence)}`;
+}
+
+export function formatSourceLabel(source?: string): string | undefined {
+  if (!source) {
+    return undefined;
+  }
+
+  if (source === "bonjour") {
+    return "Bonjour";
+  }
+
+  if (source === "github") {
+    return "GitHub";
+  }
+
+  if (source === "web") {
+    return "Web";
+  }
+
+  return source;
+}
+
+export function describeRelativeDate(date: Date): string {
+  const ageInDays = Math.floor(
+    (Date.now() - date.getTime()) / (1000 * 60 * 60 * 24)
+  );
+
+  if (ageInDays <= 0) {
+    return "今天";
+  }
+
+  if (ageInDays === 1) {
+    return "昨天";
+  }
+
+  if (ageInDays <= 7) {
+    return `${ageInDays}天前`;
+  }
+
+  if (ageInDays <= 30) {
+    return `${Math.floor(ageInDays / 7)}周前`;
+  }
+
+  if (ageInDays <= 365) {
+    return `${Math.floor(ageInDays / 30)}个月前`;
+  }
+
+  return `${Math.floor(ageInDays / 365)}年前`;
+}
+
+export function buildQueryMatchExplanation(
+  person: Pick<Person, "primaryName" | "primaryHeadline" | "primaryLocation" | "summary">,
+  document: Pick<SearchDocument, "docText" | "facetRole" | "facetTags" | "facetLocation"> | undefined,
+  evidence: Pick<EvidenceItem, "title" | "description" | "evidenceType">[],
+  conditions: SearchConditions,
+  options: QueryMatchExplanationOptions = {}
+): QueryMatchExplanation {
+  const context = buildSearchStateContextValue(person, document, evidence);
+  const reasons: string[] = [];
+  const pushReason = (value?: string) => {
+    const normalized = value?.trim();
+    if (!normalized || reasons.includes(normalized)) {
+      return;
+    }
+    reasons.push(normalized);
+  };
+
+  const matchedLocations = getMatchedLocationsValue(person, document, conditions);
+  if (matchedLocations.length > 0) {
+    pushReason(`地点命中：${matchedLocations.slice(0, 2).join(" / ")}`);
+  }
+
+  if (conditions.role && context.includes(conditions.role.toLowerCase())) {
+    pushReason(`角色贴合：${conditions.role}`);
+  }
+
+  const matchedSkills = findMatchedTermsValue(conditions.skills, context);
+  if (matchedSkills.length > 0) {
+    pushReason(`技术命中：${matchedSkills.slice(0, 3).join(" / ")}`);
+  }
+
+  const matchedMustHave = findMatchedTermsValue(conditions.mustHave, context);
+  if (matchedMustHave.length > 0) {
+    pushReason(`必须项满足：${matchedMustHave.slice(0, 2).join(" / ")}`);
+  }
+
+  if (conditions.experience && options.experienceMatched) {
+    pushReason(`经验层级贴合：${conditions.experience}`);
+  }
+
+  if (conditions.sourceBias) {
+    const preferredSource = conditions.sourceBias === "bonjour" ? "Bonjour" : "GitHub";
+    if (options.sources?.includes(preferredSource)) {
+      pushReason(`来源偏好命中：${preferredSource}`);
+    }
+  }
+
+  if (conditions.preferFresh && options.referenceDate) {
+    pushReason(`近期活跃：${describeRelativeDate(options.referenceDate)}`);
+  }
+
+  for (const reason of options.retrievalReasons ?? []) {
+    pushReason(translateRetrievalReasonValue(reason));
+  }
+
+  pushReason(buildRelevantEvidenceReasonValue(evidence, conditions));
+
+  if (reasons.length === 0 && typeof options.score === "number") {
+    pushReason(`综合相关度 ${options.score.toFixed(1)} 分`);
+  }
+
+  if (reasons.length === 0) {
+    pushReason("与当前条件整体相关度较高");
+  }
+
+  return {
+    summary: reasons.slice(0, 2).join("，"),
+    reasons: reasons.slice(0, 5)
+  };
+}
 
 export class SearchWorkflow {
   private chat: ChatInterface;
@@ -271,6 +535,9 @@ export class SearchWorkflow {
   ): Promise<SearchLoopOutcome> {
     let sortMode = initialSortMode;
     let visibleCount = Math.min(5, candidates.length);
+    let selectedIndex = 0;
+    let statusMessage: ShortlistStatusMessage | undefined;
+    let reuseViewport = false;
 
     await this.sortCandidates(candidates, sortMode, conditions);
 
@@ -279,21 +546,32 @@ export class SearchWorkflow {
         sortMode,
         showingCount: visibleCount,
         totalCount: candidates.length,
-        poolCount: this.comparePool.length
+        poolCount: this.comparePool.length,
+        selectedIndex,
+        statusMessage,
+        reuseViewport
       });
 
-      const command = await this.tui.promptShortlistAction();
+      const command = await this.tui.promptShortlistAction({
+        selectedIndex,
+        showingCount: visibleCount
+      });
       const outcome = await this.handleShortlistCommand(command, candidates, conditions, {
         sortMode,
-        visibleCount
+        visibleCount,
+        selectedIndex
       });
 
       if (outcome.type === "continue") {
         sortMode = outcome.sortMode;
         visibleCount = outcome.visibleCount;
+        selectedIndex = outcome.selectedIndex;
+        statusMessage = outcome.statusMessage;
+        reuseViewport = outcome.reuseViewport;
         continue;
       }
 
+      this.tui.resetShortlistViewport();
       return outcome.result;
     }
   }
@@ -302,36 +580,68 @@ export class SearchWorkflow {
     command: ResultListCommand,
     candidates: HydratedCandidate[],
     conditions: SearchConditions,
-    state: { sortMode: SortMode; visibleCount: number }
+    state: { sortMode: SortMode; visibleCount: number; selectedIndex: number }
   ): Promise<
-    | { type: "continue"; sortMode: SortMode; visibleCount: number }
+    | {
+      type: "continue";
+      sortMode: SortMode;
+      visibleCount: number;
+      selectedIndex: number;
+      statusMessage?: ShortlistStatusMessage;
+      reuseViewport: boolean;
+    }
     | { type: "done"; result: SearchLoopOutcome }
   > {
+    const continueWith = (overrides: Partial<{
+      sortMode: SortMode;
+      visibleCount: number;
+      selectedIndex: number;
+      statusMessage?: ShortlistStatusMessage;
+      reuseViewport: boolean;
+    }> = {}) => ({
+      type: "continue" as const,
+      sortMode: overrides.sortMode ?? state.sortMode,
+      visibleCount: overrides.visibleCount ?? state.visibleCount,
+      selectedIndex: overrides.selectedIndex ?? state.selectedIndex,
+      statusMessage: overrides.statusMessage,
+      reuseViewport: overrides.reuseViewport ?? false
+    });
+
     if (command.type === "help") {
+      this.tui.resetShortlistViewport();
       this.tui.displayHelp();
-      return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
+      return continueWith();
     }
 
     if (command.type === "back") {
-      return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
+      return continueWith({ reuseViewport: true });
     }
 
     if (command.type === "quit") {
       return { type: "done", result: { type: "quit" } };
     }
 
+    if (command.type === "moveSelection") {
+      const delta = command.direction === "up" ? -1 : 1;
+      const nextSelectedIndex = Math.max(0, Math.min(state.selectedIndex + delta, state.visibleCount - 1));
+      return continueWith({
+        selectedIndex: nextSelectedIndex,
+        reuseViewport: true
+      });
+    }
+
     if (command.type === "showMore") {
-      return {
-        type: "continue",
-        sortMode: state.sortMode,
-        visibleCount: Math.min(state.visibleCount + 5, candidates.length)
-      };
+      return continueWith({
+        visibleCount: Math.min(state.visibleCount + 5, candidates.length),
+        reuseViewport: true
+      });
     }
 
     if (command.type === "refine") {
+      this.tui.resetShortlistViewport();
       const prompt = command.prompt || await this.chat.askFreeform("想怎么继续 refine？例如：去掉销售 / 更看重最近活跃 / 像 2 号但更偏后端");
       if (!prompt) {
-        return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
+        return continueWith();
       }
 
       return { type: "done", result: { type: "refine", prompt } };
@@ -340,19 +650,26 @@ export class SearchWorkflow {
     if (command.type === "sort") {
       const nextSortMode = command.sortMode || "overall";
       await this.sortCandidates(candidates, nextSortMode, conditions);
-      this.tui.displaySortApplied(nextSortMode);
-      return {
-        type: "continue",
+      return continueWith({
         sortMode: nextSortMode,
-        visibleCount: state.visibleCount
-      };
+        statusMessage: {
+          tone: "success",
+          text: `✓ 已按${this.getSortModeLabel(nextSortMode)}重排当前 shortlist（rerank-only，不会重新搜索）。`
+        },
+        reuseViewport: true
+      });
     }
 
     if (command.type === "add") {
       const targets = this.pickCandidates(candidates, command.indexes || []);
       if (targets.length === 0) {
-        this.tui.displayInvalidCommand("add");
-        return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
+        return continueWith({
+          statusMessage: {
+            tone: "warning",
+            text: "未找到要加入对比池的候选人，请重新选择。"
+          },
+          reuseViewport: true
+        });
       }
 
       // Add to pool (avoid duplicates)
@@ -362,36 +679,50 @@ export class SearchWorkflow {
         }
       }
 
-      this.tui.displayPoolAdded(targets[0].name, this.comparePool.length);
-      return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
+      return continueWith({
+        statusMessage: {
+          tone: "success",
+          text: `✓ ${targets[0].name} 已加入对比池（当前 ${this.comparePool.length} 人）。`
+        },
+        reuseViewport: true
+      });
     }
 
     if (command.type === "pool") {
+      this.tui.resetShortlistViewport();
       if (this.comparePool.length === 0) {
         this.tui.displayPoolEmpty();
       } else {
         this.tui.displayPool(this.comparePool);
       }
-      return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
+      return continueWith();
     }
 
     if (command.type === "clear") {
       this.comparePool = [];
-      this.tui.displayPoolCleared();
-      return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
+      return continueWith({
+        statusMessage: {
+          tone: "success",
+          text: "✓ 对比池已清空。"
+        },
+        reuseViewport: true
+      });
     }
 
     if (command.type === "history") {
+      this.tui.resetShortlistViewport();
       this.tui.displayHistory(this.searchHistory);
-      return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
+      return continueWith();
     }
 
     if (command.type === "show") {
+      this.tui.resetShortlistViewport();
       this.tui.displayFilters(conditions);
-      return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
+      return continueWith();
     }
 
     if (command.type === "export") {
+      this.tui.resetShortlistViewport();
       const exportTarget = command.exportTarget || "shortlist";
       const exportFormat = command.exportFormat || "md";
       const targets = exportTarget === "pool"
@@ -400,7 +731,7 @@ export class SearchWorkflow {
 
       if (targets.length === 0) {
         this.tui.displayExportEmpty(exportTarget);
-        return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
+        return continueWith();
       }
 
       for (const target of targets) {
@@ -421,17 +752,19 @@ export class SearchWorkflow {
       });
 
       this.tui.displayExportSuccess(artifact);
-      return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
+      return continueWith();
     }
 
     if (command.type === "undo") {
       // Get previous conditions from history (skip current entry)
       if (this.searchHistory.length < 2) {
+        this.tui.resetShortlistViewport();
         this.tui.displayUndo(null);
-        return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
+        return continueWith();
       }
 
       const previousEntry = this.searchHistory[this.searchHistory.length - 2];
+      this.tui.resetShortlistViewport();
       this.tui.displayUndo(previousEntry.conditions);
 
       // Remove last TWO entries: current + the one we're restoring to
@@ -456,10 +789,15 @@ export class SearchWorkflow {
         : this.pickCandidates(candidates, command.indexes || []);
 
       if (targets.length < 2) {
-        this.tui.displayCompareNeedsMoreCandidates(usePool ? this.comparePool.length : targets.length);
-        return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
+        return continueWith({
+          statusMessage: this.buildCompareNeedsMoreCandidatesMessage(
+            usePool ? this.comparePool.length : targets.length
+          ),
+          reuseViewport: true
+        });
       }
 
+      this.tui.resetShortlistViewport();
       for (const target of targets) {
         this.refreshCandidateQueryExplanation(target, conditions);
       }
@@ -481,13 +819,13 @@ export class SearchWorkflow {
       while (true) {
         const action = await this.tui.promptCompareAction();
         if (action === "back") {
-          return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
+          return continueWith();
         }
 
         if (action === "clear") {
           this.comparePool = [];
           this.tui.displayPoolCleared();
-          return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
+          return continueWith();
         }
 
         if (action === "quit") {
@@ -500,13 +838,19 @@ export class SearchWorkflow {
     if (command.type === "view") {
       const target = this.pickCandidates(candidates, command.indexes || [1])[0];
       if (!target) {
-        this.tui.displayInvalidCommand("view");
-        return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
+        return continueWith({
+          statusMessage: {
+            tone: "warning",
+            text: "未找到要查看的候选人，请重新选择。"
+          },
+          reuseViewport: true
+        });
       }
 
+      this.tui.resetShortlistViewport();
       const detailOutcome = await this.showCandidateDetail(target, conditions);
       if (detailOutcome.type === "back") {
-        return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
+        return continueWith();
       }
 
       if (detailOutcome.type === "quit") {
@@ -519,38 +863,28 @@ export class SearchWorkflow {
     if (command.type === "open") {
       const target = this.pickCandidates(candidates, command.indexes || [1])[0];
       if (!target) {
-        this.tui.displayInvalidCommand("open");
-        return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
+        return continueWith({
+          statusMessage: {
+            tone: "warning",
+            text: "未找到要打开的候选人，请重新选择。"
+          },
+          reuseViewport: true
+        });
       }
 
-      if (!target.bonjourUrl) {
-        console.log(chalk.yellow(`\n${target.name} 没有 Bonjour 链接。`));
-        return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
-      }
-
-      console.log(chalk.cyan(`\n🔗 Bonjour: ${target.bonjourUrl}`));
-      console.log(chalk.dim("尝试在浏览器中打开..."));
-
-      // Try to open URL in browser
-      const openCommand = process.platform === "darwin"
-        ? "open"
-        : process.platform === "win32"
-          ? "start"
-          : "xdg-open";
-
-      try {
-        const { spawn } = await import("node:child_process");
-        spawn(openCommand, [target.bonjourUrl], { stdio: "ignore", detached: true });
-        console.log(chalk.green("✓ 已在浏览器中打开 Bonjour 页面。"));
-      } catch {
-        console.log(chalk.yellow("无法自动打开，请手动复制链接。"));
-      }
-
-      return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
+      return continueWith({
+        statusMessage: await this.openCandidateInBrowser(target),
+        reuseViewport: true
+      });
     }
 
-    this.tui.displayInvalidCommand(command.type);
-    return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
+    return continueWith({
+      statusMessage: {
+        tone: "warning",
+        text: `未识别的输入：${command.type}`
+      },
+      reuseViewport: true
+    });
   }
 
   private async showCandidateDetail(
@@ -591,27 +925,13 @@ export class SearchWorkflow {
       }
 
       if (action === "open") {
-        if (!selected.bonjourUrl) {
-          console.log(chalk.yellow(`\n${selected.name} 没有 Bonjour 链接。`));
-          continue;
-        }
-
-        console.log(chalk.cyan(`\n🔗 Bonjour: ${selected.bonjourUrl}`));
-        console.log(chalk.dim("尝试在浏览器中打开..."));
-
-        const openCommand = process.platform === "darwin"
-          ? "open"
-          : process.platform === "win32"
-            ? "start"
-            : "xdg-open";
-
-        try {
-          const { spawn } = await import("node:child_process");
-          spawn(openCommand, [selected.bonjourUrl], { stdio: "ignore", detached: true });
-          console.log(chalk.green("✓ 已在浏览器中打开 Bonjour 页面。"));
-        } catch {
-          console.log(chalk.yellow("无法自动打开，请手动复制链接。"));
-        }
+        const message = await this.openCandidateInBrowser(selected);
+        const colorize = message.tone === "success"
+          ? chalk.green
+          : message.tone === "warning"
+            ? chalk.yellow
+            : chalk.cyan;
+        console.log(colorize(`\n${message.text}`));
         continue;
       }
 
@@ -630,6 +950,65 @@ export class SearchWorkflow {
 
         return { type: "refine", prompt };
       }
+    }
+  }
+
+  private getSortModeLabel(sortMode: SortMode): string {
+    const labels: Record<SortMode, string> = {
+      overall: "综合排序",
+      tech: "技术匹配",
+      project: "项目深度",
+      location: "地点匹配",
+      fresh: "新鲜度",
+      source: "来源优先级",
+      evidence: "证据强度"
+    };
+
+    return labels[sortMode];
+  }
+
+  private buildCompareNeedsMoreCandidatesMessage(poolCount: number): ShortlistStatusMessage {
+    if (poolCount <= 0) {
+      return {
+        tone: "warning",
+        text: "对比池为空，先按 space 把候选人加入对比池，再按 c 进入 compare。"
+      };
+    }
+
+    return {
+      tone: "warning",
+      text: `当前对比池只有 ${poolCount} 人，决策对比至少需要 2 人。继续按 space 再补一个候选人。`
+    };
+  }
+
+  private async openCandidateInBrowser(
+    candidate: Pick<ScoredCandidate, "name" | "bonjourUrl">
+  ): Promise<ShortlistStatusMessage> {
+    if (!candidate.bonjourUrl) {
+      return {
+        tone: "warning",
+        text: `${candidate.name} 没有 Bonjour 链接。`
+      };
+    }
+
+    const openCommand = process.platform === "darwin"
+      ? "open"
+      : process.platform === "win32"
+        ? "start"
+        : "xdg-open";
+
+    try {
+      const { spawn } = await import("node:child_process");
+      spawn(openCommand, [candidate.bonjourUrl], { stdio: "ignore", detached: true });
+      return {
+        tone: "success",
+        text: `✓ 已尝试在浏览器中打开 ${candidate.name} 的 Bonjour 页面。`
+      };
+    } catch {
+      return {
+        tone: "warning",
+        text: `无法自动打开 Bonjour，请手动访问：${candidate.bonjourUrl}`
+      };
     }
   }
 
@@ -835,7 +1214,7 @@ export class SearchWorkflow {
 
       // Backfill source badge from identity-derived Bonjour URL when facetSource is sparse.
       const sources = document?.facetSource && document.facetSource.length > 0
-        ? document.facetSource.map((source) => source === "bonjour" ? "Bonjour" : "GitHub")
+        ? document.facetSource.map((source) => formatSourceLabel(source) || source)
         : bonjourUrl
           ? ["Bonjour"]
           : ["Unknown"];
@@ -995,7 +1374,7 @@ export class SearchWorkflow {
           : undefined;
 
         const sources = document.facetSource?.length > 0
-          ? document.facetSource.map((source) => source === "bonjour" ? "Bonjour" : "GitHub")
+          ? document.facetSource.map((source) => formatSourceLabel(source) || source)
           : bonjourUrl
             ? ["Bonjour"]
             : ["Unknown"];
@@ -1128,18 +1507,7 @@ export class SearchWorkflow {
     document: SearchDocument | undefined,
     evidence: EvidenceItem[]
   ): string {
-    return [
-      person.primaryName || "",
-      person.primaryHeadline || "",
-      person.primaryLocation || "",
-      person.summary || "",
-      document?.docText || "",
-      ...(document?.facetRole || []),
-      ...(document?.facetTags || []),
-      ...evidence.map((item) => `${item.title || ""} ${item.description || ""}`)
-    ]
-      .join(" ")
-      .toLowerCase();
+    return buildSearchStateContextValue(person, document, evidence);
   }
 
   private buildQueryMatchExplanation(
@@ -1154,71 +1522,14 @@ export class SearchWorkflow {
       referenceDate?: Date;
     } = {}
   ): QueryMatchExplanation {
-    const context = this.buildSearchStateContext(person, document, evidence);
-    const reasons: string[] = [];
-    const pushReason = (value?: string) => {
-      const normalized = value?.trim();
-      if (!normalized || reasons.includes(normalized)) {
-        return;
-      }
-      reasons.push(normalized);
-    };
+    const experienceMatched = conditions.experience
+      ? this.scorer.calculateExperienceMatch(person, evidence, conditions) >= 10
+      : false;
 
-    const matchedLocations = this.getMatchedLocations(person, document, conditions);
-    if (matchedLocations.length > 0) {
-      pushReason(`地点命中：${matchedLocations.slice(0, 2).join(" / ")}`);
-    }
-
-    if (conditions.role && context.includes(conditions.role.toLowerCase())) {
-      pushReason(`角色贴合：${conditions.role}`);
-    }
-
-    const matchedSkills = this.findMatchedTerms(conditions.skills, context);
-    if (matchedSkills.length > 0) {
-      pushReason(`技术命中：${matchedSkills.slice(0, 3).join(" / ")}`);
-    }
-
-    const matchedMustHave = this.findMatchedTerms(conditions.mustHave, context);
-    if (matchedMustHave.length > 0) {
-      pushReason(`必须项满足：${matchedMustHave.slice(0, 2).join(" / ")}`);
-    }
-
-    if (
-      conditions.experience &&
-      this.scorer.calculateExperienceMatch(person, evidence, conditions) >= 10
-    ) {
-      pushReason(`经验层级贴合：${conditions.experience}`);
-    }
-
-    if (conditions.sourceBias) {
-      const preferredSource = conditions.sourceBias === "bonjour" ? "Bonjour" : "GitHub";
-      if (options.sources?.includes(preferredSource)) {
-        pushReason(`来源偏好命中：${preferredSource}`);
-      }
-    }
-
-    if (conditions.preferFresh && options.referenceDate) {
-      pushReason(`近期活跃：${this.describeRelativeDate(options.referenceDate)}`);
-    }
-
-    for (const reason of options.retrievalReasons ?? []) {
-      pushReason(this.translateRetrievalReason(reason));
-    }
-
-    pushReason(this.buildRelevantEvidenceReason(evidence, conditions));
-
-    if (reasons.length === 0 && typeof options.score === "number") {
-      pushReason(`综合相关度 ${options.score.toFixed(1)} 分`);
-    }
-
-    if (reasons.length === 0) {
-      pushReason("与当前条件整体相关度较高");
-    }
-
-    return {
-      summary: reasons.slice(0, 2).join("，"),
-      reasons: reasons.slice(0, 5)
-    };
+    return buildQueryMatchExplanation(person, document, evidence, conditions, {
+      ...options,
+      experienceMatched
+    });
   }
 
   private refreshCandidateQueryExplanation(
@@ -1589,31 +1900,7 @@ export class SearchWorkflow {
   }
 
   private describeRelativeDate(date: Date): string {
-    const ageInDays = Math.floor(
-      (Date.now() - date.getTime()) / (1000 * 60 * 60 * 24)
-    );
-
-    if (ageInDays <= 0) {
-      return "今天";
-    }
-
-    if (ageInDays === 1) {
-      return "昨天";
-    }
-
-    if (ageInDays <= 7) {
-      return `${ageInDays}天前`;
-    }
-
-    if (ageInDays <= 30) {
-      return `${Math.floor(ageInDays / 7)}周前`;
-    }
-
-    if (ageInDays <= 365) {
-      return `${Math.floor(ageInDays / 30)}个月前`;
-    }
-
-    return `${Math.floor(ageInDays / 365)}年前`;
+    return describeRelativeDate(date);
   }
 
   private truncateForDisplay(value: string, maxLength: number): string {

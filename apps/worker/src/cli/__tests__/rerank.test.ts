@@ -16,6 +16,21 @@ describe("TerminalUI sort parser", () => {
     expect(parseShortlistCommand("sort source")).toMatchObject({ type: "sort", sortMode: "source" });
     expect(parseShortlistCommand("sort evidence")).toMatchObject({ type: "sort", sortMode: "evidence" });
   });
+
+  it("accepts command-mode prefixes for shortlist commands", () => {
+    const ui = new TerminalUI();
+    const parseShortlistCommand = (ui as any).parseShortlistCommand.bind(ui) as (input: string) => {
+      type: string;
+      sortMode?: string;
+      exportFormat?: string;
+      prompt?: string;
+    };
+
+    expect(parseShortlistCommand(":sort fresh")).toMatchObject({ type: "sort", sortMode: "fresh" });
+    expect(parseShortlistCommand("/export md")).toMatchObject({ type: "export", exportFormat: "md" });
+    expect(parseShortlistCommand(":r 去掉销售")).toMatchObject({ type: "refine", prompt: "去掉销售" });
+    expect(parseShortlistCommand(":history")).toMatchObject({ type: "history" });
+  });
 });
 
 describe("HybridScoringEngine rerank helpers", () => {

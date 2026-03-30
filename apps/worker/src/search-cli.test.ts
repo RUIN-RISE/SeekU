@@ -213,6 +213,67 @@ describe("CLI Search", () => {
       expect(mockBuildQueryMatchExplanation).toHaveBeenCalledTimes(1);
       expect(mockDescribeRelativeDate).toHaveBeenCalledTimes(1);
     });
+
+    it("should fall back to raw query reason when explanation becomes generic", async () => {
+      queryResults = new Map<any, any[]>([
+        [searchDocumentsTable, [{
+          personId: "person-1",
+          docText: "Builder in Hangzhou",
+          facetSource: ["bonjour"],
+          facetLocation: ["杭州"],
+          facetRole: [],
+          facetTags: []
+        }]],
+        [evidenceItemsTable, [{
+          personId: "person-1",
+          evidenceType: "project",
+          title: "Built Hangzhou automation stack",
+          description: "Used python heavily",
+          source: "bonjour",
+          occurredAt: new Date("2026-03-27T00:00:00.000Z")
+        }]],
+        [personsTable, [{
+          id: "person-1",
+          primaryName: "Ada",
+          primaryHeadline: "Builder",
+          primaryLocation: "中国 / 浙江省 / 杭州市",
+          summary: "Builds automation systems",
+          updatedAt: new Date("2026-03-30T00:00:00.000Z")
+        }]],
+        [personIdentitiesTable, [{
+          personId: "person-1",
+          sourceProfileId: "profile-1"
+        }]],
+        [sourceProfilesTable, [{
+          id: "profile-1",
+          source: "bonjour",
+          canonicalUrl: "https://bonjour.bio/ada"
+        }]]
+      ]);
+      mockRetrieverRetrieve.mockResolvedValue([{ personId: "person-1" }]);
+      mockRerankerRerank.mockReturnValue([{
+        personId: "person-1",
+        finalScore: 0.31,
+        matchReasons: []
+      }]);
+      mockBuildQueryMatchExplanation.mockReturnValue({
+        summary: "综合相关度 0.3 分",
+        reasons: ["综合相关度 0.3 分"]
+      });
+
+      const { runSearchCli } = await import("./search-cli.js");
+      const result = await runSearchCli({
+        query: "杭州",
+        json: true
+      });
+
+      if (!Array.isArray(result)) {
+        throw new Error("Expected JSON array output");
+      }
+
+      expect(result[0]?.matchReason).toBe("地点命中：杭州");
+      expect(result[0]?.whyMatched).toBe("地点命中：杭州");
+    });
   });
 
   describe("runShowCli", () => {

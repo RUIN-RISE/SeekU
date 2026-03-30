@@ -9,13 +9,15 @@ describe("ProfileGenerator", () => {
   it("passes an AbortSignal to the LLM provider", async () => {
     const chat = vi.fn(async (messages: Array<{ content: string }>, options?: { signal?: AbortSignal }) => {
       expect(options?.signal).toBeInstanceOf(AbortSignal);
-      expect(messages[1]?.content).toContain("Current Search Lens");
-      expect(messages[1]?.content).toContain("python");
+      expect(messages[0]?.content).toContain("简体中文");
+      expect(messages[1]?.content).toContain("当前搜索视角");
+      expect(messages[1]?.content).toContain("技能：python");
       expect(messages[1]?.content).toContain("杭州");
+      expect(messages[1]?.content).toContain("summary 和 highlights 必须全部使用简体中文");
       return {
         content: JSON.stringify({
-          summary: "Strong distributed systems engineer.",
-          highlights: ["Built production search systems"]
+          summary: "长期从事分布式系统与搜索基础设施建设。",
+          highlights: ["搭建过生产级搜索系统"]
         })
       };
     });
@@ -63,6 +65,6 @@ describe("ProfileGenerator", () => {
     );
 
     expect(chat).toHaveBeenCalledTimes(1);
-    expect(result.summary).toContain("Strong distributed systems engineer");
+    expect(result.summary).toContain("分布式系统");
   });
 });

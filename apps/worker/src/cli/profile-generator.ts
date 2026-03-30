@@ -21,49 +21,53 @@ export class ProfileGenerator {
     conditions?: SearchConditions
   ): Promise<MultiDimensionProfile> {
     // Sanitize all external data
-    const safeName = sanitizeForPrompt(candidate.primaryName || "Unknown", "name");
-    const safeHeadline = sanitizeForPrompt(candidate.primaryHeadline || "No headline", "headline");
-    const safeEvidence = evidence.slice(0, 15).map(e =>
-      sanitizeForPrompt(e.title || "Untitled", "title")
-    ).join("\n- ");
+    const safeName = sanitizeForPrompt(candidate.primaryName || "未知候选人", "name");
+    const safeHeadline = sanitizeForPrompt(candidate.primaryHeadline || "暂无标题", "headline");
+    const evidenceLines = evidence.slice(0, 15).map(e =>
+      sanitizeForPrompt(e.title || "未命名证据", "title")
+    );
+    const safeEvidence = evidenceLines.length > 0
+      ? evidenceLines.join("\n- ")
+      : "暂无高价值结构化证据";
     const searchLens = this.formatSearchLens(conditions);
 
     const summaryPrompt = `
-You are a world-class executive recruiter at Seeku.
-Generate a general profile summary and 3 key highlights for this candidate.
+你是 Seeku 的资深人才顾问，请为候选人生成一段通用画像总结和 3 条关键亮点。
 
-${safeName}
-${safeHeadline}
+候选人：
+- 姓名：${safeName}
+- 标题：${safeHeadline}
 
-Dimension Scores:
-- Tech Match: ${profile.dimensions.techMatch}/100
-- Project Depth: ${profile.dimensions.projectDepth}/100
-- Academic Impact: ${profile.dimensions.academicImpact}/100
-- Career Stability: ${profile.dimensions.careerStability}/100
-- Community: ${profile.dimensions.communityReputation}/100
+六维评分：
+- 技术匹配：${profile.dimensions.techMatch}/100
+- 项目深度：${profile.dimensions.projectDepth}/100
+- 学术影响：${profile.dimensions.academicImpact}/100
+- 职场稳健：${profile.dimensions.careerStability}/100
+- 社区声望：${profile.dimensions.communityReputation}/100
 
-Key Evidence:
+关键证据：
 - ${safeEvidence}
 
-Current Search Lens:
+当前搜索视角：
 ${searchLens}
 
-Return ONLY a JSON object:
+请只返回 JSON 对象：
 {
-  "summary": "1-2 sentences summarizing their stable, general profile.",
+  "summary": "用 1-2 句简体中文总结其稳定、通用画像。",
   "highlights": [
-    "Highlight 1: Brief, impactful achievement",
-    "Highlight 2",
-    "Highlight 3"
+    "亮点 1：简体中文，简洁有判断价值",
+    "亮点 2",
+    "亮点 3"
   ]
 }
 
-CRITICAL RULES:
-1. Return ONLY the JSON, no markdown, no explanation
-2. Be objective but persuasive
-3. Focus on specific achievements from evidence
-4. Keep the summary generally true even outside this search
-5. Use the search lens only to decide what to foreground, not to explain why they match this query
+关键要求：
+1. 只能输出 JSON，不要输出 markdown、解释或额外前后缀
+2. summary 和 highlights 必须全部使用简体中文
+3. 即使原始证据是英文，也要翻译或转述成中文
+4. 保持客观，但要有招聘判断价值
+5. summary 要尽量保持“离开当前搜索也成立”的通用画像
+6. 当前搜索视角只用于决定强调什么，不要把它写成“为什么匹配本次 query”
 `;
 
     try {
@@ -74,7 +78,7 @@ CRITICAL RULES:
 
           try {
             return await this.llm.chat([
-              { role: "system", content: "You are a professional talent profiler. You output only valid JSON." },
+              { role: "system", content: "你是专业的人才画像分析助手，只输出合法 JSON，且所有用户可见文案都使用简体中文。" },
               { role: "user", content: summaryPrompt }
             ], { signal: controller.signal });
           } finally {
@@ -88,15 +92,15 @@ CRITICAL RULES:
         response.content,
         ProfileSummarySchema,
         {
-          summary: "Detailed profile summary could not be generated at this time.",
-          highlights: ["Expertise in relevant technologies", "Proven project experience", "Active professional profile"]
+          summary: "候选人在相关方向具备一定积累，建议结合更多证据继续判断。",
+          highlights: ["具备相关技术与项目实践", "资料显示有持续投入记录", "可作为后续深看的候选人"]
         }
       );
 
       return {
         ...profile,
-        summary: result.data.summary ?? "Detailed profile summary could not be generated at this time.",
-        highlights: result.data.highlights ?? ["Expertise in relevant technologies", "Proven project experience", "Active professional profile"]
+        summary: result.data.summary ?? "候选人在相关方向具备一定积累，建议结合更多证据继续判断。",
+        highlights: result.data.highlights ?? ["具备相关技术与项目实践", "资料显示有持续投入记录", "可作为后续深看的候选人"]
       };
     } catch (e) {
       if (e instanceof Error && e.name === "AbortError") {
@@ -106,28 +110,28 @@ CRITICAL RULES:
       }
       return {
         ...profile,
-        summary: "Detailed profile summary could not be generated at this time.",
-        highlights: ["Expertise in relevant technologies", "Proven project experience", "Active professional profile"]
+        summary: "候选人在相关方向具备一定积累，建议结合更多证据继续判断。",
+        highlights: ["具备相关技术与项目实践", "资料显示有持续投入记录", "可作为后续深看的候选人"]
       };
     }
   }
 
   private formatSearchLens(conditions?: SearchConditions): string {
     if (!conditions) {
-      return "No explicit search lens provided.";
+      return "未提供明确搜索视角。";
     }
 
     const parts = [
-      conditions.role ? `Role: ${conditions.role}` : "",
-      conditions.skills.length > 0 ? `Skills: ${conditions.skills.join(" / ")}` : "",
-      conditions.locations.length > 0 ? `Locations: ${conditions.locations.join(" / ")}` : "",
-      conditions.experience ? `Experience: ${conditions.experience}` : "",
-      conditions.sourceBias ? `Source Bias: ${conditions.sourceBias}` : "",
-      conditions.mustHave.length > 0 ? `Must Have: ${conditions.mustHave.join(" / ")}` : "",
-      conditions.niceToHave.length > 0 ? `Nice To Have: ${conditions.niceToHave.join(" / ")}` : "",
-      conditions.preferFresh ? "Preference: recent activity" : ""
+      conditions.role ? `角色：${conditions.role}` : "",
+      conditions.skills.length > 0 ? `技能：${conditions.skills.join(" / ")}` : "",
+      conditions.locations.length > 0 ? `地点：${conditions.locations.join(" / ")}` : "",
+      conditions.experience ? `经验：${conditions.experience}` : "",
+      conditions.sourceBias ? `来源偏好：${conditions.sourceBias}` : "",
+      conditions.mustHave.length > 0 ? `必须项：${conditions.mustHave.join(" / ")}` : "",
+      conditions.niceToHave.length > 0 ? `优先项：${conditions.niceToHave.join(" / ")}` : "",
+      conditions.preferFresh ? "偏好：最近活跃" : ""
     ].filter(Boolean);
 
-    return parts.length > 0 ? parts.join(" | ") : "Broad search with no strict constraints.";
+    return parts.length > 0 ? parts.join(" | ") : "当前搜索较宽，没有严格限制。";
   }
 }

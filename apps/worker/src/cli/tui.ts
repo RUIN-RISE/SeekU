@@ -1,5 +1,6 @@
 import enquirer from "enquirer";
 import chalk from "chalk";
+import { emitKeypressEvents } from "node:readline";
 import {
   ClarifyAction,
   DetailAction,
@@ -11,6 +12,8 @@ import {
   SearchConditions,
   SearchDraft,
   SearchHistoryEntry,
+  ShortlistPromptState,
+  ShortlistStatusMessage,
   SortMode
 } from "./types.js";
 
@@ -22,9 +25,14 @@ interface ShortlistViewOptions {
   showingCount: number;
   totalCount: number;
   poolCount?: number;
+  selectedIndex?: number;
+  statusMessage?: ShortlistStatusMessage;
+  reuseViewport?: boolean;
 }
 
 export class TerminalUI {
+  private shortlistViewportHeight = 0;
+
   displayBanner() {
     process.stdout.write("\x1Bc");
     console.log(chalk.blueBright(`
@@ -108,37 +116,62 @@ export class TerminalUI {
       evidence: "证据强度"
     };
 
-    console.log(`\n${chalk.bold(`Top ${options.showingCount}`)} / ${options.totalCount} | ${chalk.bold("排序")}：${sortLabel[options.sortMode]}`);
-    console.log(chalk.dim(this.formatConditionsSummary(conditions)));
-    console.log(chalk.dim("=".repeat(72)));
+    if (options.reuseViewport && this.shortlistViewportHeight > 0) {
+      process.stdout.write(`\u001B[${this.shortlistViewportHeight}A\u001B[0J`);
+    }
+
+    const lines: string[] = [];
+    lines.push("");
+    lines.push(`${chalk.bold(`Top ${options.showingCount}`)} / ${options.totalCount} | ${chalk.bold("排序")}：${sortLabel[options.sortMode]}`);
+    lines.push(chalk.dim(this.formatConditionsSummary(conditions)));
+    lines.push(chalk.dim("=".repeat(72)));
+
+    if (options.statusMessage) {
+      const colorize = options.statusMessage.tone === "success"
+        ? chalk.green
+        : options.statusMessage.tone === "warning"
+          ? chalk.yellow
+          : chalk.cyan;
+      lines.push(colorize(options.statusMessage.text));
+      lines.push(chalk.dim("-".repeat(72)));
+    }
 
     candidates.slice(0, options.showingCount).forEach((candidate, index) => {
-      // Source badge
+      const isSelected = options.selectedIndex === index;
       const sourceBadge = this.formatSourceBadge(candidate.sources);
-
-      // Freshness indicator
       const freshness = this.formatFreshness(candidate.latestEvidenceAt, candidate.lastSyncedAt);
-
-      // Bonjour link hint
+      const linePrefix = isSelected ? chalk.cyanBright("❯") : " ";
+      const detailPrefix = isSelected ? chalk.cyan("│") : " ";
+      const nameLabel = isSelected
+        ? chalk.bgBlue.white(` ${candidate.name} `)
+        : chalk.blueBright(candidate.name);
       const linkHint = candidate.bonjourUrl
-        ? chalk.cyan(`🔗 ${candidate.bonjourUrl}`)
+        ? `${detailPrefix} ${chalk.cyan(`🔗 ${candidate.bonjourUrl}`)}`
         : "";
 
-      console.log(
-        `${chalk.bold(`${index + 1}.`)} ${chalk.blueBright(candidate.name)}  ${chalk.green(candidate.matchScore.toFixed(1))}  ${sourceBadge} ${freshness}`
+      lines.push(
+        `${linePrefix} ${chalk.bold(`${index + 1}.`)} ${nameLabel}  ${chalk.green(candidate.matchScore.toFixed(1))}  ${sourceBadge} ${freshness}`
       );
-      console.log(`   ${chalk.dim(candidate.location || "地点未知")} · ${candidate.headline || "No headline"}`);
+      lines.push(`${detailPrefix} ${chalk.dim(candidate.location || "地点未知")} · ${candidate.headline || "No headline"}`);
       if (linkHint) {
-        console.log(`   ${linkHint}`);
+        lines.push(linkHint);
       }
-      console.log(`   ${chalk.yellow("为什么匹配")}：${candidate.matchReason || "与本轮条件高度相关"}`);
+      lines.push(`${detailPrefix} ${chalk.yellow("为什么匹配")}：${candidate.matchReason || "与本轮条件高度相关"}`);
     });
 
-    console.log(chalk.dim("=".repeat(72)));
+    lines.push(chalk.dim("=".repeat(72)));
     const poolHint = options.poolCount && options.poolCount > 0
       ? chalk.dim(` | pool ${options.poolCount}人`)
       : "";
-    console.log(chalk.dim(`动作：v 2 详情 | o 2 打开 Bonjour | c 1 3 决策对比 | add 1 pool | export md | sort fresh/source/evidence | r 去掉销售 | m 更多 | q 退出${poolHint}`));
+    const selectedLabel = typeof options.selectedIndex === "number"
+      ? `当前选中 #${options.selectedIndex + 1}`
+      : "使用方向键选择";
+    lines.push(chalk.dim(`热键：↑/↓ 选择 | Enter 详情 | o 打开 Bonjour | space 加入 pool | c 进入 compare | :/ 命令 | q 退出${poolHint}`));
+    lines.push(chalk.dim(`${selectedLabel} | 仍支持命令模式，例如 :sort fresh / :export md / :r 去掉销售 / :history`));
+
+    const output = lines.join("\n");
+    process.stdout.write(`${output}\n`);
+    this.shortlistViewportHeight = output.split("\n").length + 1;
   }
 
   private formatSourceBadge(sources: string[]): string {
@@ -185,9 +218,13 @@ export class TerminalUI {
     return chalk.dim(`${daysDiff}天前`);
   }
 
-  async promptShortlistAction(): Promise<ResultListCommand> {
-    const raw = await this.promptLine("shortlist>", "v 1");
-    return this.parseShortlistCommand(raw);
+  async promptShortlistAction(state: ShortlistPromptState): Promise<ResultListCommand> {
+    if (!process.stdin.isTTY || typeof process.stdin.setRawMode !== "function") {
+      const raw = await this.promptLine("shortlist>", `v ${state.selectedIndex + 1}`);
+      return this.parseShortlistCommand(raw);
+    }
+
+    return this.promptShortlistHotkeys(state);
   }
 
   async promptDetailAction(name: string): Promise<DetailAction> {
@@ -402,6 +439,10 @@ export class TerminalUI {
     console.log(chalk.dim("-".repeat(40)));
   }
 
+  resetShortlistViewport() {
+    this.shortlistViewportHeight = 0;
+  }
+
   private async promptLine(message: string, initial = ""): Promise<string> {
     const promptBuffer = new Input({
       message,
@@ -412,8 +453,192 @@ export class TerminalUI {
     return result.trim();
   }
 
+  private async promptShortlistHotkeys(state: ShortlistPromptState): Promise<ResultListCommand> {
+    type PendingHotkey = "o" | "c" | "r";
+
+    const stdin = process.stdin as NodeJS.ReadStream & {
+      isRaw?: boolean;
+      setRawMode(mode: boolean): void;
+    };
+    const wasRaw = Boolean(stdin.isRaw);
+
+    emitKeypressEvents(stdin);
+    if (!wasRaw) {
+      stdin.setRawMode(true);
+    }
+    stdin.resume();
+
+    return new Promise((resolve) => {
+      let pendingHotkey: { key: PendingHotkey; timer: NodeJS.Timeout } | undefined;
+      let settled = false;
+
+      const renderPrompt = () => {
+        const prompt = chalk.dim(
+          `shortlist> 当前 #${state.selectedIndex + 1} | ↑/↓ 移动 | Enter 详情 | o 打开 | space 入池 | c 对比 | :/ 命令`
+        );
+        process.stdout.write(`\u001B[2K\r${prompt}`);
+      };
+
+      const clearPendingHotkey = () => {
+        if (!pendingHotkey) {
+          return undefined;
+        }
+        clearTimeout(pendingHotkey.timer);
+        const key = pendingHotkey.key;
+        pendingHotkey = undefined;
+        return key;
+      };
+
+      const cleanup = (appendNewline: boolean) => {
+        clearPendingHotkey();
+        stdin.off("keypress", onKeypress);
+        if (!wasRaw) {
+          stdin.setRawMode(false);
+        }
+        process.stdout.write("\u001B[2K\r");
+        if (appendNewline) {
+          process.stdout.write("\n");
+        }
+      };
+
+      const finalize = (command: ResultListCommand, appendNewline = true) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        cleanup(appendNewline);
+        resolve(command);
+      };
+
+      const enterCommandMode = (initial = "") => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        cleanup(false);
+        void this.promptLine("command>", initial)
+          .then((raw) => resolve(this.parseShortlistCommand(raw)))
+          .catch(() => resolve({ type: "help" }));
+      };
+
+      const startPendingHotkey = (key: PendingHotkey) => {
+        clearPendingHotkey();
+        pendingHotkey = {
+          key,
+          timer: setTimeout(() => {
+            const resolvedKey = clearPendingHotkey();
+            if (resolvedKey === "o") {
+              finalize({ type: "open", indexes: [state.selectedIndex + 1] });
+              return;
+            }
+            if (resolvedKey === "c") {
+              finalize({ type: "compare" });
+              return;
+            }
+            if (resolvedKey === "r") {
+              finalize({ type: "refine" });
+            }
+          }, 180)
+        };
+      };
+
+      const onKeypress = (str: string, key: { ctrl?: boolean; name?: string; sequence?: string; meta?: boolean }) => {
+        if (key.ctrl && key.name === "c") {
+          finalize({ type: "quit" });
+          return;
+        }
+
+        if (pendingHotkey) {
+          if (key.name === "return") {
+            const hotkey = clearPendingHotkey();
+            if (hotkey === "o") {
+              finalize({ type: "open", indexes: [state.selectedIndex + 1] });
+              return;
+            }
+            if (hotkey === "c") {
+              finalize({ type: "compare" });
+              return;
+            }
+            if (hotkey === "r") {
+              finalize({ type: "refine" });
+              return;
+            }
+          }
+
+          const hotkey = clearPendingHotkey();
+          if (hotkey) {
+            enterCommandMode(`${hotkey}${str}`);
+          }
+          return;
+        }
+
+        if (key.name === "up") {
+          finalize({ type: "moveSelection", direction: "up" });
+          return;
+        }
+
+        if (key.name === "down") {
+          finalize({ type: "moveSelection", direction: "down" });
+          return;
+        }
+
+        if (key.name === "return") {
+          finalize({ type: "view", indexes: [state.selectedIndex + 1] });
+          return;
+        }
+
+        if (key.name === "space") {
+          finalize({ type: "add", indexes: [state.selectedIndex + 1] });
+          return;
+        }
+
+        if (!key.ctrl && !key.meta && key.name === "o") {
+          startPendingHotkey("o");
+          return;
+        }
+
+        if (!key.ctrl && !key.meta && key.name === "c") {
+          startPendingHotkey("c");
+          return;
+        }
+
+        if (!key.ctrl && !key.meta && key.name === "r") {
+          startPendingHotkey("r");
+          return;
+        }
+
+        if (!key.ctrl && !key.meta && key.name === "q") {
+          finalize({ type: "quit" });
+          return;
+        }
+
+        if (!key.ctrl && !key.meta && key.name === "m") {
+          finalize({ type: "showMore" });
+          return;
+        }
+
+        if (!key.ctrl && !key.meta && key.name === "p") {
+          finalize({ type: "pool" });
+          return;
+        }
+
+        if (str === ":" || str === "/") {
+          enterCommandMode("");
+          return;
+        }
+
+        if (str && !key.ctrl && !key.meta) {
+          enterCommandMode(str);
+        }
+      };
+
+      stdin.on("keypress", onKeypress);
+      renderPrompt();
+    });
+  }
+
   private parseShortlistCommand(raw: string): ResultListCommand {
-    const trimmed = raw.trim();
+    const trimmed = raw.trim().replace(/^[:/]\s*/, "");
     const normalized = trimmed.toLowerCase();
 
     if (!trimmed || normalized === "v" || normalized === "view") {
