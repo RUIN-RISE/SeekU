@@ -18,6 +18,9 @@ interface NotFoundResponse {
   error: "not_found";
 }
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 async function handleProfile(
   db: SeekuDatabase,
   request: FastifyRequest,
@@ -25,6 +28,13 @@ async function handleProfile(
 ): Promise<ProfileResponse | ReturnType<FastifyReply["status"]>> {
   const params = request.params as { personId: string };
   const { personId } = params;
+
+  if (!UUID_PATTERN.test(personId)) {
+    return reply.status(400).send({
+      error: "invalid_request",
+      message: "personId must be a valid UUID"
+    });
+  }
 
   // Fetch person with searchStatus="active" (exclude hidden/claimed)
   const personResults = await db

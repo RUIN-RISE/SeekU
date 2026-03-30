@@ -16,6 +16,12 @@ import { OptOutRequestInputSchema, type SourceName } from "@seeku/shared";
 import { registerSearchRoutes } from "./routes/search.js";
 import { registerProfileRoutes } from "./routes/profiles.js";
 import { registerAdminRoutes } from "./routes/admin.js";
+import type { SearchServices } from "./routes/search.js";
+
+interface BuildApiServerOptions {
+  db?: SeekuDatabase;
+  searchServices?: SearchServices;
+}
 
 function inferSourceAndHandle(input: {
   source?: SourceName;
@@ -36,7 +42,16 @@ function inferSourceAndHandle(input: {
     };
   }
 
-  const url = new URL(input.profileUrl);
+  let url: URL;
+  try {
+    url = new URL(input.profileUrl);
+  } catch {
+    return {
+      source: input.source,
+      sourceHandle: input.sourceHandle
+    };
+  }
+
   const sourceHandle = url.pathname.replace(/^\/+/, "").split("/")[0];
 
   if (url.hostname === "bonjour.bio" || url.hostname.endsWith(".bonjour.bio")) {
@@ -52,7 +67,20 @@ function inferSourceAndHandle(input: {
   };
 }
 
-export async function buildApiServer(db?: SeekuDatabase) {
+function resolveBuildOptions(input?: SeekuDatabase | BuildApiServerOptions): BuildApiServerOptions {
+  if (!input) {
+    return {};
+  }
+
+  if ("select" in input) {
+    return { db: input };
+  }
+
+  return input;
+}
+
+export async function buildApiServer(input?: SeekuDatabase | BuildApiServerOptions) {
+  const options = resolveBuildOptions(input);
   const fastify = Fastify({
     logger: true
   });
@@ -61,14 +89,14 @@ export async function buildApiServer(db?: SeekuDatabase) {
     origin: true
   });
 
-  const ownedConnection = db ? null : createDatabaseConnection();
-  const database = db ?? ownedConnection!.db;
+  const ownedConnection = options.db ? null : createDatabaseConnection();
+  const database = options.db ?? ownedConnection!.db;
 
   fastify.get("/health", async () => ({
     status: "ok"
   }));
 
-  registerSearchRoutes(fastify, database);
+  registerSearchRoutes(fastify, database, { services: options.searchServices });
   registerProfileRoutes(fastify, database);
   registerAdminRoutes(fastify, database);
 

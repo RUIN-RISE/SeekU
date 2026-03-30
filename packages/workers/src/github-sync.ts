@@ -8,7 +8,8 @@ import {
   profileToUpsertPayload,
   startSourceSyncRun,
   upsertSourceProfile,
-  type SeekuDatabase
+  type SeekuDatabase,
+  type SyncStatus
 } from "@seeku/db";
 import {
   GithubAdapter,
@@ -145,7 +146,10 @@ export async function syncGithubHandles(
       }
     }
 
-    const status = errors.length === 0 ? "succeeded" : profilesProcessed > 0 ? "partial" : "failed";
+    let status: SyncStatus = "succeeded";
+    if (errors.length > 0) {
+      status = profilesProcessed > 0 ? "partial" : "failed";
+    }
     const nextCursor =
       profilesProcessed < handles.length
         ? {

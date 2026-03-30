@@ -1,12 +1,45 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { buildApiServer } from "./server";
+import { buildApiServer } from "./server.js";
 import type { FastifyInstance } from "fastify";
+import type { SearchServices } from "./routes/search.js";
+
+const mockSearchServices: SearchServices = {
+  provider: {
+    name: "mock",
+    embed: async () => ({
+      embedding: [0.1, 0.2, 0.3],
+      model: "mock-embedding",
+      dimension: 3
+    }),
+    chat: async () => ({
+      content: "{}",
+      model: "mock-chat"
+    }),
+    embedBatch: async () => []
+  } as any,
+  planner: {
+    parse: async (query: string) => ({
+      rawQuery: query,
+      roles: [],
+      skills: [],
+      locations: [],
+      mustHaves: [],
+      niceToHaves: []
+    })
+  } as any,
+  retriever: {
+    retrieve: async () => []
+  } as any,
+  reranker: {
+    rerank: () => []
+  } as any
+};
 
 describe("API Server", () => {
   let server: FastifyInstance;
 
   beforeAll(async () => {
-    server = await buildApiServer();
+    server = await buildApiServer({ searchServices: mockSearchServices });
   });
 
   afterAll(async () => {

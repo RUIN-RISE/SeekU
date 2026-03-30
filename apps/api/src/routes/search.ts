@@ -51,11 +51,15 @@ interface SearchResponseBody {
   intent: QueryIntent;
 }
 
-interface SearchServices {
+export interface SearchServices {
   provider: SiliconFlowProvider;
   planner: QueryPlanner;
   retriever: HybridRetriever;
   reranker: Reranker;
+}
+
+interface SearchRouteOptions {
+  services?: SearchServices;
 }
 
 const DEFAULT_LIMIT = 20;
@@ -109,7 +113,11 @@ function parseBody(body: unknown): SearchRequestBody {
   };
 }
 
-function getSearchServices(db: SeekuDatabase): SearchServices {
+function getSearchServices(db: SeekuDatabase, overrides?: SearchServices): SearchServices {
+  if (overrides) {
+    return overrides;
+  }
+
   const cached = serviceCache.get(db);
   if (cached) {
     return cached;
@@ -167,6 +175,7 @@ function buildResponseCard(
 
 async function handleSearch(
   db: SeekuDatabase,
+  options: SearchRouteOptions,
   request: FastifyRequest,
   reply: FastifyReply
 ): Promise<SearchResponseBody | ReturnType<FastifyReply["status"]>> {
@@ -181,7 +190,7 @@ async function handleSearch(
     });
   }
 
-  const services = getSearchServices(db);
+  const services = getSearchServices(db, options.services);
   const intent = await services.planner.parse(body.query);
   const queryEmbedding = await services.provider.embed(intent.rawQuery);
   const retrieved = await services.retriever.retrieve(intent, {
@@ -217,7 +226,14 @@ async function handleSearch(
   const evidenceMap = groupEvidence(evidence);
   const personMap = new Map(people.map((person) => [person.id, person]));
   const reranked = services.reranker.rerank(retrieved, intent, documentMap, evidenceMap);
-  const paged = reranked.slice(body.offset ?? 0, (body.offset ?? 0) + (body.limit ?? DEFAULT_LIMIT));
+  const offset = body.offset ?? 0;
+  const limit = body.limit ?? DEFAULT_LIMIT;
+
+  if (offset >= reranked.length && reranked.length > 0) {
+    request.log.warn({ offset, total: reranked.length }, "Search offset exceeds total results");
+  }
+
+  const paged = reranked.slice(offset, offset + limit);
 
   return {
     results: paged.map((result) =>
@@ -228,6 +244,10 @@ async function handleSearch(
   };
 }
 
-export function registerSearchRoutes(server: FastifyInstance, db: SeekuDatabase) {
-  server.post("/search", async (request, reply) => handleSearch(db, request, reply));
+export function registerSearchRoutes(
+  server: FastifyInstance,
+  db: SeekuDatabase,
+  options: SearchRouteOptions = {}
+) {
+  server.post("/search", async (request, reply) => handleSearch(db, options, request, reply));
 }
