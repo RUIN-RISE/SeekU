@@ -54,6 +54,7 @@ export interface ScoredCandidate {
   matchScore: number;
   profile?: MultiDimensionProfile;
   matchReason?: string;
+  queryReasons?: string[];
   // P0: Source & Freshness visibility
   sources: string[]; // ["Bonjour", "GitHub", ...]
   bonjourUrl?: string; // Bonjour profile link

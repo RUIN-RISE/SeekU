@@ -15,6 +15,7 @@ export class TerminalRenderer {
     profile: MultiDimensionProfile,
     matchReason?: string,
     extra?: {
+      queryReasons?: string[];
       sources?: string[];
       bonjourUrl?: string;
       lastSyncedAt?: Date;
@@ -47,7 +48,12 @@ export class TerminalRenderer {
       chalk.dim("|") +
       " " +
       chalk.italic(candidate.primaryHeadline || "No headline");
-    const highlightSection = highlights.map((item) => chalk.green("  ✔ ") + item).join("\n");
+    const highlightSection = highlights.length > 0
+      ? highlights.map((item) => chalk.green("  ✔ ") + item).join("\n")
+      : chalk.dim("  暂无结构化亮点");
+    const queryReasonLines = extra?.queryReasons && extra.queryReasons.length > 0
+      ? extra.queryReasons.map((item) => `- ${item}`).join("\n")
+      : chalk.dim("- 暂无更细的 query-aware 理由");
 
     // Source info section
     const sourceBadge = extra?.sources && extra.sources.length > 0
@@ -92,14 +98,15 @@ ${bonjourLine}
 ${lastSyncedLine} | ${latestEvidenceLine}
 ${evidenceSourcesLine}
 
-${chalk.bold("为什么值得看：")} ${matchReason || "与本轮搜索条件高度相关"}
+${chalk.bold("本次搜索为什么匹配：")} ${matchReason || "与本轮搜索条件高度相关"}
+${queryReasonLines}
 
 ${chalk.bold("综合模型评分：")} ${this.getOverallColor(overallScore)(overallScore.toFixed(1))} / 100
 
 ${chalk.bold("六维能力画像：")}
 ${renderedDims}
 
-${chalk.bold("深度评估分析：")}
+${chalk.bold("通用画像总结：")}
 ${chalk.italic(summary || "No summary generated.")}
 
 ${chalk.bold("核心亮点：")}
@@ -130,11 +137,13 @@ ${chalk.dim("下一步：back 返回 | o 打开 Bonjour | why 评分依据 | ref
 
   renderWhyMatched(candidate: ScoredCandidate, profile: MultiDimensionProfile, conditions: SearchConditions): string {
     const bullets = [
-      candidate.matchReason || "与当前条件整体相关度较高",
-      `技术匹配 ${profile.dimensions.techMatch.toFixed(0)} / 100`,
-      `项目深度 ${profile.dimensions.projectDepth.toFixed(0)} / 100`,
-      `地点匹配 ${profile.dimensions.locationMatch.toFixed(0)} / 100`,
-      conditions.experience ? `当前经验要求：${conditions.experience}` : "当前经验要求：未限制"
+      `当前查询：${this.formatConditionsSummary(conditions)}`,
+      `本次搜索命中：${candidate.matchReason || "与当前条件整体相关度较高"}`,
+      ...(candidate.queryReasons && candidate.queryReasons.length > 0
+        ? candidate.queryReasons.map((item) => `细项：${item}`)
+        : ["细项：暂无更细的 query-aware 理由"]),
+      `通用画像总结：${profile.summary || "No summary generated."}`,
+      `六维画像：技术 ${profile.dimensions.techMatch.toFixed(0)} | 项目 ${profile.dimensions.projectDepth.toFixed(0)} | 地点 ${profile.dimensions.locationMatch.toFixed(0)} | 稳健 ${profile.dimensions.careerStability.toFixed(0)}`
     ];
 
     return boxen(
@@ -181,7 +190,7 @@ ${chalk.dim("下一步：back 返回 | o 打开 Bonjour | why 评分依据 | ref
           `${chalk.bold.blueBright(`${titlePrefix}${candidate.name}`)} ${chalk.dim("|")} ${candidate.headline || "No headline"}`,
           `${chalk.bold(entry.decisionTag)} · 综合分 ${chalk.green(candidate.matchScore.toFixed(1))} · ${sourceBadge} ${freshness}`,
           `六维判断：技术 ${profile.dimensions.techMatch.toFixed(0)} | 项目 ${profile.dimensions.projectDepth.toFixed(0)} | 地点 ${profile.dimensions.locationMatch.toFixed(0)} | 稳健 ${profile.dimensions.careerStability.toFixed(0)}`,
-          `为什么值得比较：${candidate.matchReason || "与本轮条件相关"}`,
+          `当前查询下为什么值得比较：${candidate.matchReason || "与本轮条件相关"}`,
           bonjourLine,
           `${chalk.bold("Top Evidence")}\n${evidenceLines}`,
           `${chalk.bold("Recommendation")}：${entry.recommendation}`,

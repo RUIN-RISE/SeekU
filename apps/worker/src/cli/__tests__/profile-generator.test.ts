@@ -7,8 +7,11 @@ describe("ProfileGenerator", () => {
   });
 
   it("passes an AbortSignal to the LLM provider", async () => {
-    const chat = vi.fn(async (_messages, options?: { signal?: AbortSignal }) => {
+    const chat = vi.fn(async (messages: Array<{ content: string }>, options?: { signal?: AbortSignal }) => {
       expect(options?.signal).toBeInstanceOf(AbortSignal);
+      expect(messages[1]?.content).toContain("Current Search Lens");
+      expect(messages[1]?.content).toContain("python");
+      expect(messages[1]?.content).toContain("杭州");
       return {
         content: JSON.stringify({
           summary: "Strong distributed systems engineer.",
@@ -43,6 +46,19 @@ describe("ProfileGenerator", () => {
         overallScore: 84,
         summary: "",
         highlights: []
+      },
+      {
+        skills: ["python"],
+        locations: ["杭州"],
+        experience: undefined,
+        role: "后端工程师",
+        sourceBias: undefined,
+        mustHave: [],
+        niceToHave: [],
+        exclude: [],
+        preferFresh: false,
+        candidateAnchor: undefined,
+        limit: 10
       }
     );
 

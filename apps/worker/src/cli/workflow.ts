@@ -45,6 +45,7 @@ import {
 interface HydratedCandidate extends ScoredCandidate {
   _hydrated: {
     person: Person;
+    document?: SearchDocument;
     evidence: EvidenceItem[];
   };
 }
@@ -58,6 +59,11 @@ interface SearchLoopOutcome {
 interface DetailOutcome {
   type: "back" | "refine" | "quit";
   prompt?: string;
+}
+
+interface QueryMatchExplanation {
+  summary: string;
+  reasons: string[];
 }
 
 interface RefineContextCandidate {
@@ -397,10 +403,14 @@ export class SearchWorkflow {
         return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
       }
 
+      for (const target of targets) {
+        this.refreshCandidateQueryExplanation(target, conditions);
+      }
+
       let comparisonEntries: ComparisonEntry[] = [];
       if (exportTarget === "pool" && targets.length >= 2) {
         await this.ensureProfiles(targets, conditions, "正在准备对比池导出...");
-        comparisonEntries = this.buildComparisonEntries(targets, candidates);
+        comparisonEntries = this.buildComparisonEntries(targets, candidates, conditions);
       }
 
       const artifact = await this.exporter.export({
@@ -450,6 +460,10 @@ export class SearchWorkflow {
         return { type: "continue", sortMode: state.sortMode, visibleCount: state.visibleCount };
       }
 
+      for (const target of targets) {
+        this.refreshCandidateQueryExplanation(target, conditions);
+      }
+
       // For pool candidates: clear old profiles to force regeneration with current conditions
       // This ensures profile matches the current search context, not the old one
       if (usePool) {
@@ -459,7 +473,7 @@ export class SearchWorkflow {
       }
 
       await this.ensureProfiles(targets, conditions, "正在准备候选人对比...");
-      const comparisonEntries = this.buildComparisonEntries(targets, candidates);
+      const comparisonEntries = this.buildComparisonEntries(targets, candidates, conditions);
       console.log(
         this.renderer.renderComparison(comparisonEntries, conditions)
       );
@@ -543,6 +557,7 @@ export class SearchWorkflow {
     selected: HydratedCandidate,
     conditions: SearchConditions
   ): Promise<DetailOutcome> {
+    this.refreshCandidateQueryExplanation(selected, conditions);
     console.log(chalk.blue(`\n🔍 正在加载 ${selected.name} 的深度画像...`));
     const profile = await this.loadProfileForCandidate(selected, conditions);
     if (!profile) {
@@ -556,6 +571,7 @@ export class SearchWorkflow {
         profile,
         selected.matchReason,
         {
+          queryReasons: selected.queryReasons,
           sources: selected.sources,
           bonjourUrl: selected.bonjourUrl,
           lastSyncedAt: selected.lastSyncedAt,
@@ -831,6 +847,18 @@ export class SearchWorkflow {
             .filter((date): date is Date => Boolean(date))
             .sort((a, b) => b.getTime() - a.getTime())[0]
         : undefined;
+      const queryMatch = this.buildQueryMatchExplanation(
+        person,
+        document,
+        candidateEvidence,
+        conditions,
+        {
+          score: result.finalScore,
+          retrievalReasons: result.matchReasons,
+          sources,
+          referenceDate: latestEvidenceAt ?? person.updatedAt
+        }
+      );
 
       return {
         personId: result.personId,
@@ -840,13 +868,15 @@ export class SearchWorkflow {
         company: null,
         experienceYears: null,
         matchScore: result.finalScore,
-        matchReason: this.buildMatchReason(person, candidateEvidence, result.finalScore, conditions),
+        matchReason: queryMatch.summary,
+        queryReasons: queryMatch.reasons,
         sources,
         bonjourUrl,
         lastSyncedAt: person.updatedAt,
         latestEvidenceAt,
         _hydrated: {
           person,
+          document,
           evidence: candidateEvidence
         }
       };
@@ -977,6 +1007,17 @@ export class SearchWorkflow {
               .filter((date): date is Date => Boolean(date))
               .sort((a, b) => b.getTime() - a.getTime())[0]
           : undefined;
+        const queryMatch = this.buildQueryMatchExplanation(
+          person,
+          document,
+          candidateEvidence,
+          conditions,
+          {
+            score: heuristicScore,
+            sources,
+            referenceDate: latestEvidenceAt ?? person.updatedAt
+          }
+        );
 
         return {
           personId: person.id,
@@ -986,13 +1027,15 @@ export class SearchWorkflow {
           company: null,
           experienceYears: null,
           matchScore: heuristicScore,
-          matchReason: this.buildFallbackReason(person, document, candidateEvidence, conditions),
+          matchReason: queryMatch.summary,
+          queryReasons: queryMatch.reasons,
           sources,
           bonjourUrl,
           lastSyncedAt: person.updatedAt,
           latestEvidenceAt,
           _hydrated: {
             person,
+            document,
             evidence: candidateEvidence
           }
         } satisfies HydratedCandidate;
@@ -1099,147 +1142,201 @@ export class SearchWorkflow {
       .toLowerCase();
   }
 
-  private buildFallbackReason(
+  private buildQueryMatchExplanation(
     person: Person,
-    document: SearchDocument,
+    document: SearchDocument | undefined,
     evidence: EvidenceItem[],
-    conditions: SearchConditions
-  ): string {
-    const snippets: string[] = [];
-
-    if (conditions.locations.length > 0 && person.primaryLocation) {
-      snippets.push(`地点匹配 ${person.primaryLocation}`);
-    }
-
-    if (conditions.sourceBias && document.facetSource.some((value) => value.toLowerCase() === conditions.sourceBias)) {
-      snippets.push(`来源匹配 ${conditions.sourceBias}`);
-    }
-
-    const context = `${person.primaryHeadline || ""} ${document.docText || ""}`.toLowerCase();
-    const matchedSkills = conditions.skills.filter((skill) => context.includes(skill.toLowerCase()));
-    if (matchedSkills.length > 0) {
-      snippets.push(`技能命中 ${matchedSkills.slice(0, 2).join(" / ")}`);
-    }
-
-    const topEvidence = evidence.find((item) => item.title);
-    if (snippets.length === 0 && topEvidence?.title) {
-      snippets.push(`相关证据 ${topEvidence.title.slice(0, 28)}${topEvidence.title.length > 28 ? "..." : ""}`);
-    }
-
-    if (snippets.length === 0) {
-      snippets.push("满足当前宽条件，可作为起始 shortlist");
-    }
-
-    return snippets.slice(0, 2).join("，");
-  }
-
-  private buildMatchReason(
-    person: Person,
-    evidence: EvidenceItem[],
-    score: number,
-    conditions: SearchConditions
-  ): string {
-    // Use rule-based scoring to generate meaningful match reason
-    const ruleScores = this.scorer.scoreByRules(person, evidence, conditions);
-    const experienceBonus = this.scorer.calculateExperienceMatch(person, evidence, conditions);
-
-    // Build dimension-based match reason
-    const dimensionLabels: Record<string, { label: string; score: number }> = {
-      techMatch: { label: "技术匹配", score: ruleScores.techMatch || 0 },
-      locationMatch: { label: "地点匹配", score: ruleScores.locationMatch || 0 },
-      careerStability: { label: "职业稳定", score: ruleScores.careerStability || 0 },
-      communityReputation: { label: "社区活跃", score: ruleScores.communityReputation || 0 }
+    conditions: SearchConditions,
+    options: {
+      score?: number;
+      retrievalReasons?: string[];
+      sources?: string[];
+      referenceDate?: Date;
+    } = {}
+  ): QueryMatchExplanation {
+    const context = this.buildSearchStateContext(person, document, evidence);
+    const reasons: string[] = [];
+    const pushReason = (value?: string) => {
+      const normalized = value?.trim();
+      if (!normalized || reasons.includes(normalized)) {
+        return;
+      }
+      reasons.push(normalized);
     };
 
-    // Find top 2 dimensions
-    const sortedDims = Object.entries(dimensionLabels)
-      .sort((a, b) => b[1].score - a[1].score)
-      .slice(0, 2);
-
-    const snippets: string[] = [];
-
-    // Top dimension highlight
-    if (sortedDims[0] && sortedDims[0][1].score >= 70) {
-      snippets.push(`${sortedDims[0][1].label}高 (${sortedDims[0][1].score.toFixed(0)}分)`);
+    const matchedLocations = this.getMatchedLocations(person, document, conditions);
+    if (matchedLocations.length > 0) {
+      pushReason(`地点命中：${matchedLocations.slice(0, 2).join(" / ")}`);
     }
 
-    // Second dimension
-    if (sortedDims[1] && sortedDims[1][1].score >= 60) {
-      snippets.push(`${sortedDims[1][1].label}良好 (${sortedDims[1][1].score.toFixed(0)}分)`);
+    if (conditions.role && context.includes(conditions.role.toLowerCase())) {
+      pushReason(`角色贴合：${conditions.role}`);
     }
 
-    // Experience bonus
-    if (experienceBonus >= 15) {
-      snippets.push("经验层级匹配");
+    const matchedSkills = this.findMatchedTerms(conditions.skills, context);
+    if (matchedSkills.length > 0) {
+      pushReason(`技术命中：${matchedSkills.slice(0, 3).join(" / ")}`);
     }
 
-    // Fallback: evidence-based highlight
-    if (snippets.length === 0 && evidence.length > 0) {
-      const topEvidence = evidence.find(e => e.evidenceType === "project" || e.evidenceType === "repository");
-      if (topEvidence?.title) {
-        snippets.push(`相关项目：${topEvidence.title.slice(0, 30)}${topEvidence.title.length > 30 ? "..." : ""}`);
+    const matchedMustHave = this.findMatchedTerms(conditions.mustHave, context);
+    if (matchedMustHave.length > 0) {
+      pushReason(`必须项满足：${matchedMustHave.slice(0, 2).join(" / ")}`);
+    }
+
+    if (
+      conditions.experience &&
+      this.scorer.calculateExperienceMatch(person, evidence, conditions) >= 10
+    ) {
+      pushReason(`经验层级贴合：${conditions.experience}`);
+    }
+
+    if (conditions.sourceBias) {
+      const preferredSource = conditions.sourceBias === "bonjour" ? "Bonjour" : "GitHub";
+      if (options.sources?.includes(preferredSource)) {
+        pushReason(`来源偏好命中：${preferredSource}`);
       }
     }
 
-    // Final fallback
-    if (snippets.length === 0) {
-      snippets.push(`综合相关度 ${score.toFixed(1)} 分`);
+    if (conditions.preferFresh && options.referenceDate) {
+      pushReason(`近期活跃：${this.describeRelativeDate(options.referenceDate)}`);
     }
 
-    return snippets.slice(0, 2).join("，");
+    for (const reason of options.retrievalReasons ?? []) {
+      pushReason(this.translateRetrievalReason(reason));
+    }
+
+    pushReason(this.buildRelevantEvidenceReason(evidence, conditions));
+
+    if (reasons.length === 0 && typeof options.score === "number") {
+      pushReason(`综合相关度 ${options.score.toFixed(1)} 分`);
+    }
+
+    if (reasons.length === 0) {
+      pushReason("与当前条件整体相关度较高");
+    }
+
+    return {
+      summary: reasons.slice(0, 2).join("，"),
+      reasons: reasons.slice(0, 5)
+    };
   }
 
-  private buildEnhancedMatchReason(profile: MultiDimensionProfile): string {
-    const { dimensions, highlights } = profile;
+  private refreshCandidateQueryExplanation(
+    candidate: HydratedCandidate,
+    conditions: SearchConditions
+  ) {
+    const explanation = this.buildQueryMatchExplanation(
+      candidate._hydrated.person,
+      candidate._hydrated.document,
+      candidate._hydrated.evidence,
+      conditions,
+      {
+        score: candidate.matchScore,
+        sources: candidate.sources,
+        referenceDate: candidate.latestEvidenceAt ?? candidate.lastSyncedAt
+      }
+    );
 
-    // All 6 dimensions with labels
-    const allDimensions: Record<string, { label: string; score: number }> = {
-      techMatch: { label: "技术匹配", score: dimensions.techMatch },
-      projectDepth: { label: "项目深度", score: dimensions.projectDepth },
-      academicImpact: { label: "学术影响", score: dimensions.academicImpact },
-      careerStability: { label: "职业稳定", score: dimensions.careerStability },
-      communityReputation: { label: "社区声望", score: dimensions.communityReputation },
-      locationMatch: { label: "地点匹配", score: dimensions.locationMatch }
-    };
+    candidate.matchReason = explanation.summary;
+    candidate.queryReasons = explanation.reasons;
+  }
 
-    // Sort by score, find top 2-3
-    const sortedDims = Object.entries(allDimensions)
-      .sort((a, b) => b[1].score - a[1].score);
-
-    const snippets: string[] = [];
-
-    // Top dimension (strong match)
-    if (sortedDims[0] && sortedDims[0][1].score >= 80) {
-      snippets.push(`${sortedDims[0][1].label}优秀 (${sortedDims[0][1].score.toFixed(0)}分)`);
-    } else if (sortedDims[0] && sortedDims[0][1].score >= 70) {
-      snippets.push(`${sortedDims[0][1].label}良好 (${sortedDims[0][1].score.toFixed(0)}分)`);
+  private getMatchedLocations(
+    person: Person,
+    document: SearchDocument | undefined,
+    conditions: SearchConditions
+  ): string[] {
+    if (conditions.locations.length === 0) {
+      return [];
     }
 
-    // Second dimension
-    if (sortedDims[1] && sortedDims[1][1].score >= 70) {
-      snippets.push(`${sortedDims[1][1].label}良好`);
-    } else if (sortedDims[1] && sortedDims[1][1].score >= 60) {
-      snippets.push(`${sortedDims[1][1].label}达标`);
+    const values = [
+      person.primaryLocation || "",
+      ...(document?.facetLocation || [])
+    ].map((value) => value.toLowerCase());
+
+    return conditions.locations.filter((location) =>
+      values.some((value) =>
+        value.includes(location.toLowerCase()) || location.toLowerCase().includes(value)
+      )
+    );
+  }
+
+  private findMatchedTerms(terms: string[], context: string): string[] {
+    return terms.filter((term) => context.includes(term.toLowerCase()));
+  }
+
+  private translateRetrievalReason(reason: string): string | undefined {
+    const normalized = reason.trim();
+    if (!normalized) {
+      return undefined;
     }
 
-    // Use highlights if available (more specific)
-    if (highlights.length > 0 && snippets.length < 2) {
-      const topHighlight = highlights[0];
-      // Truncate if too long
-      snippets.push(topHighlight.length > 40 ? `${topHighlight.slice(0, 40)}...` : topHighlight);
+    const roleMatch = normalized.match(/^role match:\s*(.+)$/i);
+    if (roleMatch?.[1]) {
+      return `检索角色命中：${roleMatch[1].trim()}`;
     }
 
-    // Final fallback
-    if (snippets.length === 0) {
-      snippets.push(`综合评分 ${profile.overallScore.toFixed(1)} 分`);
+    const skillMatch = normalized.match(/^skill evidence:\s*(.+)$/i);
+    if (skillMatch?.[1]) {
+      return `检索技能命中：${skillMatch[1].trim()}`;
     }
 
-    return snippets.slice(0, 2).join("，");
+    const mustHaveMatch = normalized.match(/^must-have matched:\s*(.+)$/i);
+    if (mustHaveMatch?.[1]) {
+      return `检索必须项命中：${mustHaveMatch[1].trim()}`;
+    }
+
+    const projectMatch = normalized.match(/^project:\s*(.+)$/i);
+    if (projectMatch?.[1]) {
+      return `相关项目：${this.truncateForDisplay(projectMatch[1].trim(), 36)}`;
+    }
+
+    if (normalized === "strong semantic similarity") {
+      return "语义相似度高";
+    }
+
+    if (normalized === "strong keyword overlap") {
+      return "关键词重合度高";
+    }
+
+    return undefined;
+  }
+
+  private buildRelevantEvidenceReason(
+    evidence: EvidenceItem[],
+    conditions: SearchConditions
+  ): string | undefined {
+    const matchedEvidence = evidence.find((item) => {
+      if (!item.title && !item.description) {
+        return false;
+      }
+
+      const text = `${item.title || ""} ${item.description || ""}`.toLowerCase();
+      if (conditions.skills.length > 0) {
+        return conditions.skills.some((skill) => text.includes(skill.toLowerCase()));
+      }
+
+      return item.evidenceType === "project" || item.evidenceType === "repository";
+    });
+
+    const fallbackEvidence = matchedEvidence || evidence.find(
+      (item) =>
+        (item.evidenceType === "project" || item.evidenceType === "repository" || item.evidenceType === "experience") &&
+        Boolean(item.title || item.description)
+    );
+
+    if (!fallbackEvidence) {
+      return undefined;
+    }
+
+    return `相关证据：${this.buildEvidenceHeadline(fallbackEvidence)}`;
   }
 
   private buildComparisonEntries(
     targets: HydratedCandidate[],
-    allCandidates: HydratedCandidate[]
+    allCandidates: HydratedCandidate[],
+    conditions?: SearchConditions
   ): ComparisonEntry[] {
     const entries = targets
       .filter(
@@ -1273,7 +1370,8 @@ export class SearchWorkflow {
         recommendation: this.buildComparisonRecommendation(
           entry.candidate,
           entry.profile,
-          decisionTag
+          decisionTag,
+          conditions
         ),
         nextStep: this.buildComparisonNextStep(
           entry.candidate,
@@ -1420,9 +1518,14 @@ export class SearchWorkflow {
   private buildComparisonRecommendation(
     candidate: HydratedCandidate,
     profile: MultiDimensionProfile,
-    decisionTag: ComparisonEntry["decisionTag"]
+    decisionTag: ComparisonEntry["decisionTag"],
+    conditions?: SearchConditions
   ): string {
     const reasons: string[] = [];
+
+    if (candidate.queryReasons && candidate.queryReasons.length > 0) {
+      reasons.push(...candidate.queryReasons.slice(0, 2));
+    }
 
     if (profile.dimensions.techMatch >= 75) {
       reasons.push("技术相关性强");
@@ -1434,6 +1537,10 @@ export class SearchWorkflow {
 
     if (profile.dimensions.locationMatch >= 90) {
       reasons.push("地点完全匹配");
+    }
+
+    if (conditions?.sourceBias && candidate.sources.includes(conditions.sourceBias === "bonjour" ? "Bonjour" : "GitHub")) {
+      reasons.push(`贴合当前来源偏好`);
     }
 
     if (candidate.latestEvidenceAt || candidate.lastSyncedAt) {
@@ -1455,7 +1562,8 @@ export class SearchWorkflow {
           ? "建议继续对照"
           : "建议作为备选";
 
-    return `${prefix}：${reasons.slice(0, 2).join("，") || "信息完整，可继续判断"}`;
+    const dedupedReasons = [...new Set(reasons)];
+    return `${prefix}：${dedupedReasons.slice(0, 2).join("，") || "信息完整，可继续判断"}`;
   }
 
   private buildComparisonNextStep(
@@ -1768,9 +1876,6 @@ export class SearchWorkflow {
       const profile = await this.getOrGenerateProfile(candidate.personId, person, evidence, conditions);
       candidate.profile = profile;
 
-      // Update matchReason with enhanced dimension-based explanation
-      candidate.matchReason = this.buildEnhancedMatchReason(profile);
-
       if (this.spinner.isSpinning && !isCached && !isPreloading) {
         this.spinner.succeed("画像分析完成。");
       } else if (this.spinner.isSpinning) {
@@ -1828,7 +1933,7 @@ export class SearchWorkflow {
         const experienceBonus = this.scorer.calculateExperienceMatch(person, evidence, conditions);
         innerProfile = this.scorer.aggregate(rules, llm, experienceBonus);
 
-        innerProfile = await this.generator.generate(person, evidence, innerProfile);
+        innerProfile = await this.generator.generate(person, evidence, innerProfile, conditions);
         await this.cacheRepo.setProfile(personId, profileCacheKey, innerProfile, innerProfile.overallScore);
 
         return innerProfile;
