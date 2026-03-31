@@ -1,6 +1,7 @@
 import { Person, EvidenceItem, SearchDocument } from "@seeku/db";
 import {
   ComparisonEntry,
+  ConditionAuditItem,
   MatchStrength,
   MultiDimensionProfile,
   ScoredCandidate,
@@ -16,6 +17,7 @@ export class TerminalRenderer {
     profile: MultiDimensionProfile,
     matchReason?: string,
       extra?: {
+        conditionAudit?: ConditionAuditItem[];
         queryReasons?: string[];
         matchStrength?: MatchStrength;
         sources?: string[];
@@ -81,6 +83,7 @@ export class TerminalRenderer {
     const matchStrengthWarning = extra?.matchStrength === "weak"
       ? chalk.yellow("当前结果提示：没有找到强匹配，这位候选人仅弱相关。")
       : undefined;
+    const conditionAuditSection = this.renderConditionAudit(extra?.conditionAudit);
 
     // Evidence sources summary
     const evidenceSources = evidence.length > 0
@@ -108,6 +111,9 @@ ${matchStrengthWarning || ""}
 
 ${chalk.bold("本次搜索为什么匹配：")} ${matchReason || "与本轮搜索条件高度相关"}
 ${queryReasonLines}
+
+${chalk.bold("条件审计：")}
+${conditionAuditSection}
 
 ${chalk.bold("综合模型评分：")} ${this.getOverallColor(overallScore)(overallScore.toFixed(1))} / 100
 
@@ -152,6 +158,8 @@ ${chalk.dim("下一步：back 返回 | o 打开 Bonjour | why 评分依据 | ref
       ...(candidate.queryReasons && candidate.queryReasons.length > 0
         ? candidate.queryReasons.map((item) => `细项：${item}`)
         : ["细项：暂无更细的 query-aware 理由"]),
+      `条件审计：${this.renderConditionAuditSummary(candidate.conditionAudit)}`,
+      ...this.renderConditionAuditLines(candidate.conditionAudit),
       `通用画像总结：${profile.summary || "暂未生成画像总结。"}`,
       `六维画像：技术 ${profile.dimensions.techMatch.toFixed(0)} | 项目 ${profile.dimensions.projectDepth.toFixed(0)} | 地点 ${profile.dimensions.locationMatch.toFixed(0)} | 稳健 ${profile.dimensions.careerStability.toFixed(0)}`
     ];
@@ -256,6 +264,62 @@ ${chalk.dim("下一步：back 返回 | o 打开 Bonjour | why 评分依据 | ref
     }
 
     return chalk.bgRed.white(" 弱匹配 ");
+  }
+
+  private renderConditionAudit(conditionAudit?: ConditionAuditItem[]) {
+    if (!conditionAudit || conditionAudit.length === 0) {
+      return chalk.dim("  暂无可审计的查询条件");
+    }
+
+    return conditionAudit
+      .map((item) => {
+        if (item.status === "met") {
+          return chalk.green(`  ✓ 已满足`) + ` ${item.label} · ${item.detail}`;
+        }
+
+        if (item.status === "unmet") {
+          return chalk.red(`  ✗ 未满足`) + ` ${item.label} · ${item.detail}`;
+        }
+
+        return chalk.yellow(`  ? 暂无证据`) + ` ${item.label} · ${item.detail}`;
+      })
+      .join("\n");
+  }
+
+  private renderConditionAuditSummary(conditionAudit?: ConditionAuditItem[]) {
+    if (!conditionAudit || conditionAudit.length === 0) {
+      return "暂无可审计的查询条件";
+    }
+
+    const counts = conditionAudit.reduce(
+      (summary, item) => {
+        summary[item.status] += 1;
+        return summary;
+      },
+      { met: 0, unmet: 0, unknown: 0 }
+    );
+
+    return `已满足 ${counts.met} · 未满足 ${counts.unmet} · 暂无证据 ${counts.unknown}`;
+  }
+
+  private renderConditionAuditLines(conditionAudit?: ConditionAuditItem[]) {
+    if (!conditionAudit || conditionAudit.length === 0) {
+      return [];
+    }
+
+    return conditionAudit.map((item) => `${item.label}：${item.detail}（${this.getConditionAuditLabel(item.status)}）`);
+  }
+
+  private getConditionAuditLabel(status: ConditionAuditItem["status"]) {
+    if (status === "met") {
+      return "已满足";
+    }
+
+    if (status === "unmet") {
+      return "未满足";
+    }
+
+    return "暂无证据";
   }
 
   private formatDate(date: Date): string {

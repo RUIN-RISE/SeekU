@@ -170,6 +170,9 @@ export class TerminalUI {
         lines.push(linkHint);
       }
       lines.push(`${detailPrefix} ${chalk.yellow("为什么匹配")}：${candidate.matchReason || "与本轮条件高度相关"}`);
+      if (candidate.conditionAudit && candidate.conditionAudit.length > 0) {
+        lines.push(`${detailPrefix} ${chalk.dim(`条件审计：${this.formatConditionAuditSummary(candidate.conditionAudit)}`)}`);
+      }
     });
 
     lines.push(chalk.dim("=".repeat(72)));
@@ -215,6 +218,22 @@ export class TerminalUI {
     }
 
     return chalk.bgRed.white(" 弱匹配 ");
+  }
+
+  private formatConditionAuditSummary(conditionAudit: ScoredCandidate["conditionAudit"]) {
+    const counts = (conditionAudit || []).reduce(
+      (summary, item) => {
+        if (!item) {
+          return summary;
+        }
+
+        summary[item.status] += 1;
+        return summary;
+      },
+      { met: 0, unmet: 0, unknown: 0 }
+    );
+
+    return `已满足 ${counts.met} · 未满足 ${counts.unmet} · 暂无证据 ${counts.unknown}`;
   }
 
   private formatFreshness(latestEvidence?: Date, lastSynced?: Date): string {

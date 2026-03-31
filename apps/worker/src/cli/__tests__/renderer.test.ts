@@ -173,6 +173,94 @@ describe("TerminalRenderer", () => {
     expect(whyOutput).toContain("没有找到强匹配");
   });
 
+  it("renders tri-state condition audit in detail and why views", () => {
+    const detailOutput = renderer.renderProfile(
+      {
+        id: "person-3",
+        primaryName: "Kai",
+        primaryHeadline: "Python Backend Engineer"
+      } as any,
+      [],
+      {
+        dimensions: {
+          techMatch: 72,
+          locationMatch: 88,
+          careerStability: 60,
+          projectDepth: 58,
+          academicImpact: 20,
+          communityReputation: 30
+        },
+        overallScore: 68,
+        summary: "做过后端与自动化项目。",
+        highlights: []
+      },
+      "技术命中：python，地点命中：杭州",
+      {
+        queryReasons: ["技术命中：python", "地点命中：杭州"],
+        matchStrength: "medium",
+        conditionAudit: [
+          { label: "地点", status: "met", detail: "命中 杭州" },
+          { label: "来源偏好", status: "unmet", detail: "当前来源为 Bonjour" },
+          { label: "技能 cuda", status: "unknown", detail: "当前资料未明确提到 cuda" }
+        ],
+        sources: ["Bonjour"]
+      }
+    );
+
+    const whyOutput = renderer.renderWhyMatched(
+      {
+        personId: "person-3",
+        name: "Kai",
+        headline: "Python Backend Engineer",
+        location: "杭州",
+        company: null,
+        experienceYears: null,
+        matchScore: 68,
+        matchStrength: "medium",
+        matchReason: "技术命中：python，地点命中：杭州",
+        queryReasons: ["技术命中：python", "地点命中：杭州"],
+        conditionAudit: [
+          { label: "地点", status: "met", detail: "命中 杭州" },
+          { label: "来源偏好", status: "unmet", detail: "当前来源为 Bonjour" },
+          { label: "技能 cuda", status: "unknown", detail: "当前资料未明确提到 cuda" }
+        ],
+        sources: ["Bonjour"]
+      },
+      {
+        dimensions: {
+          techMatch: 72,
+          locationMatch: 88,
+          careerStability: 60,
+          projectDepth: 58,
+          academicImpact: 20,
+          communityReputation: 30
+        },
+        overallScore: 68,
+        summary: "做过后端与自动化项目。",
+        highlights: []
+      },
+      {
+        skills: ["python", "cuda"],
+        locations: ["杭州"],
+        experience: undefined,
+        role: undefined,
+        sourceBias: "github",
+        mustHave: [],
+        niceToHave: [],
+        exclude: [],
+        preferFresh: false,
+        candidateAnchor: undefined,
+        limit: 10
+      }
+    );
+
+    expect(detailOutput).toContain("条件审计");
+    expect(detailOutput).toContain("已满足");
+    expect(detailOutput).toContain("未满足");
+    expect(detailOutput).toContain("暂无证据");
+    expect(whyOutput).toContain("已满足 1 · 未满足 1 · 暂无证据 1");
+  });
+
   it("uses Chinese labels in compare view", () => {
     const output = renderer.renderComparison([
       {

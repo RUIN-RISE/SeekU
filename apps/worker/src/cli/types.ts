@@ -19,6 +19,13 @@ export interface SearchCandidateAnchor {
 }
 
 export type MatchStrength = "strong" | "medium" | "weak";
+export type ConditionAuditStatus = "met" | "unmet" | "unknown";
+
+export interface ConditionAuditItem {
+  label: string;
+  status: ConditionAuditStatus;
+  detail: string;
+}
 
 export type MissingField = "skills" | "locations" | "experience";
 export type ClarifyAction = "search" | "add" | "relax" | "restart" | "quit";
@@ -59,6 +66,7 @@ export interface ScoredCandidate {
   matchStrength?: MatchStrength;
   matchReason?: string;
   queryReasons?: string[];
+  conditionAudit?: ConditionAuditItem[];
   // P0: Source & Freshness visibility
   sources: string[]; // ["Bonjour", "GitHub", ...]
   bonjourUrl?: string; // Bonjour profile link

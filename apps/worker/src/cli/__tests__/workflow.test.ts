@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MultiDimensionProfile, SearchConditions } from "../types.js";
 import {
   SearchWorkflow,
+  buildConditionAudit,
   buildQueryMatchExplanation,
   buildResultWarning,
   classifyMatchStrength
@@ -492,5 +493,57 @@ describe("buildQueryMatchExplanation", () => {
     expect(explanation.reasons).toContain("检索技能命中：python");
     expect(explanation.reasons).toContain("语义相似度高");
     expect(explanation.reasons).toContain("关键词重合度高");
+  });
+});
+
+describe("buildConditionAudit", () => {
+  it("returns met, unmet, and unknown states together", () => {
+    const audit = buildConditionAudit(
+      {
+        primaryName: "Ada",
+        primaryHeadline: "Python Backend Engineer",
+        primaryLocation: "杭州",
+        summary: "Builds backend systems"
+      },
+      {
+        docText: "Python backend engineer working on serving systems",
+        facetRole: ["backend"],
+        facetTags: ["python"],
+        facetLocation: ["杭州"]
+      },
+      [
+        {
+          evidenceType: "project",
+          title: "Serving stack",
+          description: "Python service platform"
+        }
+      ],
+      {
+        skills: ["python", "cuda"],
+        locations: ["杭州"],
+        experience: undefined,
+        role: "backend",
+        sourceBias: "github",
+        mustHave: [],
+        niceToHave: [],
+        exclude: [],
+        preferFresh: false,
+        candidateAnchor: undefined,
+        limit: 10
+      },
+      {
+        sources: ["Bonjour"]
+      }
+    );
+
+    expect(audit).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: "地点", status: "met" }),
+        expect.objectContaining({ label: "角色", status: "met" }),
+        expect.objectContaining({ label: "技能 python", status: "met" }),
+        expect.objectContaining({ label: "技能 cuda", status: "unknown" }),
+        expect.objectContaining({ label: "来源偏好", status: "unmet" })
+      ])
+    );
   });
 });

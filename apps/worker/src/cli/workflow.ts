@@ -32,6 +32,8 @@ import { withRetry } from "./retry.js";
 import {
   ComparisonEntry,
   ComparisonEvidenceSummary,
+  ConditionAuditItem,
+  ConditionAuditStatus,
   ExportCandidateRecord,
   MatchStrength,
   MultiDimensionProfile,
@@ -445,6 +447,177 @@ function buildFullMatchReason(candidate: Pick<ScoredCandidate, "queryReasons" | 
   }
 
   return candidate.matchReason || "与当前条件整体相关度较高";
+}
+
+function buildConditionAuditItem(
+  label: string,
+  status: ConditionAuditStatus,
+  detail: string
+): ConditionAuditItem {
+  return { label, status, detail };
+}
+
+function hasStructuredRoleEvidence(
+  person: Pick<Person, "primaryHeadline" | "summary">,
+  document: Pick<SearchDocument, "facetRole"> | undefined,
+  evidence: Pick<EvidenceItem, "evidenceType" | "title" | "description">[]
+) {
+  return Boolean(
+    person.primaryHeadline ||
+      person.summary ||
+      (document?.facetRole && document.facetRole.length > 0) ||
+      evidence.some((item) =>
+        item.evidenceType === "job_signal" ||
+        item.evidenceType === "experience" ||
+        item.evidenceType === "profile_field"
+      )
+  );
+}
+
+function hasStructuredTextEvidence(
+  person: Pick<Person, "primaryHeadline" | "summary">,
+  document: Pick<SearchDocument, "docText" | "facetTags"> | undefined,
+  evidence: Pick<EvidenceItem, "title" | "description">[]
+) {
+  return Boolean(
+    person.primaryHeadline ||
+      person.summary ||
+      document?.docText ||
+      (document?.facetTags && document.facetTags.length > 0) ||
+      evidence.some((item) => item.title || item.description)
+  );
+}
+
+function hasLocationEvidence(
+  person: Pick<Person, "primaryLocation">,
+  document: Pick<SearchDocument, "facetLocation"> | undefined
+) {
+  return Boolean(person.primaryLocation || (document?.facetLocation && document.facetLocation.length > 0));
+}
+
+function hasKnownSources(sources: string[]) {
+  return sources.some((source) => source && source !== "Unknown");
+}
+
+function hasExperienceEvidence(
+  person: Pick<Person, "primaryHeadline" | "summary">,
+  evidence: Pick<EvidenceItem, "evidenceType" | "title" | "description">[]
+) {
+  return Boolean(
+    person.primaryHeadline ||
+      person.summary ||
+      evidence.some((item) => item.evidenceType === "experience" || item.evidenceType === "job_signal")
+  );
+}
+
+export function buildConditionAudit(
+  person: Pick<Person, "primaryName" | "primaryHeadline" | "primaryLocation" | "summary">,
+  document:
+    | Pick<SearchDocument, "docText" | "facetRole" | "facetTags" | "facetLocation">
+    | undefined,
+  evidence: Pick<EvidenceItem, "evidenceType" | "title" | "description">[],
+  conditions: SearchConditions,
+  options: {
+    sources?: string[];
+    referenceDate?: Date;
+    experienceMatched?: boolean;
+  } = {}
+): ConditionAuditItem[] {
+  const context = buildSearchStateContextValue(person, document, evidence);
+  const audit: ConditionAuditItem[] = [];
+
+  if (conditions.locations.length > 0) {
+    const matchedLocations = getMatchedLocationsValue(person, document, conditions);
+    if (matchedLocations.length > 0) {
+      audit.push(
+        buildConditionAuditItem(
+          "地点",
+          "met",
+          `命中 ${matchedLocations.slice(0, 2).join(" / ")}`
+        )
+      );
+    } else if (hasLocationEvidence(person, document)) {
+      audit.push(
+        buildConditionAuditItem(
+          "地点",
+          "unmet",
+          `当前资料显示 ${person.primaryLocation || document?.facetLocation?.join(" / ") || "非目标地点"}`
+        )
+      );
+    } else {
+      audit.push(buildConditionAuditItem("地点", "unknown", "暂无地点证据"));
+    }
+  }
+
+  if (conditions.role) {
+    if (context.includes(conditions.role.toLowerCase())) {
+      audit.push(buildConditionAuditItem("角色", "met", `命中 ${conditions.role}`));
+    } else if (hasStructuredRoleEvidence(person, document, evidence)) {
+      audit.push(buildConditionAuditItem("角色", "unmet", `当前资料未显示 ${conditions.role}`));
+    } else {
+      audit.push(buildConditionAuditItem("角色", "unknown", "暂无足够角色证据"));
+    }
+  }
+
+  for (const skill of conditions.skills) {
+    if (context.includes(skill.toLowerCase())) {
+      audit.push(buildConditionAuditItem(`技能 ${skill}`, "met", `命中 ${skill}`));
+    } else if (hasStructuredTextEvidence(person, document, evidence)) {
+      audit.push(buildConditionAuditItem(`技能 ${skill}`, "unknown", `当前资料未明确提到 ${skill}`));
+    } else {
+      audit.push(buildConditionAuditItem(`技能 ${skill}`, "unknown", "暂无技术证据"));
+    }
+  }
+
+  for (const term of conditions.mustHave) {
+    if (context.includes(term.toLowerCase())) {
+      audit.push(buildConditionAuditItem(`必须项 ${term}`, "met", `命中 ${term}`));
+    } else if (hasStructuredTextEvidence(person, document, evidence)) {
+      audit.push(buildConditionAuditItem(`必须项 ${term}`, "unknown", `当前资料未明确提到 ${term}`));
+    } else {
+      audit.push(buildConditionAuditItem(`必须项 ${term}`, "unknown", "暂无相关证据"));
+    }
+  }
+
+  if (conditions.experience) {
+    if (options.experienceMatched) {
+      audit.push(buildConditionAuditItem("经验层级", "met", `贴合 ${conditions.experience}`));
+    } else if (hasExperienceEvidence(person, evidence)) {
+      audit.push(buildConditionAuditItem("经验层级", "unknown", `当前资料不足以确认 ${conditions.experience}`));
+    } else {
+      audit.push(buildConditionAuditItem("经验层级", "unknown", "暂无经验层级证据"));
+    }
+  }
+
+  if (conditions.sourceBias) {
+    const expectedSource = conditions.sourceBias === "bonjour" ? "Bonjour" : "GitHub";
+    if (options.sources?.includes(expectedSource)) {
+      audit.push(buildConditionAuditItem("来源偏好", "met", `命中 ${expectedSource}`));
+    } else if (options.sources && hasKnownSources(options.sources)) {
+      audit.push(
+        buildConditionAuditItem("来源偏好", "unmet", `当前来源为 ${options.sources.join(" / ")}`)
+      );
+    } else {
+      audit.push(buildConditionAuditItem("来源偏好", "unknown", "暂无来源证据"));
+    }
+  }
+
+  if (conditions.preferFresh) {
+    if (!options.referenceDate) {
+      audit.push(buildConditionAuditItem("近期活跃", "unknown", "暂无活跃时间证据"));
+    } else {
+      const ageInDays = Math.floor(
+        (Date.now() - options.referenceDate.getTime()) / (1000 * 60 * 60 * 24)
+      );
+      if (ageInDays <= 90) {
+        audit.push(buildConditionAuditItem("近期活跃", "met", `${describeRelativeDate(options.referenceDate)}`));
+      } else {
+        audit.push(buildConditionAuditItem("近期活跃", "unmet", `${describeRelativeDate(options.referenceDate)}`));
+      }
+    }
+  }
+
+  return audit;
 }
 
 export class SearchWorkflow {
@@ -1084,6 +1257,7 @@ export class SearchWorkflow {
         profile,
         selected.matchReason,
         {
+          conditionAudit: selected.conditionAudit,
           queryReasons: selected.queryReasons,
           matchStrength: selected.matchStrength,
           sources: selected.sources,
@@ -1428,6 +1602,10 @@ export class SearchWorkflow {
             .filter((date): date is Date => Boolean(date))
             .sort((a, b) => b.getTime() - a.getTime())[0]
         : undefined;
+      const referenceDate = latestEvidenceAt ?? person.updatedAt;
+      const experienceMatched = conditions.experience
+        ? this.scorer.calculateExperienceMatch(person, candidateEvidence, conditions) >= 10
+        : false;
       const queryMatch = this.buildQueryMatchExplanation(
         person,
         document,
@@ -1437,9 +1615,14 @@ export class SearchWorkflow {
           score: result.finalScore,
           retrievalReasons: result.matchReasons,
           sources,
-          referenceDate: latestEvidenceAt ?? person.updatedAt
+          referenceDate
         }
       );
+      const conditionAudit = buildConditionAudit(person, document, candidateEvidence, conditions, {
+        sources,
+        referenceDate,
+        experienceMatched
+      });
 
       return {
         personId: result.personId,
@@ -1452,6 +1635,7 @@ export class SearchWorkflow {
         matchStrength: classifyMatchStrength(result.finalScore, queryMatch.reasons),
         matchReason: queryMatch.summary,
         queryReasons: queryMatch.reasons,
+        conditionAudit,
         sources,
         bonjourUrl,
         lastSyncedAt: person.updatedAt,
@@ -1589,6 +1773,10 @@ export class SearchWorkflow {
               .filter((date): date is Date => Boolean(date))
               .sort((a, b) => b.getTime() - a.getTime())[0]
           : undefined;
+        const referenceDate = latestEvidenceAt ?? person.updatedAt;
+        const experienceMatched = conditions.experience
+          ? this.scorer.calculateExperienceMatch(person, candidateEvidence, conditions) >= 10
+          : false;
         const queryMatch = this.buildQueryMatchExplanation(
           person,
           document,
@@ -1597,9 +1785,14 @@ export class SearchWorkflow {
           {
             score: heuristicScore,
             sources,
-            referenceDate: latestEvidenceAt ?? person.updatedAt
+            referenceDate
           }
         );
+        const conditionAudit = buildConditionAudit(person, document, candidateEvidence, conditions, {
+          sources,
+          referenceDate,
+          experienceMatched
+        });
 
         return {
           personId: person.id,
@@ -1612,6 +1805,7 @@ export class SearchWorkflow {
           matchStrength: classifyMatchStrength(heuristicScore, queryMatch.reasons),
           matchReason: queryMatch.summary,
           queryReasons: queryMatch.reasons,
+          conditionAudit,
           sources,
           bonjourUrl,
           lastSyncedAt: person.updatedAt,
@@ -1740,6 +1934,10 @@ export class SearchWorkflow {
     candidate: HydratedCandidate,
     conditions: SearchConditions
   ) {
+    const referenceDate = candidate.latestEvidenceAt ?? candidate.lastSyncedAt;
+    const experienceMatched = conditions.experience
+      ? this.scorer.calculateExperienceMatch(candidate._hydrated.person, candidate._hydrated.evidence, conditions) >= 10
+      : false;
     const explanation = this.buildQueryMatchExplanation(
       candidate._hydrated.person,
       candidate._hydrated.document,
@@ -1748,13 +1946,24 @@ export class SearchWorkflow {
       {
         score: candidate.matchScore,
         sources: candidate.sources,
-        referenceDate: candidate.latestEvidenceAt ?? candidate.lastSyncedAt
+        referenceDate
       }
     );
 
     candidate.matchReason = explanation.summary;
     candidate.queryReasons = explanation.reasons;
     candidate.matchStrength = classifyMatchStrength(candidate.matchScore, explanation.reasons);
+    candidate.conditionAudit = buildConditionAudit(
+      candidate._hydrated.person,
+      candidate._hydrated.document,
+      candidate._hydrated.evidence,
+      conditions,
+      {
+        sources: candidate.sources,
+        referenceDate,
+        experienceMatched
+      }
+    );
   }
 
   private getMatchedLocations(
