@@ -2255,14 +2255,6 @@ export class SearchWorkflow {
       }
     }
 
-    if (candidate.sources.includes("Bonjour")) {
-      score += 4;
-    }
-
-    if (candidate.bonjourUrl) {
-      score += 4;
-    }
-
     if (profile.dimensions.techMatch >= 80) {
       score += 3;
     }
@@ -2369,10 +2361,6 @@ export class SearchWorkflow {
       if (freshnessText && freshnessText !== "时间未知") {
         reasons.push(`资料${freshnessText}`);
       }
-    }
-
-    if (reasons.length === 0 && candidate.bonjourUrl) {
-      reasons.push("Bonjour 资料完整，可直接深看");
     }
 
     const prefix =

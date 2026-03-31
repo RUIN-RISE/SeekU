@@ -533,6 +533,86 @@ describe("buildCandidateSourceMetadata", () => {
   });
 });
 
+describe("compare source visibility", () => {
+  it("lets a stronger github/web candidate outrank a bonjour-only candidate without hardcoded bonuses", () => {
+    const workflow = new SearchWorkflow({} as any, {} as any);
+    const bonjourProfile = createProfile({
+      dimensions: {
+        techMatch: 79,
+        locationMatch: 70,
+        careerStability: 68,
+        projectDepth: 69,
+        academicImpact: 35,
+        communityReputation: 40
+      },
+      overallScore: 76
+    });
+    const githubProfile = createProfile({
+      dimensions: {
+        techMatch: 80,
+        locationMatch: 70,
+        careerStability: 68,
+        projectDepth: 70,
+        academicImpact: 35,
+        communityReputation: 40
+      },
+      overallScore: 77
+    });
+
+    const bonjourCandidate = createCandidate({
+      matchScore: 0.69,
+      sources: ["Bonjour"],
+      bonjourUrl: "https://bonjour.bio/ada",
+      lastSyncedAt: undefined,
+      latestEvidenceAt: undefined
+    });
+    const githubCandidate = createCandidate({
+      personId: "person-2",
+      name: "Lin",
+      matchScore: 0.7,
+      sources: ["GitHub", "Web"],
+      bonjourUrl: undefined,
+      lastSyncedAt: undefined,
+      latestEvidenceAt: undefined
+    });
+
+    const bonjourScore = (workflow as any).computeComparisonDecisionScore(bonjourCandidate, bonjourProfile);
+    const githubScore = (workflow as any).computeComparisonDecisionScore(githubCandidate, githubProfile);
+
+    expect(githubScore).toBeGreaterThan(bonjourScore);
+  });
+
+  it("uses source-neutral fallback recommendation text", () => {
+    const workflow = new SearchWorkflow({} as any, {} as any);
+    const recommendation = (workflow as any).buildComparisonRecommendation(
+      createCandidate({
+        queryReasons: [],
+        matchReason: undefined,
+        sources: ["Bonjour"],
+        bonjourUrl: "https://bonjour.bio/ada",
+        lastSyncedAt: undefined,
+        latestEvidenceAt: undefined
+      }),
+      createProfile({
+        dimensions: {
+          techMatch: 40,
+          locationMatch: 50,
+          careerStability: 45,
+          projectDepth: 30,
+          academicImpact: 20,
+          communityReputation: 25
+        },
+        overallScore: 42
+      }),
+      "继续比较",
+      undefined
+    );
+
+    expect(recommendation).toContain("信息完整，可继续判断");
+    expect(recommendation).not.toContain("Bonjour 资料完整");
+  });
+});
+
 describe("buildConditionAudit", () => {
   it("returns met, unmet, and unknown states together", () => {
     const audit = buildConditionAudit(
