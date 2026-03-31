@@ -98,6 +98,81 @@ describe("TerminalRenderer", () => {
     expect(output).toContain("长期做后端与数据系统建设");
   });
 
+  it("shows weak-result warning in detail and why views", () => {
+    const detailOutput = renderer.renderProfile(
+      {
+        id: "person-2",
+        primaryName: "Lin",
+        primaryHeadline: "Generalist Builder"
+      } as any,
+      [],
+      {
+        dimensions: {
+          techMatch: 42,
+          locationMatch: 60,
+          careerStability: 55,
+          projectDepth: 38,
+          academicImpact: 20,
+          communityReputation: 25
+        },
+        overallScore: 43,
+        summary: "画像信息有限。",
+        highlights: []
+      },
+      "地点命中：杭州",
+      {
+        queryReasons: ["地点命中：杭州"],
+        matchStrength: "weak",
+        sources: ["Bonjour"]
+      }
+    );
+
+    const whyOutput = renderer.renderWhyMatched(
+      {
+        personId: "person-2",
+        name: "Lin",
+        headline: "Generalist Builder",
+        location: "杭州",
+        company: null,
+        experienceYears: null,
+        matchScore: 31,
+        matchStrength: "weak",
+        matchReason: "地点命中：杭州",
+        queryReasons: ["地点命中：杭州"],
+        sources: ["Bonjour"]
+      },
+      {
+        dimensions: {
+          techMatch: 42,
+          locationMatch: 60,
+          careerStability: 55,
+          projectDepth: 38,
+          academicImpact: 20,
+          communityReputation: 25
+        },
+        overallScore: 43,
+        summary: "画像信息有限。",
+        highlights: []
+      },
+      {
+        skills: ["python"],
+        locations: ["杭州"],
+        experience: undefined,
+        role: undefined,
+        sourceBias: undefined,
+        mustHave: [],
+        niceToHave: [],
+        exclude: [],
+        preferFresh: false,
+        candidateAnchor: undefined,
+        limit: 10
+      }
+    );
+
+    expect(detailOutput).toContain("没有找到强匹配");
+    expect(whyOutput).toContain("没有找到强匹配");
+  });
+
   it("uses Chinese labels in compare view", () => {
     const output = renderer.renderComparison([
       {

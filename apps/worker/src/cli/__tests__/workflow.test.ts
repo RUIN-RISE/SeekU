@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MultiDimensionProfile, SearchConditions } from "../types.js";
-import { SearchWorkflow, classifyMatchStrength } from "../workflow.js";
+import { SearchWorkflow, buildResultWarning, classifyMatchStrength } from "../workflow.js";
 
 const BASE_CONDITIONS: SearchConditions = {
   skills: ["python"],
@@ -412,5 +412,19 @@ describe("classifyMatchStrength", () => {
 
   it("marks single substantive matches as medium when score is modest", () => {
     expect(classifyMatchStrength(0.48, ["技术命中：python"])).toBe("medium");
+  });
+});
+
+describe("buildResultWarning", () => {
+  it("warns when no strong matches are present", () => {
+    expect(buildResultWarning([{ matchStrength: "medium" }, { matchStrength: "weak" }])).toContain(
+      "没有找到强匹配"
+    );
+  });
+
+  it("uses explicit weak-result wording when all results are weak", () => {
+    expect(buildResultWarning([{ matchStrength: "weak" }, { matchStrength: "weak" }])).toContain(
+      "只找到了弱相关候选人"
+    );
   });
 });

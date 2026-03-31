@@ -28,6 +28,7 @@ interface ShortlistViewOptions {
   poolCount?: number;
   poolPersonIds?: string[];
   selectedIndex?: number;
+  resultWarning?: string;
   statusMessage?: ShortlistStatusMessage;
   reuseViewport?: boolean;
 }
@@ -127,6 +128,11 @@ export class TerminalUI {
     lines.push(`${chalk.bold(`Top ${options.showingCount}`)} / ${options.totalCount} | ${chalk.bold("排序")}：${sortLabel[options.sortMode]}`);
     lines.push(chalk.dim(this.formatConditionsSummary(conditions)));
     lines.push(chalk.dim("=".repeat(72)));
+
+    if (options.resultWarning) {
+      lines.push(chalk.yellow(`⚠ ${options.resultWarning}`));
+      lines.push(chalk.dim("-".repeat(72)));
+    }
 
     if (options.statusMessage) {
       const colorize = options.statusMessage.tone === "success"

@@ -78,6 +78,9 @@ export class TerminalRenderer {
       ? chalk.dim(`最新证据：${this.formatDate(extra.latestEvidenceAt)}`)
       : chalk.dim("最新证据：未知");
     const matchStrengthLine = chalk.bold("匹配强度：") + " " + this.formatMatchStrengthBadge(extra?.matchStrength);
+    const matchStrengthWarning = extra?.matchStrength === "weak"
+      ? chalk.yellow("当前结果提示：没有找到强匹配，这位候选人仅弱相关。")
+      : undefined;
 
     // Evidence sources summary
     const evidenceSources = evidence.length > 0
@@ -101,6 +104,7 @@ ${bonjourLine}
 ${lastSyncedLine} | ${latestEvidenceLine}
 ${evidenceSourcesLine}
 ${matchStrengthLine}
+${matchStrengthWarning || ""}
 
 ${chalk.bold("本次搜索为什么匹配：")} ${matchReason || "与本轮搜索条件高度相关"}
 ${queryReasonLines}
@@ -143,6 +147,7 @@ ${chalk.dim("下一步：back 返回 | o 打开 Bonjour | why 评分依据 | ref
     const bullets = [
       `当前查询：${this.formatConditionsSummary(conditions)}`,
       `匹配强度：${this.getMatchStrengthLabel(candidate.matchStrength)}`,
+      ...(candidate.matchStrength === "weak" ? ["当前结果提示：没有找到强匹配，这位候选人仅弱相关。"] : []),
       `本次搜索命中：${candidate.matchReason || "与当前条件整体相关度较高"}`,
       ...(candidate.queryReasons && candidate.queryReasons.length > 0
         ? candidate.queryReasons.map((item) => `细项：${item}`)

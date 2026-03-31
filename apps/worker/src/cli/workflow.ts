@@ -421,6 +421,24 @@ export function classifyMatchStrength(score: number, reasons: string[]): MatchSt
   return "weak";
 }
 
+export function buildResultWarning(
+  candidates: Array<Pick<ScoredCandidate, "matchStrength">>
+): string | undefined {
+  if (candidates.length === 0) {
+    return undefined;
+  }
+
+  if (candidates.some((candidate) => candidate.matchStrength === "strong")) {
+    return undefined;
+  }
+
+  if (candidates.some((candidate) => candidate.matchStrength === "medium")) {
+    return "没有找到强匹配，当前结果以中等相关候选人为主。建议继续补充必须项、关键技术或来源偏好。";
+  }
+
+  return "没有找到强匹配，只找到了弱相关候选人。建议继续补充必须项、关键技术或来源偏好。";
+}
+
 export class SearchWorkflow {
   private chat: ChatInterface;
   private tui: TerminalUI;
@@ -616,6 +634,7 @@ export class SearchWorkflow {
     let sortMode = initialSortMode;
     let visibleCount = Math.min(5, candidates.length);
     let selectedIndex = 0;
+    const resultWarning = buildResultWarning(candidates);
     let statusMessage: ShortlistStatusMessage | undefined;
     let reuseViewport = false;
 
@@ -629,6 +648,7 @@ export class SearchWorkflow {
         poolCount: this.comparePool.length,
         poolPersonIds: this.comparePool.map((candidate) => candidate.personId),
         selectedIndex,
+        resultWarning,
         statusMessage,
         reuseViewport
       });
