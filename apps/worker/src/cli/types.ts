@@ -135,6 +135,7 @@ export interface ScriptSearchResultOutput {
   headline: string | null;
   location: string | null;
   matchScore: number;
+  matchStrength: MatchStrength;
   matchReasons: string[];
   matchReason: string;
   whyMatched: string;
@@ -144,6 +145,12 @@ export interface ScriptSearchResultOutput {
   bonjourUrl?: string;
   lastSyncedAt?: string;
   latestEvidenceAt?: string;
+}
+
+export interface ScriptSearchResponseOutput {
+  results: ScriptSearchResultOutput[];
+  total: number;
+  resultWarning?: string;
 }
 
 export interface ShortlistPromptState {

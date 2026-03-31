@@ -8,6 +8,14 @@ const mockRerankerRerank = vi.fn();
 const mockEmbed = vi.fn();
 const mockBuildQueryMatchExplanation = vi.fn();
 const mockDescribeRelativeDate = vi.fn();
+const mockClassifyMatchStrength = vi.fn((score: number, reasons: string[]) =>
+  reasons.some((reason) => reason.includes("技术命中")) ? "strong" : "weak"
+);
+const mockBuildResultWarning = vi.fn((results: Array<{ matchStrength: string }>) =>
+  results.some((result) => result.matchStrength === "strong")
+    ? undefined
+    : "没有找到强匹配，只找到了弱相关候选人。建议继续补充必须项、关键技术或来源偏好。"
+);
 const mockFormatSourceLabel = vi.fn((source?: string) => {
   if (source === "bonjour") return "Bonjour";
   if (source === "github") return "GitHub";
@@ -58,6 +66,8 @@ vi.mock("@seeku/search", () => ({
 
 vi.mock("./cli/workflow.js", () => ({
   buildQueryMatchExplanation: mockBuildQueryMatchExplanation,
+  buildResultWarning: mockBuildResultWarning,
+  classifyMatchStrength: mockClassifyMatchStrength,
   describeRelativeDate: mockDescribeRelativeDate,
   formatSourceLabel: mockFormatSourceLabel
 }));
@@ -112,7 +122,10 @@ describe("CLI Search", () => {
         json: true
       });
 
-      expect(result).toEqual([]);
+      expect(result).toEqual({
+        results: [],
+        total: 0
+      });
     });
 
     it("should accept limit parameter", async () => {
@@ -190,16 +203,17 @@ describe("CLI Search", () => {
         json: true
       });
 
-      if (!Array.isArray(result)) {
-        throw new Error("Expected JSON array output");
+      if (typeof result === "string") {
+        throw new Error("Expected JSON object output");
       }
 
-      expect(result[0]).toMatchObject({
+      expect(result.results[0]).toMatchObject({
         personId: "person-1",
         name: "Ada",
         headline: "Python Engineer",
         location: "杭州",
         matchScore: 0.82,
+        matchStrength: "strong",
         matchReasons: ["skill evidence: python"],
         matchReason: "地点命中：杭州，技术命中：python",
         whyMatched: "地点命中：杭州，技术命中：python",
@@ -208,8 +222,9 @@ describe("CLI Search", () => {
         freshness: "3天前",
         bonjourUrl: "https://bonjour.bio/ada"
       });
-      expect(result[0]?.lastSyncedAt).toBe("2026-03-30T00:00:00.000Z");
-      expect(result[0]?.latestEvidenceAt).toBe("2026-03-27T00:00:00.000Z");
+      expect(result.resultWarning).toBeUndefined();
+      expect(result.results[0]?.lastSyncedAt).toBe("2026-03-30T00:00:00.000Z");
+      expect(result.results[0]?.latestEvidenceAt).toBe("2026-03-27T00:00:00.000Z");
       expect(mockBuildQueryMatchExplanation).toHaveBeenCalledTimes(1);
       expect(mockDescribeRelativeDate).toHaveBeenCalledTimes(1);
     });
@@ -267,12 +282,14 @@ describe("CLI Search", () => {
         json: true
       });
 
-      if (!Array.isArray(result)) {
-        throw new Error("Expected JSON array output");
+      if (typeof result === "string") {
+        throw new Error("Expected JSON object output");
       }
 
-      expect(result[0]?.matchReason).toBe("地点命中：杭州");
-      expect(result[0]?.whyMatched).toBe("地点命中：杭州");
+      expect(result.results[0]?.matchReason).toBe("地点命中：杭州");
+      expect(result.results[0]?.whyMatched).toBe("地点命中：杭州");
+      expect(result.results[0]?.matchStrength).toBe("weak");
+      expect(result.resultWarning).toContain("只找到了弱相关候选人");
     });
   });
 

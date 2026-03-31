@@ -24,6 +24,7 @@ export interface SearchResultCard {
   name: string;
   headline: string | null;
   matchScore: number;
+  matchStrength: "strong" | "medium" | "weak";
   matchReasons: string[];
   evidencePreview: EvidencePreview[];
 }
@@ -41,6 +42,7 @@ export interface SearchResponse {
   results: SearchResultCard[];
   total: number;
   intent: QueryIntent;
+  resultWarning?: string;
 }
 
 export interface ProfileResponse {

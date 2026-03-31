@@ -16,8 +16,14 @@ import {
 } from "@seeku/db";
 import { SiliconFlowProvider } from "@seeku/llm";
 import { QueryPlanner, HybridRetriever, Reranker, type QueryIntent } from "@seeku/search";
-import type { ScriptSearchResultOutput, SearchConditions } from "./cli/types.js";
-import { buildQueryMatchExplanation, describeRelativeDate, formatSourceLabel } from "./cli/workflow.js";
+import type { ScriptSearchResponseOutput, ScriptSearchResultOutput, SearchConditions } from "./cli/types.js";
+import {
+  buildQueryMatchExplanation,
+  buildResultWarning,
+  classifyMatchStrength,
+  describeRelativeDate,
+  formatSourceLabel
+} from "./cli/workflow.js";
 
 export interface SearchCliOptions {
   query: string;
@@ -119,7 +125,7 @@ function buildRawQueryFallbackReason(
   return `命中查询词：${matchedTerms.slice(0, 2).join(" / ")}`;
 }
 
-export async function runSearchCli(options: SearchCliOptions): Promise<ScriptSearchResultOutput[] | string> {
+export async function runSearchCli(options: SearchCliOptions): Promise<ScriptSearchResponseOutput | string> {
   const { db, close } = createDatabaseConnection();
 
   try {
@@ -133,7 +139,7 @@ export async function runSearchCli(options: SearchCliOptions): Promise<ScriptSea
     const retrieved = await retriever.retrieve(intent, { embedding: queryEmbedding.embedding });
 
     if (retrieved.length === 0) {
-      return options.json ? [] : "No results found.";
+      return options.json ? { results: [], total: 0 } : "No results found.";
     }
 
     const personIds = retrieved.map(r => r.personId);
@@ -228,6 +234,7 @@ export async function runSearchCli(options: SearchCliOptions): Promise<ScriptSea
         headline: personRow.primaryHeadline ?? null,
         location: personRow.primaryLocation ?? null,
         matchScore: result.finalScore,
+        matchStrength: classifyMatchStrength(result.finalScore, explanation.reasons),
         matchReasons: result.matchReasons,
         matchReason,
         whyMatched: matchReason,
@@ -241,7 +248,11 @@ export async function runSearchCli(options: SearchCliOptions): Promise<ScriptSea
     });
 
     if (options.json) {
-      return output;
+      return {
+        results: output,
+        total: output.length,
+        resultWarning: buildResultWarning(output)
+      };
     }
 
     // Human-readable format

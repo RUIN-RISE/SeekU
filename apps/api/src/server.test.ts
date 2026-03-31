@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { buildApiServer } from "./server.js";
 import type { FastifyInstance } from "fastify";
 import type { SearchServices } from "./routes/search.js";
+import { evidenceItems, persons, searchDocuments } from "@seeku/db";
 
 const mockSearchServices: SearchServices = {
   provider: {
@@ -34,6 +35,22 @@ const mockSearchServices: SearchServices = {
     rerank: () => []
   } as any
 };
+
+function createMockSearchDb(results: Map<unknown, unknown[]>) {
+  return {
+    select() {
+      return {
+        from(table: unknown) {
+          return {
+            where() {
+              return results.get(table) ?? [];
+            }
+          };
+        }
+      };
+    }
+  } as any;
+}
 
 describe("API Server", () => {
   let server: FastifyInstance;
@@ -103,6 +120,82 @@ describe("API Server", () => {
       });
 
       expect(response.statusCode).toBeLessThan(500);
+    });
+
+    it("POST /search should expose matchStrength and resultWarning", async () => {
+      const db = createMockSearchDb(new Map<unknown, unknown[]>([
+        [searchDocuments, [{
+          personId: "person-1",
+          docText: "Builder in Hangzhou",
+          facetSource: ["bonjour"],
+          facetLocation: ["杭州"],
+          facetRole: [],
+          facetTags: []
+        }]],
+        [evidenceItems, []],
+        [persons, [{
+          id: "person-1",
+          primaryName: "Ada",
+          primaryHeadline: "Builder"
+        }]]
+      ]));
+      const searchServices: SearchServices = {
+        provider: mockSearchServices.provider,
+        planner: {
+          parse: async (query: string) => ({
+            rawQuery: query,
+            roles: [],
+            skills: [],
+            locations: ["杭州"],
+            mustHaves: [],
+            niceToHaves: []
+          })
+        } as any,
+        retriever: {
+          retrieve: async () => [{ personId: "person-1", combinedScore: 0.31 }]
+        } as any,
+        reranker: {
+          rerank: () => [{
+            personId: "person-1",
+            keywordScore: 0,
+            vectorScore: 0,
+            combinedScore: 0.31,
+            matchedText: "Builder in Hangzhou",
+            finalScore: 0.31,
+            evidenceBoost: 0,
+            freshnessPenalty: 1,
+            matchReasons: []
+          }]
+        } as any
+      };
+      const localServer = await buildApiServer({ db, searchServices });
+
+      try {
+        const response = await localServer.inject({
+          method: "POST",
+          url: "/search",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          payload: {
+            query: "杭州"
+          }
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toMatchObject({
+          total: 1,
+          resultWarning: expect.stringContaining("只找到了弱相关候选人"),
+          results: [
+            {
+              personId: "person-1",
+              matchStrength: "weak"
+            }
+          ]
+        });
+      } finally {
+        await localServer.close();
+      }
     });
   });
 
