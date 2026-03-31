@@ -16,6 +16,7 @@ import {
 } from "@seeku/db";
 import { SiliconFlowProvider } from "@seeku/llm";
 import { QueryPlanner, HybridRetriever, Reranker, type QueryIntent } from "@seeku/search";
+import { FALLBACK_MATCH_REASONS } from "@seeku/shared";
 import type { ScriptSearchResponseOutput, ScriptSearchResultOutput, SearchConditions } from "./cli/types.js";
 import {
   buildQueryMatchExplanation,
@@ -223,8 +224,9 @@ export async function runSearchCli(options: SearchCliOptions): Promise<ScriptSea
         document,
         candidateEvidence
       );
-      const matchReason = explanation.summary.startsWith("综合相关度")
-        || explanation.summary === "与当前条件整体相关度较高"
+      const matchReason = FALLBACK_MATCH_REASONS.some((reason) =>
+        explanation.summary.startsWith(reason)
+      )
         ? (fallbackMatchReason || explanation.summary)
         : explanation.summary;
 
