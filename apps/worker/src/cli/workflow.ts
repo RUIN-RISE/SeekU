@@ -340,7 +340,7 @@ export function buildQueryMatchExplanation(
 
   return {
     summary: reasons.slice(0, 2).join("，"),
-    reasons: reasons.slice(0, 5)
+    reasons
   };
 }
 
@@ -437,6 +437,14 @@ export function buildResultWarning(
   }
 
   return "没有找到强匹配，只找到了弱相关候选人。建议继续补充必须项、关键技术或来源偏好。";
+}
+
+function buildFullMatchReason(candidate: Pick<ScoredCandidate, "queryReasons" | "matchReason">) {
+  if (candidate.queryReasons && candidate.queryReasons.length > 0) {
+    return candidate.queryReasons.join("；");
+  }
+
+  return candidate.matchReason || "与当前条件整体相关度较高";
 }
 
 export class SearchWorkflow {
@@ -1914,7 +1922,7 @@ export class SearchWorkflow {
         source: this.formatExportSource(candidate.sources),
         freshness: freshnessDate ? this.describeRelativeDate(freshnessDate) : "时间未知",
         bonjourUrl: candidate.bonjourUrl,
-        whyMatched: candidate.matchReason || "与当前条件整体相关度较高",
+        whyMatched: buildFullMatchReason(candidate),
         decisionTag: comparisonEntry?.decisionTag,
         recommendation: comparisonEntry?.recommendation,
         nextStep: comparisonEntry?.nextStep,

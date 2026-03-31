@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MultiDimensionProfile, SearchConditions } from "../types.js";
-import { SearchWorkflow, buildResultWarning, classifyMatchStrength } from "../workflow.js";
+import {
+  SearchWorkflow,
+  buildQueryMatchExplanation,
+  buildResultWarning,
+  classifyMatchStrength
+} from "../workflow.js";
 
 const BASE_CONDITIONS: SearchConditions = {
   skills: ["python"],
@@ -317,7 +322,10 @@ describe("SearchWorkflow shortlist command handling", () => {
 
   it("exports pool records with comparison metadata", async () => {
     const { workflow, handleShortlistCommand, mockExporter, mockTui } = createWorkflowHarness();
-    const first = createCandidate();
+    const first = createCandidate({
+      queryReasons: ["地点命中：杭州", "技术命中：python", "相关证据：Built Hangzhou automation stack"],
+      matchReason: "地点命中：杭州，技术命中：python"
+    });
     const second = createCandidate({
       personId: "person-2",
       name: "Lin",
@@ -389,7 +397,7 @@ describe("SearchWorkflow shortlist command handling", () => {
     expect(exportRequest.records[0]).toMatchObject({
       shortlistIndex: 1,
       source: "Bonjour",
-      whyMatched: "地点命中：杭州，技术命中：python",
+      whyMatched: "地点命中：杭州；技术命中：python；相关证据：Built Hangzhou automation stack",
       decisionTag: "优先深看",
       recommendation: "建议优先打开：地点完全匹配，资料也较新",
       nextStep: "返回 shortlist 后先执行 v 1，再用 o 1 打开 Bonjour"
@@ -426,5 +434,63 @@ describe("buildResultWarning", () => {
     expect(buildResultWarning([{ matchStrength: "weak" }, { matchStrength: "weak" }])).toContain(
       "只找到了弱相关候选人"
     );
+  });
+});
+
+describe("buildQueryMatchExplanation", () => {
+  it("keeps a short summary while preserving full reasons", () => {
+    const explanation = buildQueryMatchExplanation(
+      {
+        primaryName: "Ada",
+        primaryHeadline: "Senior Backend Engineer",
+        primaryLocation: "杭州",
+        summary: "长期做推理和自动化系统"
+      },
+      {
+        docText: "Senior backend engineer working on python cuda inference systems",
+        facetRole: ["backend"],
+        facetTags: ["python", "cuda"],
+        facetLocation: ["杭州"]
+      },
+      [
+        {
+          title: "CUDA inference stack",
+          description: "Built python inference tooling",
+          evidenceType: "project"
+        }
+      ],
+      {
+        skills: ["python", "cuda"],
+        locations: ["杭州"],
+        experience: "senior",
+        role: "backend",
+        sourceBias: "github",
+        mustHave: ["cuda", "inference"],
+        niceToHave: [],
+        exclude: [],
+        preferFresh: true,
+        candidateAnchor: undefined,
+        limit: 10
+      },
+      {
+        score: 0.82,
+        retrievalReasons: [
+          "skill evidence: python",
+          "must-have matched: inference",
+          "project: CUDA inference stack",
+          "strong semantic similarity",
+          "strong keyword overlap"
+        ],
+        sources: ["GitHub"],
+        referenceDate: new Date("2026-03-30T00:00:00.000Z"),
+        experienceMatched: true
+      }
+    );
+
+    expect(explanation.summary).toBe("地点命中：杭州，角色贴合：backend");
+    expect(explanation.reasons.length).toBeGreaterThan(5);
+    expect(explanation.reasons).toContain("检索技能命中：python");
+    expect(explanation.reasons).toContain("语义相似度高");
+    expect(explanation.reasons).toContain("关键词重合度高");
   });
 });
