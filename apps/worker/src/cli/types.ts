@@ -146,7 +146,7 @@ export interface ShortlistStatusMessage {
 }
 
 export interface ResultListCommand {
-  type: "view" | "compare" | "refine" | "sort" | "showMore" | "quit" | "help" | "add" | "pool" | "clear" | "history" | "undo" | "show" | "open" | "back" | "export" | "moveSelection";
+  type: "view" | "compare" | "refine" | "sort" | "showMore" | "quit" | "help" | "add" | "remove" | "togglePool" | "pool" | "clear" | "history" | "undo" | "show" | "open" | "back" | "export" | "moveSelection";
   indexes?: number[];
   sortMode?: SortMode;
   exportFormat?: ExportFormat;

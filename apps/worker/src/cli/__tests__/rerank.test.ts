@@ -24,12 +24,14 @@ describe("TerminalUI sort parser", () => {
       sortMode?: string;
       exportFormat?: string;
       prompt?: string;
+      indexes?: number[];
     };
 
     expect(parseShortlistCommand(":sort fresh")).toMatchObject({ type: "sort", sortMode: "fresh" });
     expect(parseShortlistCommand("/export md")).toMatchObject({ type: "export", exportFormat: "md" });
     expect(parseShortlistCommand(":r 去掉销售")).toMatchObject({ type: "refine", prompt: "去掉销售" });
     expect(parseShortlistCommand(":history")).toMatchObject({ type: "history" });
+    expect(parseShortlistCommand(":remove 2")).toMatchObject({ type: "remove", indexes: [2] });
   });
 });
 

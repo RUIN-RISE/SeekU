@@ -549,6 +549,7 @@ export class SearchWorkflow {
         showingCount: visibleCount,
         totalCount: candidates.length,
         poolCount: this.comparePool.length,
+        poolPersonIds: this.comparePool.map((candidate) => candidate.personId),
         selectedIndex,
         statusMessage,
         reuseViewport
@@ -662,6 +663,40 @@ export class SearchWorkflow {
       });
     }
 
+    if (command.type === "togglePool") {
+      const targets = this.pickCandidates(candidates, command.indexes || []);
+      if (targets.length === 0) {
+        return continueWith({
+          statusMessage: {
+            tone: "warning",
+            text: "未找到要操作的候选人，请重新选择。"
+          },
+          reuseViewport: true
+        });
+      }
+
+      const target = targets[0];
+      const wasRemoved = this.removeCandidatesFromPool([target]);
+      if (wasRemoved > 0) {
+        return continueWith({
+          statusMessage: {
+            tone: "success",
+            text: `✓ ${target.name} 已移出对比池（当前 ${this.comparePool.length} 人）。`
+          },
+          reuseViewport: true
+        });
+      }
+
+      this.addCandidatesToPool([target]);
+      return continueWith({
+        statusMessage: {
+          tone: "success",
+          text: `✓ ${target.name} 已加入对比池（当前 ${this.comparePool.length} 人）。`
+        },
+        reuseViewport: true
+      });
+    }
+
     if (command.type === "add") {
       const targets = this.pickCandidates(candidates, command.indexes || []);
       if (targets.length === 0) {
@@ -674,17 +709,53 @@ export class SearchWorkflow {
         });
       }
 
-      // Add to pool (avoid duplicates)
-      for (const target of targets) {
-        if (!this.comparePool.some(p => p.personId === target.personId)) {
-          this.comparePool.push(target);
-        }
+      const addedCount = this.addCandidatesToPool(targets);
+      if (addedCount === 0) {
+        return continueWith({
+          statusMessage: {
+            tone: "info",
+            text: `ℹ ${targets[0].name} 已经在对比池里了（当前 ${this.comparePool.length} 人）。`
+          },
+          reuseViewport: true
+        });
       }
 
       return continueWith({
         statusMessage: {
           tone: "success",
-          text: `✓ ${targets[0].name} 已加入对比池（当前 ${this.comparePool.length} 人）。`
+          text: `✓ 已加入 ${addedCount} 位候选人到对比池（当前 ${this.comparePool.length} 人）。`
+        },
+        reuseViewport: true
+      });
+    }
+
+    if (command.type === "remove") {
+      const targets = this.pickCandidates(candidates, command.indexes || []);
+      if (targets.length === 0) {
+        return continueWith({
+          statusMessage: {
+            tone: "warning",
+            text: "未找到要移出的候选人，请重新选择。"
+          },
+          reuseViewport: true
+        });
+      }
+
+      const removedCount = this.removeCandidatesFromPool(targets);
+      if (removedCount === 0) {
+        return continueWith({
+          statusMessage: {
+            tone: "info",
+            text: "这些候选人当前不在对比池中。"
+          },
+          reuseViewport: true
+        });
+      }
+
+      return continueWith({
+        statusMessage: {
+          tone: "success",
+          text: `✓ 已从对比池移出 ${removedCount} 位候选人（当前 ${this.comparePool.length} 人）。`
         },
         reuseViewport: true
       });
@@ -967,6 +1038,28 @@ export class SearchWorkflow {
     };
 
     return labels[sortMode];
+  }
+
+  private addCandidatesToPool(targets: HydratedCandidate[]): number {
+    let addedCount = 0;
+
+    for (const target of targets) {
+      if (this.comparePool.some((candidate) => candidate.personId === target.personId)) {
+        continue;
+      }
+
+      this.comparePool.push(target);
+      addedCount += 1;
+    }
+
+    return addedCount;
+  }
+
+  private removeCandidatesFromPool(targets: HydratedCandidate[]): number {
+    const removableIds = new Set(targets.map((target) => target.personId));
+    const beforeCount = this.comparePool.length;
+    this.comparePool = this.comparePool.filter((candidate) => !removableIds.has(candidate.personId));
+    return beforeCount - this.comparePool.length;
   }
 
   private buildCompareNeedsMoreCandidatesMessage(poolCount: number): ShortlistStatusMessage {

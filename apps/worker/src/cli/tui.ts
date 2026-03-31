@@ -25,6 +25,7 @@ interface ShortlistViewOptions {
   showingCount: number;
   totalCount: number;
   poolCount?: number;
+  poolPersonIds?: string[];
   selectedIndex?: number;
   statusMessage?: ShortlistStatusMessage;
   reuseViewport?: boolean;
@@ -136,8 +137,11 @@ export class TerminalUI {
       lines.push(chalk.dim("-".repeat(72)));
     }
 
+    const poolMembers = new Set(options.poolPersonIds || []);
+
     candidates.slice(0, options.showingCount).forEach((candidate, index) => {
       const isSelected = options.selectedIndex === index;
+      const isInPool = poolMembers.has(candidate.personId);
       const sourceBadge = this.formatSourceBadge(candidate.sources);
       const freshness = this.formatFreshness(candidate.latestEvidenceAt, candidate.lastSyncedAt);
       const linePrefix = isSelected ? chalk.cyanBright("❯") : " ";
@@ -145,12 +149,13 @@ export class TerminalUI {
       const nameLabel = isSelected
         ? chalk.bgBlue.white(` ${candidate.name} `)
         : chalk.blueBright(candidate.name);
+      const poolBadge = isInPool ? chalk.bgYellow.black(" 对比池 ") : "";
       const linkHint = candidate.bonjourUrl
         ? `${detailPrefix} ${chalk.cyan(`🔗 ${candidate.bonjourUrl}`)}`
         : "";
 
       lines.push(
-        `${linePrefix} ${chalk.bold(`${index + 1}.`)} ${nameLabel}  ${chalk.green(candidate.matchScore.toFixed(1))}  ${sourceBadge} ${freshness}`
+        `${linePrefix} ${chalk.bold(`${index + 1}.`)} ${nameLabel}  ${chalk.green(candidate.matchScore.toFixed(1))}  ${sourceBadge} ${freshness}${poolBadge ? ` ${poolBadge}` : ""}`
       );
       lines.push(`${detailPrefix} ${chalk.dim(candidate.location || "地点未知")} · ${candidate.headline || "No headline"}`);
       if (linkHint) {
@@ -166,8 +171,8 @@ export class TerminalUI {
     const selectedLabel = typeof options.selectedIndex === "number"
       ? `当前选中 #${options.selectedIndex + 1}`
       : "使用方向键选择";
-    lines.push(chalk.dim(`热键：↑/↓ 选择 | Enter 详情 | o 打开 Bonjour | space 加入 pool | c 进入 compare | :/ 命令 | q 退出${poolHint}`));
-    lines.push(chalk.dim(`${selectedLabel} | 仍支持命令模式，例如 :sort fresh / :export md / :r 去掉销售 / :history`));
+    lines.push(chalk.dim(`热键：↑/↓/j/k 移动 | Enter 详情 | space 入池/移出 | o 打开 | / refine | s 排序 | e 导出 | : 命令 | ? 帮助 | q 退出${poolHint}`));
+    lines.push(chalk.dim(`${selectedLabel} | 高级命令仍支持 :history / :show / :sort fresh / :export md`));
 
     const output = lines.join("\n");
     process.stdout.write(`${output}\n`);
@@ -288,44 +293,56 @@ export class TerminalUI {
 
   displayCompareNeedsMoreCandidates(poolCount: number) {
     if (poolCount <= 0) {
-      console.log(chalk.yellow("\n对比池为空，使用 `add N` 把候选人加入对比池。"));
-      console.log(chalk.dim("例如：add 1，然后 add 2，再输入 c 进入决策对比。"));
+      console.log(chalk.yellow("\n对比池为空，先在 shortlist 里按 `space` 把候选人加入对比池。"));
+      console.log(chalk.dim("例如：先选中 1 号按一次 space，再选中 2 号按一次 space，然后输入 c。"));
       return;
     }
 
     console.log(chalk.yellow(`\n当前对比池只有 ${poolCount} 人，决策对比至少需要 2 人。`));
-    console.log(chalk.dim("继续使用 `add N` 补一个候选人，再输入 c。"));
+    console.log(chalk.dim("继续按 `space` 再补一个候选人，然后输入 c。"));
   }
 
   displayHelp() {
-    console.log(chalk.dim("\nshortlist 命令："));
-    console.log(chalk.dim("  v 2           查看第 2 位候选人"));
-    console.log(chalk.dim("  c 1 3         进入第 1 和第 3 位的决策对比视图"));
-    console.log(chalk.dim("  add 1         把第 1 位加入对比池"));
-    console.log(chalk.dim("  pool          查看当前对比池"));
-    console.log(chalk.dim("  clear         清空对比池"));
-    console.log(chalk.dim("  history       查看搜索历史"));
-    console.log(chalk.dim("  undo          回到上一轮搜索条件"));
-    console.log(chalk.dim("  show          显示当前筛选条件"));
-    console.log(chalk.dim("  export md     导出当前 shortlist 为 Markdown"));
-    console.log(chalk.dim("  export csv    导出当前 shortlist 为 CSV"));
-    console.log(chalk.dim("  export json   导出当前 shortlist 为 JSON"));
-    console.log(chalk.dim("  export pool md 导出当前对比池"));
-    console.log(chalk.dim("  sort overall  恢复综合排序"));
-    console.log(chalk.dim("  sort tech     按技术匹配排序"));
-    console.log(chalk.dim("  sort project  按项目深度排序"));
-    console.log(chalk.dim("  sort location 按地点匹配排序"));
-    console.log(chalk.dim("  sort fresh    按新鲜度重排当前 shortlist"));
-    console.log(chalk.dim("  sort source   按 Bonjour 优先重排当前 shortlist"));
-    console.log(chalk.dim("  sort evidence 按证据强度重排当前 shortlist"));
-    console.log(chalk.dim("  r             基于当前结果继续 refine"));
-    console.log(chalk.dim("  r 去掉销售     直接输入自然语言 refine 指令"));
+    console.log(chalk.bold("\nshortlist 热键："));
+    console.log(chalk.dim("  ↑/↓ 或 j/k     上下移动当前选中项"));
+    console.log(chalk.dim("  Enter          查看当前选中候选人详情"));
+    console.log(chalk.dim("  space          把当前候选人加入/移出对比池"));
+    console.log(chalk.dim("  o              打开当前候选人的 Bonjour 页面"));
+    console.log(chalk.dim("  c              进入对比池 compare"));
+    console.log(chalk.dim("  / 或 r         直接输入 refine 指令"));
+    console.log(chalk.dim("  s              快速输入排序命令（例如 fresh / source）"));
+    console.log(chalk.dim("  e              快速输入导出命令（例如 md / pool md）"));
+    console.log(chalk.dim("  :              进入高级命令模式"));
+    console.log(chalk.dim("  p              查看当前对比池"));
+    console.log(chalk.dim("  u              回到上一轮搜索条件"));
+    console.log(chalk.dim("  m              展示更多结果"));
+    console.log(chalk.dim("  ? / h          打开帮助"));
+    console.log(chalk.dim("  q              退出"));
+    console.log(chalk.bold("\n高级命令："));
+    console.log(chalk.dim("  v 2             查看第 2 位候选人"));
+    console.log(chalk.dim("  c 1 3           进入第 1 和第 3 位的决策对比视图"));
+    console.log(chalk.dim("  add 1           把第 1 位加入对比池"));
+    console.log(chalk.dim("  remove 1        把第 1 位移出对比池"));
+    console.log(chalk.dim("  pool            查看当前对比池"));
+    console.log(chalk.dim("  clear           清空对比池"));
+    console.log(chalk.dim("  history         查看搜索历史"));
+    console.log(chalk.dim("  undo            回到上一轮搜索条件"));
+    console.log(chalk.dim("  show            显示当前筛选条件"));
+    console.log(chalk.dim("  export md       导出当前 shortlist 为 Markdown"));
+    console.log(chalk.dim("  export csv      导出当前 shortlist 为 CSV"));
+    console.log(chalk.dim("  export json     导出当前 shortlist 为 JSON"));
+    console.log(chalk.dim("  export pool md  导出当前对比池"));
+    console.log(chalk.dim("  sort overall    恢复综合排序"));
+    console.log(chalk.dim("  sort tech       按技术匹配排序"));
+    console.log(chalk.dim("  sort project    按项目深度排序"));
+    console.log(chalk.dim("  sort location   按地点匹配排序"));
+    console.log(chalk.dim("  sort fresh      按新鲜度重排当前 shortlist"));
+    console.log(chalk.dim("  sort source     按 Bonjour 优先重排当前 shortlist"));
+    console.log(chalk.dim("  sort evidence   按证据强度重排当前 shortlist"));
+    console.log(chalk.dim("  r 去掉销售       直接输入自然语言 refine 指令"));
     console.log(chalk.dim("  r 更看重最近活跃"));
     console.log(chalk.dim("  r 像 2 号但更偏后端"));
     console.log(chalk.dim("  提示：sort 只重排当前结果；refine 会触发新一轮搜索"));
-    console.log(chalk.dim("  back          返回 shortlist 当前结果"));
-    console.log(chalk.dim("  m             展示更多结果"));
-    console.log(chalk.dim("  q             退出"));
   }
 
   displaySortApplied(sortMode: SortMode) {
@@ -349,7 +366,7 @@ export class TerminalUI {
 
   displayPoolEmpty() {
     console.log(chalk.yellow("\n对比池为空。"));
-    console.log(chalk.dim("使用 `add N` 把候选人加入对比池，例如：add 1。"));
+    console.log(chalk.dim("在 shortlist 中按 `space` 可快速入池，也可以用 `add N`，例如：add 1。"));
   }
 
   displayPool(candidates: ScoredCandidate[]) {
@@ -382,7 +399,7 @@ export class TerminalUI {
   displayExportEmpty(target: ExportTarget) {
     if (target === "pool") {
       console.log(chalk.yellow("\n对比池为空，暂时无法导出。"));
-      console.log(chalk.dim("先用 `add N` 加入候选人，再执行 `export pool md`。"));
+    console.log(chalk.dim("先在 shortlist 里按 `space` 入池，或使用 `add N`，再执行 `export pool md`。"));
       return;
     }
 
@@ -454,8 +471,6 @@ export class TerminalUI {
   }
 
   private async promptShortlistHotkeys(state: ShortlistPromptState): Promise<ResultListCommand> {
-    type PendingHotkey = "o" | "c" | "r";
-
     const stdin = process.stdin as NodeJS.ReadStream & {
       isRaw?: boolean;
       setRawMode(mode: boolean): void;
@@ -469,28 +484,16 @@ export class TerminalUI {
     stdin.resume();
 
     return new Promise((resolve) => {
-      let pendingHotkey: { key: PendingHotkey; timer: NodeJS.Timeout } | undefined;
       let settled = false;
 
       const renderPrompt = () => {
         const prompt = chalk.dim(
-          `shortlist> 当前 #${state.selectedIndex + 1} | ↑/↓ 移动 | Enter 详情 | o 打开 | space 入池 | c 对比 | :/ 命令`
+          `shortlist> #${state.selectedIndex + 1} | ↑/↓/j/k 移动 | Enter 详情 | space 入池/移出 | / refine | s 排序 | e 导出 | : 命令 | ? 帮助`
         );
         process.stdout.write(`\u001B[2K\r${prompt}`);
       };
 
-      const clearPendingHotkey = () => {
-        if (!pendingHotkey) {
-          return undefined;
-        }
-        clearTimeout(pendingHotkey.timer);
-        const key = pendingHotkey.key;
-        pendingHotkey = undefined;
-        return key;
-      };
-
       const cleanup = (appendNewline: boolean) => {
-        clearPendingHotkey();
         stdin.off("keypress", onKeypress);
         if (!wasRaw) {
           stdin.setRawMode(false);
@@ -510,36 +513,20 @@ export class TerminalUI {
         resolve(command);
       };
 
-      const enterCommandMode = (initial = "") => {
+      const enterLineMode = (
+        message: string,
+        initial: string,
+        mapResult: (raw: string) => ResultListCommand,
+        fallback: ResultListCommand = { type: "back" }
+      ) => {
         if (settled) {
           return;
         }
         settled = true;
         cleanup(false);
-        void this.promptLine("command>", initial)
-          .then((raw) => resolve(this.parseShortlistCommand(raw)))
-          .catch(() => resolve({ type: "help" }));
-      };
-
-      const startPendingHotkey = (key: PendingHotkey) => {
-        clearPendingHotkey();
-        pendingHotkey = {
-          key,
-          timer: setTimeout(() => {
-            const resolvedKey = clearPendingHotkey();
-            if (resolvedKey === "o") {
-              finalize({ type: "open", indexes: [state.selectedIndex + 1] });
-              return;
-            }
-            if (resolvedKey === "c") {
-              finalize({ type: "compare" });
-              return;
-            }
-            if (resolvedKey === "r") {
-              finalize({ type: "refine" });
-            }
-          }, 180)
-        };
+        void this.promptLine(message, initial)
+          .then((raw) => resolve(mapResult(raw)))
+          .catch(() => resolve(fallback));
       };
 
       const onKeypress = (str: string, key: { ctrl?: boolean; name?: string; sequence?: string; meta?: boolean }) => {
@@ -548,36 +535,12 @@ export class TerminalUI {
           return;
         }
 
-        if (pendingHotkey) {
-          if (key.name === "return") {
-            const hotkey = clearPendingHotkey();
-            if (hotkey === "o") {
-              finalize({ type: "open", indexes: [state.selectedIndex + 1] });
-              return;
-            }
-            if (hotkey === "c") {
-              finalize({ type: "compare" });
-              return;
-            }
-            if (hotkey === "r") {
-              finalize({ type: "refine" });
-              return;
-            }
-          }
-
-          const hotkey = clearPendingHotkey();
-          if (hotkey) {
-            enterCommandMode(`${hotkey}${str}`);
-          }
-          return;
-        }
-
-        if (key.name === "up") {
+        if (key.name === "up" || (!key.ctrl && !key.meta && key.name === "k") || (key.ctrl && key.name === "p")) {
           finalize({ type: "moveSelection", direction: "up" });
           return;
         }
 
-        if (key.name === "down") {
+        if (key.name === "down" || (!key.ctrl && !key.meta && key.name === "j") || (key.ctrl && key.name === "n")) {
           finalize({ type: "moveSelection", direction: "down" });
           return;
         }
@@ -588,22 +551,29 @@ export class TerminalUI {
         }
 
         if (key.name === "space") {
-          finalize({ type: "add", indexes: [state.selectedIndex + 1] });
+          finalize({ type: "togglePool", indexes: [state.selectedIndex + 1] });
           return;
         }
 
         if (!key.ctrl && !key.meta && key.name === "o") {
-          startPendingHotkey("o");
+          finalize({ type: "open", indexes: [state.selectedIndex + 1] });
           return;
         }
 
         if (!key.ctrl && !key.meta && key.name === "c") {
-          startPendingHotkey("c");
+          finalize({ type: "compare" });
           return;
         }
 
-        if (!key.ctrl && !key.meta && key.name === "r") {
-          startPendingHotkey("r");
+        if (!key.ctrl && !key.meta && (key.name === "r" || str === "/")) {
+          enterLineMode(
+            "refine>",
+            "",
+            (raw) => {
+              const prompt = raw.trim();
+              return prompt ? { type: "refine", prompt } : { type: "back" };
+            }
+          );
           return;
         }
 
@@ -622,13 +592,46 @@ export class TerminalUI {
           return;
         }
 
-        if (str === ":" || str === "/") {
-          enterCommandMode("");
+        if (!key.ctrl && !key.meta && key.name === "u") {
+          finalize({ type: "undo" });
           return;
         }
 
-        if (str && !key.ctrl && !key.meta) {
-          enterCommandMode(str);
+        if (!key.ctrl && !key.meta && key.name === "s") {
+          enterLineMode("sort>", "", (raw) => {
+            const input = raw.trim();
+            if (!input) {
+              return { type: "back" };
+            }
+            return this.parseShortlistCommand(`sort ${input}`);
+          });
+          return;
+        }
+
+        if (!key.ctrl && !key.meta && key.name === "e") {
+          enterLineMode("export>", "", (raw) => {
+            const input = raw.trim();
+            if (!input) {
+              return { type: "back" };
+            }
+            return this.parseShortlistCommand(`export ${input}`);
+          });
+          return;
+        }
+
+        if (str === ":") {
+          enterLineMode("command>", "", (raw) => this.parseShortlistCommand(raw), { type: "help" });
+          return;
+        }
+
+        if (!key.ctrl && !key.meta && (str === "?" || key.name === "h")) {
+          finalize({ type: "help" });
+          return;
+        }
+
+        if (!key.ctrl && !key.meta && str && /^[1-9]$/.test(str)) {
+          finalize({ type: "view", indexes: [Number(str)] });
+          return;
         }
       };
 
@@ -720,6 +723,10 @@ export class TerminalUI {
 
     if (command === "add" && indexes.length > 0) {
       return { type: "add", indexes };
+    }
+
+    if ((command === "remove" || command === "rm" || command === "del") && indexes.length > 0) {
+      return { type: "remove", indexes };
     }
 
     if (command === "export" || command === "e") {

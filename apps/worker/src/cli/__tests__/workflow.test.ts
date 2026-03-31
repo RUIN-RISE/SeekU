@@ -183,6 +183,39 @@ describe("SearchWorkflow shortlist command handling", () => {
     expect(result.statusMessage?.text).toContain("rerank-only");
   });
 
+  it("toggles the selected candidate in and out of the compare pool", async () => {
+    const { workflow, handleShortlistCommand } = createWorkflowHarness();
+    const candidates = [createCandidate()];
+
+    const addResult = await handleShortlistCommand(
+      { type: "togglePool", indexes: [1] },
+      candidates,
+      BASE_CONDITIONS,
+      { sortMode: "overall", visibleCount: 1, selectedIndex: 0 }
+    );
+
+    expect(addResult.type).toBe("continue");
+    expect(addResult.statusMessage).toMatchObject({
+      tone: "success",
+      text: expect.stringContaining("已加入对比池")
+    });
+    expect((workflow as any).comparePool).toHaveLength(1);
+
+    const removeResult = await handleShortlistCommand(
+      { type: "togglePool", indexes: [1] },
+      candidates,
+      BASE_CONDITIONS,
+      { sortMode: "overall", visibleCount: 1, selectedIndex: 0 }
+    );
+
+    expect(removeResult.type).toBe("continue");
+    expect(removeResult.statusMessage).toMatchObject({
+      tone: "success",
+      text: expect.stringContaining("已移出对比池")
+    });
+    expect((workflow as any).comparePool).toHaveLength(0);
+  });
+
   it("shows a clear warning when compare pool is empty", async () => {
     const { handleShortlistCommand } = createWorkflowHarness();
     const candidates = [createCandidate()];
