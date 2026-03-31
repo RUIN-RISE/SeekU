@@ -23,6 +23,8 @@ function normalizeGithubHandle(value: string) {
   return value.replace(/^@/, "").trim().toLowerCase();
 }
 
+const GITHUB_PROFILE_URL_PATTERN = /github\.com\/([A-Za-z0-9_.-]+)(?:\/)?(?=$|[?#"'`\s,)}\]]|\\)/gi;
+
 function computeGithubSyncHash(profile: GithubProfile, repositories: GithubRepository[]) {
   return createHash("sha256")
     .update(
@@ -50,24 +52,56 @@ function isValidAlias(alias: unknown): alias is { type: string; value: string } 
   );
 }
 
-function extractGithubHandlesFromNormalizedProfile(profile: {
+function extractGithubHandlesFromText(value: unknown): string[] {
+  const text = typeof value === "string" ? value : JSON.stringify(value ?? {});
+  const handles = new Set<string>();
+
+  for (const match of text.matchAll(GITHUB_PROFILE_URL_PATTERN)) {
+    const handle = normalizeGithubHandle(match[1] ?? "");
+    if (handle) {
+      handles.add(handle);
+    }
+  }
+
+  return [...handles];
+}
+
+export function extractGithubHandlesFromSourceProfile(profile: {
+  rawPayload: unknown;
   normalizedPayload: Record<string, unknown>;
 }): string[] {
   const aliases = profile.normalizedPayload.aliases;
+  const handles = new Set<string>([
+    ...extractGithubHandlesFromText(profile.normalizedPayload),
+    ...extractGithubHandlesFromText(profile.rawPayload)
+  ]);
   
   if (!Array.isArray(aliases)) {
-    return [];
+    return [...handles];
   }
   
-  return aliases
-    .filter(isValidAlias)
-    .filter((alias) => alias.type === "github")
-    .map((alias) => {
+  for (const alias of aliases.filter(isValidAlias).filter((alias) => alias.type === "github")) {
+    try {
+      const url = new URL(alias.value);
+      handles.add(normalizeGithubHandle(url.pathname.replace(/^\/+/, "").split("/")[0] ?? alias.value));
+    } catch {
+      handles.add(normalizeGithubHandle(alias.value));
+    }
+  }
+
+  return [...handles].filter(Boolean);
+}
+
+function extractGithubHandlesFromNormalizedProfile(profile: {
+  rawPayload: unknown;
+  normalizedPayload: Record<string, unknown>;
+}): string[] {
+  return extractGithubHandlesFromSourceProfile(profile)
+    .map((value) => {
       try {
-        const url = new URL(alias.value);
-        return normalizeGithubHandle(url.pathname.replace(/^\/+/, "").split("/")[0] ?? alias.value);
+        return normalizeGithubHandle(value);
       } catch {
-        return normalizeGithubHandle(alias.value);
+        return normalizeGithubHandle(value);
       }
     })
     .filter(Boolean);
@@ -208,7 +242,7 @@ export async function runGithubSync(
 
   try {
     const handles = new Set(seedHandles.map(normalizeGithubHandle));
-    const bonjourProfiles = await listSourceProfilesBySource(db, "bonjour", 500);
+    const bonjourProfiles = await listSourceProfilesBySource(db, "bonjour", 2000);
 
     for (const profile of bonjourProfiles) {
       for (const handle of extractGithubHandlesFromNormalizedProfile(profile)) {

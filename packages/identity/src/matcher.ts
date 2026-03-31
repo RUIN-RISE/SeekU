@@ -59,6 +59,25 @@ function normalizeAliasValue(value: string) {
   }
 }
 
+const GITHUB_PROFILE_URL_PATTERN = /github\.com\/([A-Za-z0-9_.-]+)(?:\/)?(?=$|[?#"'`\s,)}\]]|\\)/gi;
+
+function extractGithubHandlesFromPayloadText(profile: SourceProfile): string[] {
+  const handles = new Set<string>();
+  const texts = [profile.normalizedPayload, profile.rawPayload]
+    .map((value) => (typeof value === "string" ? value : JSON.stringify(value ?? {})));
+
+  for (const text of texts) {
+    for (const match of text.matchAll(GITHUB_PROFILE_URL_PATTERN)) {
+      const handle = normalizeAliasValue(match[1] ?? "");
+      if (handle) {
+        handles.add(handle);
+      }
+    }
+  }
+
+  return [...handles];
+}
+
 function findAliases(profile: SourceProfile, aliasType: Alias["type"]): Alias[] {
   const normalized = getNormalizedProfile(profile);
   if (!normalized) return [];
@@ -85,6 +104,12 @@ export function findExplicitLinks(profile: SourceProfile) {
 
     if (alias.type === "website" && alias.value.includes("bonjour.bio/")) {
       bonjourHandles.add(normalizeAliasValue(alias.value));
+    }
+  }
+
+  if (profile.source === "bonjour") {
+    for (const handle of extractGithubHandlesFromPayloadText(profile)) {
+      githubHandles.add(handle);
     }
   }
 

@@ -3,7 +3,7 @@ import {
   createDatabaseConnection,
   createEvidenceItem,
   getSourceProfileById,
-  listAllPersons,
+  listActivePersons,
   listIdentitiesByPersonId,
   type SeekuDatabase
 } from "@seeku/db";
@@ -121,7 +121,7 @@ export async function runEvidenceStorageWorker(personIds?: string[], db?: SeekuD
     const people =
       personIds && personIds.length > 0
         ? await Promise.all(personIds.map((personId) => Promise.resolve({ id: personId })))
-        : await listAllPersons(database, 500);
+        : await listActivePersons(database);
 
     let itemsCreated = 0;
     const errors: Array<{ message: string; context?: unknown }> = [];
