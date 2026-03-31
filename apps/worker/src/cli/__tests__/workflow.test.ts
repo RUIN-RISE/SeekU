@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MultiDimensionProfile, SearchConditions } from "../types.js";
-import { SearchWorkflow } from "../workflow.js";
+import { SearchWorkflow, classifyMatchStrength } from "../workflow.js";
 
 const BASE_CONDITIONS: SearchConditions = {
   skills: ["python"],
@@ -396,5 +396,21 @@ describe("SearchWorkflow shortlist command handling", () => {
     });
     expect(mockTui.displayExportSuccess).toHaveBeenCalledWith(artifact);
     expect(result.type).toBe("continue");
+  });
+});
+
+describe("classifyMatchStrength", () => {
+  it("marks multi-signal substantive matches as strong", () => {
+    expect(
+      classifyMatchStrength(0.78, ["技术命中：python", "相关证据：维护自动化工具链"])
+    ).toBe("strong");
+  });
+
+  it("marks location-only matches as weak", () => {
+    expect(classifyMatchStrength(0.31, ["地点命中：杭州"])).toBe("weak");
+  });
+
+  it("marks single substantive matches as medium when score is modest", () => {
+    expect(classifyMatchStrength(0.48, ["技术命中：python"])).toBe("medium");
   });
 });

@@ -85,11 +85,13 @@ describe("TerminalRenderer", () => {
       "技术命中：python，地点命中：杭州",
       {
         queryReasons: ["技术命中：python", "地点命中：杭州"],
+        matchStrength: "strong",
         sources: ["Bonjour"],
         bonjourUrl: "https://bonjour.example/ada"
       }
     );
 
+    expect(output).toContain("强匹配");
     expect(output).toContain("本次搜索为什么匹配");
     expect(output).toContain("技术命中：python");
     expect(output).toContain("通用画像总结");

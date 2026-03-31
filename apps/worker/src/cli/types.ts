@@ -18,6 +18,8 @@ export interface SearchCandidateAnchor {
   name?: string;
 }
 
+export type MatchStrength = "strong" | "medium" | "weak";
+
 export type MissingField = "skills" | "locations" | "experience";
 export type ClarifyAction = "search" | "add" | "relax" | "restart" | "quit";
 export type SortMode = "overall" | "tech" | "project" | "location" | "fresh" | "source" | "evidence";
@@ -54,6 +56,7 @@ export interface ScoredCandidate {
   experienceYears: number | null;
   matchScore: number;
   profile?: MultiDimensionProfile;
+  matchStrength?: MatchStrength;
   matchReason?: string;
   queryReasons?: string[];
   // P0: Source & Freshness visibility

@@ -7,6 +7,7 @@ import {
   ExportArtifact,
   ExportFormat,
   ExportTarget,
+  MatchStrength,
   ResultListCommand,
   ScoredCandidate,
   SearchConditions,
@@ -144,6 +145,7 @@ export class TerminalUI {
       const isInPool = poolMembers.has(candidate.personId);
       const sourceBadge = this.formatSourceBadge(candidate.sources);
       const freshness = this.formatFreshness(candidate.latestEvidenceAt, candidate.lastSyncedAt);
+      const matchStrengthBadge = this.formatMatchStrengthBadge(candidate.matchStrength);
       const linePrefix = isSelected ? chalk.cyanBright("❯") : " ";
       const detailPrefix = isSelected ? chalk.cyan("│") : " ";
       const nameLabel = isSelected
@@ -155,7 +157,7 @@ export class TerminalUI {
         : "";
 
       lines.push(
-        `${linePrefix} ${chalk.bold(`${index + 1}.`)} ${nameLabel}  ${chalk.green(candidate.matchScore.toFixed(1))}  ${sourceBadge} ${freshness}${poolBadge ? ` ${poolBadge}` : ""}`
+        `${linePrefix} ${chalk.bold(`${index + 1}.`)} ${nameLabel}  ${chalk.green(candidate.matchScore.toFixed(1))}  ${matchStrengthBadge} ${sourceBadge} ${freshness}${poolBadge ? ` ${poolBadge}` : ""}`
       );
       lines.push(`${detailPrefix} ${chalk.dim(candidate.location || "地点未知")} · ${candidate.headline || "No headline"}`);
       if (linkHint) {
@@ -195,6 +197,18 @@ export class TerminalUI {
     });
 
     return badges.join(" ");
+  }
+
+  private formatMatchStrengthBadge(matchStrength?: MatchStrength): string {
+    if (matchStrength === "strong") {
+      return chalk.bgGreen.black(" 强匹配 ");
+    }
+
+    if (matchStrength === "medium") {
+      return chalk.bgYellow.black(" 中匹配 ");
+    }
+
+    return chalk.bgRed.white(" 弱匹配 ");
   }
 
   private formatFreshness(latestEvidence?: Date, lastSynced?: Date): string {
