@@ -290,7 +290,7 @@ describe("TerminalRenderer", () => {
         matchStrength: "medium",
         conditionAudit: [
           { label: "地点", status: "met", detail: "命中 杭州" },
-          { label: "来源偏好", status: "unmet", detail: "当前来源为 Bonjour" },
+          { label: "来源过滤", status: "unmet", detail: "当前来源为 Bonjour" },
           { label: "技能 cuda", status: "unknown", detail: "当前资料未明确提到 cuda" }
         ],
         sources: ["Bonjour"]
@@ -311,7 +311,7 @@ describe("TerminalRenderer", () => {
         queryReasons: ["技术命中：python", "地点命中：杭州"],
         conditionAudit: [
           { label: "地点", status: "met", detail: "命中 杭州" },
-          { label: "来源偏好", status: "unmet", detail: "当前来源为 Bonjour" },
+          { label: "来源过滤", status: "unmet", detail: "当前来源为 Bonjour" },
           { label: "技能 cuda", status: "unknown", detail: "当前资料未明确提到 cuda" }
         ],
         sources: ["Bonjour"]

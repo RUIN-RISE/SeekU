@@ -137,7 +137,7 @@ ${searchLens}
       conditions.skills.length > 0 ? `技能：${conditions.skills.join(" / ")}` : "",
       conditions.locations.length > 0 ? `地点：${conditions.locations.join(" / ")}` : "",
       conditions.experience ? `经验：${conditions.experience}` : "",
-      conditions.sourceBias ? `来源偏好：${conditions.sourceBias}` : "",
+      conditions.sourceBias ? `来源过滤：${conditions.sourceBias}` : "",
       conditions.mustHave.length > 0 ? `必须项：${conditions.mustHave.join(" / ")}` : "",
       conditions.niceToHave.length > 0 ? `优先项：${conditions.niceToHave.join(" / ")}` : "",
       conditions.preferFresh ? "偏好：最近活跃" : ""

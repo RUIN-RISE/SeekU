@@ -66,7 +66,7 @@ export class TerminalUI {
     console.log(`- ${chalk.blue("地点")}：${conditions.locations.length > 0 ? conditions.locations.join(" / ") : chalk.dim("暂未限制")}`);
     console.log(`- ${chalk.blue("经验")}：${conditions.experience || chalk.dim("暂未限制")}`);
     if (conditions.sourceBias) {
-      console.log(`- ${chalk.blue("来源偏好")}：${conditions.sourceBias}`);
+      console.log(`- ${chalk.blue("来源过滤")}：${conditions.sourceBias}`);
     }
 
     if (missing.length > 0) {

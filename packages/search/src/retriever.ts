@@ -73,7 +73,7 @@ function buildMustHaveConditions(intent: QueryIntent): SQL[] {
     });
 }
 
-function buildFilterConditions(intent: QueryIntent, filters?: RetrieverFilters): SQL[] {
+export function buildFilterConditions(intent: QueryIntent, filters?: RetrieverFilters): SQL[] {
   const conditions: SQL[] = [eq(persons.searchStatus, "active")];
   const locations = uniqueLowercase([...(intent.locations ?? []), ...(filters?.locations ?? [])]);
   const sources = uniqueLowercase([
@@ -94,11 +94,9 @@ function buildFilterConditions(intent: QueryIntent, filters?: RetrieverFilters):
     conditions.push(sql`(${sql.join(locationClauses, sql.raw(" OR "))})`);
   }
 
-  // Source filter: TEMPORARILY DISABLED as facetSource is mostly empty
-  // TODO: Re-enable when facetSource coverage improves
-  // if (sources.length > 0) {
-  //   conditions.push(sql`${searchDocuments.facetSource} && ${toTextArray(sources)}`);
-  // }
+  if (sources.length > 0) {
+    conditions.push(sql`${searchDocuments.facetSource} && ${toTextArray(sources)}`);
+  }
 
   conditions.push(...buildMustHaveConditions(intent));
 

@@ -322,6 +322,44 @@ describe("SearchWorkflow shortlist command handling", () => {
     expect(result.type).toBe("continue");
   });
 
+  it("does not relax source filtering after an empty retrieval", async () => {
+    const workflow = new SearchWorkflow({} as any, {
+      embed: vi.fn(async () => ({ embedding: [0.1, 0.2, 0.3] }))
+    } as any);
+    const retrieve = vi.fn(async () => []);
+    const fallbackSearch = vi.fn(async () => []);
+
+    (workflow as any).planner = {
+      parse: vi.fn(async () => ({
+        rawQuery: "github python",
+        roles: [],
+        skills: ["python"],
+        locations: [],
+        mustHaves: [],
+        niceToHaves: [],
+        sourceBias: "github"
+      }))
+    };
+    (workflow as any).retriever = {
+      retrieve
+    };
+    (workflow as any).performFallbackSearch = fallbackSearch;
+    (workflow as any).mergeIntentWithConditions = vi.fn((intent: any) => intent);
+
+    const result = await (workflow as any).performSearch("github python", {
+      ...BASE_CONDITIONS,
+      sourceBias: "github"
+    });
+
+    expect(retrieve).toHaveBeenCalledTimes(1);
+    expect(retrieve).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceBias: "github" }),
+      expect.objectContaining({ embedding: [0.1, 0.2, 0.3] })
+    );
+    expect(fallbackSearch).toHaveBeenCalledWith(expect.objectContaining({ sourceBias: "github" }));
+    expect(result).toEqual([]);
+  });
+
   it("exports pool records with comparison metadata", async () => {
     const { workflow, handleShortlistCommand, mockExporter, mockTui } = createWorkflowHarness();
     const first = createCandidate({
@@ -659,7 +697,7 @@ describe("buildConditionAudit", () => {
         expect.objectContaining({ label: "角色", status: "met" }),
         expect.objectContaining({ label: "技能 python", status: "met" }),
         expect.objectContaining({ label: "技能 cuda", status: "unknown" }),
-        expect.objectContaining({ label: "来源偏好", status: "unmet" })
+        expect.objectContaining({ label: "来源过滤", status: "unmet" })
       ])
     );
   });

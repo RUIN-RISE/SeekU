@@ -35,7 +35,7 @@ Rules:
 - Roles are titles or functions.
 - Skills are technologies, domains, or methods.
 - Locations are cities, countries, or regions.
-- sourceBias is only a source preference explicitly mentioned by the user.
+- sourceBias is an explicit source restriction mentioned by the user.
 - Put hard requirements in mustHaves and preferences in niceToHaves.
 - If something is not clearly present, return an empty array or null.
 
@@ -176,12 +176,6 @@ function heuristicIntent(query: string): QueryIntent {
     }
   }
 
-  for (const source of SOURCE_HINTS) {
-    if (normalized.includes(source)) {
-      mustHaves.add(source);
-    }
-  }
-
   const locationMatches = normalized.match(
     /(beijing|shanghai|shenzhen|hangzhou|guangzhou|china|singapore|remote|北京|上海|深圳|杭州|广州|中国|新加坡|远程)/g
   );
@@ -205,8 +199,10 @@ function heuristicIntent(query: string): QueryIntent {
 }
 
 function sanitizeIntent(query: string, parsed: Record<string, unknown> | null): QueryIntent {
+  const heuristic = heuristicIntent(query);
+
   if (!parsed) {
-    return heuristicIntent(query);
+    return heuristic;
   }
 
   return {
@@ -215,8 +211,13 @@ function sanitizeIntent(query: string, parsed: Record<string, unknown> | null): 
     skills: normalizeList(parsed.skills),
     locations: normalizeList(parsed.locations),
     experienceLevel:
-      typeof parsed.experienceLevel === "string" ? parsed.experienceLevel.toLowerCase() : undefined,
-    sourceBias: typeof parsed.sourceBias === "string" ? parsed.sourceBias.toLowerCase() : undefined,
+      typeof parsed.experienceLevel === "string"
+        ? parsed.experienceLevel.toLowerCase()
+        : heuristic.experienceLevel,
+    sourceBias:
+      typeof parsed.sourceBias === "string" && parsed.sourceBias.trim()
+        ? parsed.sourceBias.toLowerCase()
+        : heuristic.sourceBias,
     mustHaves: normalizeList(parsed.mustHaves),
     niceToHaves: normalizeList(parsed.niceToHaves)
   };

@@ -14,7 +14,7 @@ const mockClassifyMatchStrength = vi.fn((score: number, reasons: string[]) =>
 const mockBuildResultWarning = vi.fn((results: Array<{ matchStrength: string }>) =>
   results.some((result) => result.matchStrength === "strong")
     ? undefined
-    : "没有找到强匹配，只找到了弱相关候选人。建议继续补充必须项、关键技术或来源偏好。"
+    : "没有找到强匹配，只找到了弱相关候选人。建议继续补充必须项、关键技术或放宽来源过滤。"
 );
 const mockFormatSourceLabel = vi.fn((source?: string) => {
   if (source === "bonjour") return "Bonjour";

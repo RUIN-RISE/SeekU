@@ -427,7 +427,7 @@ export function buildQueryMatchExplanation(
   if (conditions.sourceBias) {
     const preferredSource = conditions.sourceBias === "bonjour" ? "Bonjour" : "GitHub";
     if (options.sources?.includes(preferredSource)) {
-      pushReason(`来源偏好命中：${preferredSource}`);
+      pushReason(`来源过滤命中：${preferredSource}`);
     }
   }
 
@@ -486,7 +486,7 @@ function categorizeReason(reason: string): "substantive" | "supportive" | "gener
 
   if (
     reason.startsWith("地点命中：") ||
-    reason.startsWith("来源偏好命中：") ||
+    reason.startsWith("来源过滤命中：") ||
     reason.startsWith("近期活跃：")
   ) {
     return "supportive";
@@ -544,10 +544,10 @@ export function buildResultWarning(
   }
 
   if (candidates.some((candidate) => candidate.matchStrength === "medium")) {
-    return "没有找到强匹配，当前结果以中等相关候选人为主。建议继续补充必须项、关键技术或来源偏好。";
+    return "没有找到强匹配，当前结果以中等相关候选人为主。建议继续补充必须项、关键技术或放宽来源过滤。";
   }
 
-  return "没有找到强匹配，只找到了弱相关候选人。建议继续补充必须项、关键技术或来源偏好。";
+  return "没有找到强匹配，只找到了弱相关候选人。建议继续补充必须项、关键技术或放宽来源过滤。";
 }
 
 function buildFullMatchReason(candidate: Pick<ScoredCandidate, "queryReasons" | "matchReason">) {
@@ -701,13 +701,13 @@ export function buildConditionAudit(
   if (conditions.sourceBias) {
     const expectedSource = conditions.sourceBias === "bonjour" ? "Bonjour" : "GitHub";
     if (options.sources?.includes(expectedSource)) {
-      audit.push(buildConditionAuditItem("来源偏好", "met", `命中 ${expectedSource}`));
+      audit.push(buildConditionAuditItem("来源过滤", "met", `命中 ${expectedSource}`));
     } else if (options.sources && hasKnownSources(options.sources)) {
       audit.push(
-        buildConditionAuditItem("来源偏好", "unmet", `当前来源为 ${options.sources.join(" / ")}`)
+        buildConditionAuditItem("来源过滤", "unmet", `当前来源为 ${options.sources.join(" / ")}`)
       );
     } else {
-      audit.push(buildConditionAuditItem("来源偏好", "unknown", "暂无来源证据"));
+      audit.push(buildConditionAuditItem("来源过滤", "unknown", "暂无来源证据"));
     }
   }
 
@@ -1613,10 +1613,6 @@ export class SearchWorkflow {
     const queryEmbedding = await this.llmProvider.embed(intent.rawQuery);
 
     let retrieved = await this.retriever.retrieve(intent, { embedding: queryEmbedding.embedding });
-    if (retrieved.length === 0 && conditions.sourceBias) {
-      const relaxedIntent = { ...intent, sourceBias: undefined };
-      retrieved = await this.retriever.retrieve(relaxedIntent, { embedding: queryEmbedding.embedding });
-    }
 
     if (retrieved.length === 0) {
       return this.performFallbackSearch(conditions);
@@ -1795,6 +1791,10 @@ export class SearchWorkflow {
           sql`(${persons.primaryLocation} ILIKE ${`%${location}%`} OR ${searchDocuments.facetLocation}::text ILIKE ${`%${location}%`})`
       );
       filters.push(sql`(${sql.join(locationClauses, sql.raw(" OR "))})`);
+    }
+
+    if (conditions.sourceBias) {
+      filters.push(sql`${searchDocuments.facetSource} && ARRAY[${conditions.sourceBias}]::text[]`);
     }
 
     const rows = await this.db
@@ -2352,7 +2352,7 @@ export class SearchWorkflow {
     }
 
     if (conditions?.sourceBias && candidate.sources.includes(conditions.sourceBias === "bonjour" ? "Bonjour" : "GitHub")) {
-      reasons.push(`贴合当前来源偏好`);
+      reasons.push("满足当前来源过滤");
     }
 
     if (candidate.latestEvidenceAt || candidate.lastSyncedAt) {
