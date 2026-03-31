@@ -23,6 +23,7 @@ import {
 } from "@seeku/workers";
 
 import { runBonjourSyncJob } from "./index.js";
+import { runCoverageCli } from "./cli/coverage.js";
 import { runSearchCli, runShowCli } from "./search-cli.js";
 import { runInteractiveSearch } from "./cli/index.js";
 
@@ -83,6 +84,7 @@ async function main() {
     "search-index",
     "search-embeddings",
     "rebuild-search",
+    "coverage",
     "search",
     "show"
   ]);
@@ -187,6 +189,10 @@ async function main() {
       .map((value) => value.trim())
       .filter(Boolean);
     result = await runSearchRebuildWorker(personIds);
+  } else if (command === "coverage") {
+    result = await runCoverageCli({
+      json: parsed.flags.has("json")
+    });
   } else if (command === "search") {
     const query = parsed.args.get("query") ?? parsed.positionals[0] ?? "";
     const limit = Number(parsed.args.get("limit") ?? "10");
@@ -215,6 +221,10 @@ async function main() {
     
     console.log(chalk.yellow("\nSync Commands (Pipeline):"));
     console.log(`  ${chalk.dim("sync-bonjour, sync-github, resolve-identities, store-evidence, backfill-person-fields, repair-source-payloads, ...")}`);
+
+    console.log(chalk.yellow("\nMaintenance Commands:"));
+    console.log(`  ${chalk.cyan("coverage")}             输出当前 active/indexed/embedded/multi-source/GitHub 覆盖率`);
+    console.log(`  ${chalk.cyan("rebuild-search")}       全量重建 active persons 的 search documents + embeddings`);
 
     console.log(chalk.yellow("\nOptions:"));
     console.log(`  ${chalk.dim("--limit <num>")}         设置返回结果数量 (默认: 10)`);
