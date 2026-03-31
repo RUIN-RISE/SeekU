@@ -216,6 +216,53 @@ describe("TerminalRenderer", () => {
     expect(whyOutput).toContain("没有找到强匹配");
   });
 
+  it("renders complete evidence cards in detail view", () => {
+    const output = renderer.renderProfile(
+      {
+        id: "person-4",
+        primaryName: "Mina",
+        primaryHeadline: "ML Infrastructure Engineer"
+      } as any,
+      [
+        {
+          personId: "person-4",
+          evidenceType: "repository",
+          title: "python serving toolkit",
+          description: "Built python-based inference tooling",
+          source: "github",
+          url: "https://github.com/mina/serving-toolkit",
+          occurredAt: new Date("2026-03-29T00:00:00.000Z")
+        }
+      ] as any,
+      {
+        dimensions: {
+          techMatch: 88,
+          locationMatch: 70,
+          careerStability: 72,
+          projectDepth: 82,
+          academicImpact: 28,
+          communityReputation: 44
+        },
+        overallScore: 80,
+        summary: "持续做推理基础设施与工程平台。",
+        highlights: ["维护线上 serving 工具链"]
+      },
+      "技术命中：python",
+      {
+        queryReasons: ["技术命中：python"],
+        matchStrength: "strong",
+        sources: ["GitHub"]
+      }
+    );
+
+    expect(output).toContain("[证据 1]");
+    expect(output).toContain("来源：GitHub · repository");
+    expect(output).toContain("标题：python serving toolkit");
+    expect(output).toContain("时间：2天前");
+    expect(output).toContain("URL：https://github.com/mina/serving-toolkit");
+    expect(output).toContain("为什么相关：提到技术 python");
+  });
+
   it("renders tri-state condition audit in detail and why views", () => {
     const detailOutput = renderer.renderProfile(
       {

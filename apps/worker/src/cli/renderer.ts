@@ -128,14 +128,7 @@ ${chalk.bold("核心亮点：")}
 ${highlightSection}
 
 ${chalk.bold("最新相关证据：")}
-${
-  evidence.length > 0
-    ? evidence
-        .slice(0, 5)
-        .map((item) => chalk.cyan("[证据] ") + chalk.dim(`[${item.evidenceType}] `) + (item.title || "无标题"))
-        .join("\n")
-    : chalk.dim("[无近期的相关证据或开源记录]")
-}
+${this.renderEvidenceCards(evidence, extra?.queryReasons)}
 
 ${chalk.dim("下一步：back 返回 | o 打开 Bonjour | why 评分依据 | refine 收敛 | q 退出")}
     `;
@@ -281,6 +274,106 @@ ${chalk.dim("下一步：back 返回 | o 打开 Bonjour | why 评分依据 | ref
     return links
       .map((link) => chalk.cyan(`  🔗 ${link.label}：${link.url}`))
       .join("\n");
+  }
+
+  private renderEvidenceCards(evidence: EvidenceItem[], queryReasons?: string[]) {
+    if (evidence.length === 0) {
+      return chalk.dim("[无近期的相关证据或开源记录]");
+    }
+
+    return evidence
+      .slice(0, 5)
+      .map((item, index) => {
+        const timeLabel = item.occurredAt ? this.formatDate(item.occurredAt) : "未知";
+        const urlLabel = item.url?.trim() || "无";
+        const title = item.title?.trim() || item.description?.trim() || "无标题";
+
+        return [
+          chalk.cyan(`  [证据 ${index + 1}]`),
+          `  来源：${this.formatEvidenceSource(item.source)} · ${item.evidenceType}`,
+          `  标题：${title}`,
+          `  时间：${timeLabel}`,
+          `  URL：${urlLabel}`,
+          `  为什么相关：${this.describeEvidenceRelevance(item, queryReasons)}`
+        ].join("\n");
+      })
+      .join(`\n${chalk.dim("  " + "─".repeat(48))}\n`);
+  }
+
+  private formatEvidenceSource(source?: string) {
+    if (source === "bonjour") {
+      return "Bonjour";
+    }
+
+    if (source === "github") {
+      return "GitHub";
+    }
+
+    if (source === "web") {
+      return "Web";
+    }
+
+    return source || "未知";
+  }
+
+  private describeEvidenceRelevance(item: EvidenceItem, queryReasons?: string[]) {
+    const text = `${item.title || ""} ${item.description || ""}`.toLowerCase();
+
+    for (const reason of queryReasons || []) {
+      if (reason.startsWith("技术命中：")) {
+        const matched = this.extractReasonTerms(reason).filter((term) => text.includes(term.toLowerCase()));
+        if (matched.length > 0) {
+          return `提到技术 ${matched.join(" / ")}`;
+        }
+      }
+
+      if (reason.startsWith("必须项满足：")) {
+        const matched = this.extractReasonTerms(reason).filter((term) => text.includes(term.toLowerCase()));
+        if (matched.length > 0) {
+          return `覆盖必须项 ${matched.join(" / ")}`;
+        }
+      }
+
+      if (reason.startsWith("角色贴合：")) {
+        const matched = this.extractReasonTerms(reason).find((term) => text.includes(term.toLowerCase()));
+        if (matched) {
+          return `体现角色 ${matched}`;
+        }
+      }
+
+      if (reason.startsWith("地点命中：")) {
+        const matched = this.extractReasonTerms(reason).find((term) => text.includes(term.toLowerCase()));
+        if (matched) {
+          return `提到地点 ${matched}`;
+        }
+      }
+    }
+
+    if (item.evidenceType === "repository") {
+      return item.source === "github" ? "提供了可验证的 GitHub 作品" : "提供了可验证的仓库证据";
+    }
+
+    if (item.evidenceType === "project") {
+      return "展示了与本次搜索相关的项目经历";
+    }
+
+    if (item.evidenceType === "experience" || item.evidenceType === "job_signal") {
+      return "补充了经历和职场信号";
+    }
+
+    if (item.evidenceType === "profile_field") {
+      return "补充了结构化资料字段";
+    }
+
+    return "补充了公开可见的相关线索";
+  }
+
+  private extractReasonTerms(reason: string) {
+    const [, rawValue = ""] = reason.split("：", 2);
+    return rawValue
+      .split("/")
+      .map((item) => item.trim())
+      .filter(Boolean);
   }
 
   private renderConditionAudit(conditionAudit?: ConditionAuditItem[]) {
