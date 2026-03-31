@@ -4,7 +4,7 @@ import {
   evidenceItems,
   inArray,
   isNull,
-  listAllPersons,
+  listActivePersons,
   lt,
   or,
   personIdentities,
@@ -83,7 +83,7 @@ export class SearchIndexWorker {
       return this.db.select().from(persons).where(inArray(persons.id, personIds));
     }
 
-    return listAllPersons(this.db, this.batchSize);
+    return listActivePersons(this.db);
   }
 
   private async loadEvidence(personIds: string[]) {

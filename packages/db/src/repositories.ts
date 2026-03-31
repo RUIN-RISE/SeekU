@@ -458,6 +458,20 @@ export async function listAllPersons(db: SeekuDatabase, limit = 100) {
   return db.select().from(persons).orderBy(desc(persons.updatedAt)).limit(limit);
 }
 
+export async function listActivePersons(db: SeekuDatabase, limit?: number) {
+  const query = db
+    .select()
+    .from(persons)
+    .where(eq(persons.searchStatus, "active"))
+    .orderBy(desc(persons.updatedAt));
+
+  if (typeof limit === "number") {
+    return query.limit(limit);
+  }
+
+  return query;
+}
+
 export async function createPersonIdentity(db: SeekuDatabase, input: CreatePersonIdentityInput) {
   const [identity] = await db
     .insert(personIdentities)
