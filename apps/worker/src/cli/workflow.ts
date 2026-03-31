@@ -121,8 +121,38 @@ function buildSearchStateContextValue(
     .toLowerCase();
 }
 
+function escapeRegExpValue(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function shouldUseWordBoundaryMatchValue(term: string): boolean {
+  return /[a-z0-9]/i.test(term)
+    && !/[^\w\s.-]/.test(term)
+    && /^[a-z0-9]/i.test(term)
+    && /[a-z0-9]$/i.test(term);
+}
+
+function contextHasTermValue(term: string, context: string): boolean {
+  const normalizedTerm = term.trim().toLowerCase();
+  if (!normalizedTerm) {
+    return false;
+  }
+
+  const normalizedContext = context.toLowerCase();
+  if (!shouldUseWordBoundaryMatchValue(normalizedTerm)) {
+    return normalizedContext.includes(normalizedTerm);
+  }
+
+  try {
+    const escapedTerm = escapeRegExpValue(normalizedTerm).replace(/\s+/g, "\\s+");
+    return new RegExp(`\\b${escapedTerm}\\b`, "i").test(normalizedContext);
+  } catch {
+    return normalizedContext.includes(normalizedTerm);
+  }
+}
+
 function findMatchedTermsValue(terms: string[], context: string): string[] {
-  return terms.filter((term) => context.includes(term.toLowerCase()));
+  return terms.filter((term) => contextHasTermValue(term, context));
 }
 
 function getMatchedLocationsValue(
@@ -209,7 +239,7 @@ function buildRelevantEvidenceReasonValue(
 
     const text = `${item.title || ""} ${item.description || ""}`.toLowerCase();
     if (conditions.skills.length > 0) {
-      return conditions.skills.some((skill) => text.includes(skill.toLowerCase()));
+      return conditions.skills.some((skill) => contextHasTermValue(skill, text));
     }
 
     return item.evidenceType === "project" || item.evidenceType === "repository";
@@ -406,7 +436,7 @@ export function buildQueryMatchExplanation(
     pushReason(`地点命中：${matchedLocations.slice(0, 2).join(" / ")}`);
   }
 
-  if (conditions.role && context.includes(conditions.role.toLowerCase())) {
+  if (conditions.role && contextHasTermValue(conditions.role, context)) {
     pushReason(`角色贴合：${conditions.role}`);
   }
 
@@ -659,7 +689,7 @@ export function buildConditionAudit(
   }
 
   if (conditions.role) {
-    if (context.includes(conditions.role.toLowerCase())) {
+    if (contextHasTermValue(conditions.role, context)) {
       audit.push(buildConditionAuditItem("角色", "met", `命中 ${conditions.role}`));
     } else if (hasStructuredRoleEvidence(person, document, evidence)) {
       audit.push(buildConditionAuditItem("角色", "unmet", `当前资料未显示 ${conditions.role}`));
@@ -669,7 +699,7 @@ export function buildConditionAudit(
   }
 
   for (const skill of conditions.skills) {
-    if (context.includes(skill.toLowerCase())) {
+    if (contextHasTermValue(skill, context)) {
       audit.push(buildConditionAuditItem(`技能 ${skill}`, "met", `命中 ${skill}`));
     } else if (hasStructuredTextEvidence(person, document, evidence)) {
       audit.push(buildConditionAuditItem(`技能 ${skill}`, "unknown", `当前资料未明确提到 ${skill}`));
@@ -679,7 +709,7 @@ export function buildConditionAudit(
   }
 
   for (const term of conditions.mustHave) {
-    if (context.includes(term.toLowerCase())) {
+    if (contextHasTermValue(term, context)) {
       audit.push(buildConditionAuditItem(`必须项 ${term}`, "met", `命中 ${term}`));
     } else if (hasStructuredTextEvidence(person, document, evidence)) {
       audit.push(buildConditionAuditItem(`必须项 ${term}`, "unknown", `当前资料未明确提到 ${term}`));
@@ -1949,17 +1979,17 @@ export class SearchWorkflow {
       score += sourceMatched ? 10 : 0;
     }
 
-    if (conditions.role && context.includes(conditions.role.toLowerCase())) {
+    if (conditions.role && contextHasTermValue(conditions.role, context)) {
       score += 15;
     }
 
     if (conditions.skills.length > 0) {
-      const matchedSkills = conditions.skills.filter((skill) => context.includes(skill.toLowerCase()));
+      const matchedSkills = conditions.skills.filter((skill) => contextHasTermValue(skill, context));
       score += Math.round((matchedSkills.length / conditions.skills.length) * 25);
     }
 
     if (conditions.niceToHave.length > 0) {
-      const matchedNiceToHave = conditions.niceToHave.filter((term) => context.includes(term.toLowerCase()));
+      const matchedNiceToHave = conditions.niceToHave.filter((term) => contextHasTermValue(term, context));
       score += Math.min(10, matchedNiceToHave.length * 4);
     }
 
@@ -1976,7 +2006,7 @@ export class SearchWorkflow {
 
     if (conditions.mustHave.length > 0) {
       const hasMissingMustHave = conditions.mustHave.some(
-        (term) => !context.includes(term.toLowerCase())
+        (term) => !contextHasTermValue(term, context)
       );
       if (hasMissingMustHave) {
         return false;
@@ -1985,7 +2015,7 @@ export class SearchWorkflow {
 
     if (conditions.exclude.length > 0) {
       const hasExcludedTerm = conditions.exclude.some(
-        (term) => context.includes(term.toLowerCase())
+        (term) => contextHasTermValue(term, context)
       );
       if (hasExcludedTerm) {
         return false;
@@ -2083,7 +2113,7 @@ export class SearchWorkflow {
   }
 
   private findMatchedTerms(terms: string[], context: string): string[] {
-    return terms.filter((term) => context.includes(term.toLowerCase()));
+    return terms.filter((term) => contextHasTermValue(term, context));
   }
 
   private translateRetrievalReason(reason: string): string | undefined {
@@ -2134,7 +2164,7 @@ export class SearchWorkflow {
 
       const text = `${item.title || ""} ${item.description || ""}`.toLowerCase();
       if (conditions.skills.length > 0) {
-        return conditions.skills.some((skill) => text.includes(skill.toLowerCase()));
+        return conditions.skills.some((skill) => contextHasTermValue(skill, text));
       }
 
       return item.evidenceType === "project" || item.evidenceType === "repository";

@@ -533,6 +533,42 @@ describe("buildQueryMatchExplanation", () => {
     expect(explanation.reasons).toContain("语义相似度高");
     expect(explanation.reasons).toContain("关键词重合度高");
   });
+
+  it('does not match ASCII terms inside unrelated words like "FAIL"', () => {
+    const explanation = buildQueryMatchExplanation(
+      {
+        primaryName: "Ada",
+        primaryHeadline: "FAIL pipeline maintainer",
+        primaryLocation: "杭州",
+        summary: "Maintains failover systems"
+      },
+      {
+        docText: "Keeps FAIL-safe backend services reliable",
+        facetRole: ["backend"],
+        facetTags: ["reliability"],
+        facetLocation: ["杭州"]
+      },
+      [],
+      {
+        skills: ["AI"],
+        locations: [],
+        experience: undefined,
+        role: undefined,
+        sourceBias: undefined,
+        mustHave: [],
+        niceToHave: [],
+        exclude: [],
+        preferFresh: false,
+        candidateAnchor: undefined,
+        limit: 10
+      },
+      {
+        score: 0.32
+      }
+    );
+
+    expect(explanation.reasons).not.toContain("技术命中：AI");
+  });
 });
 
 describe("buildCandidateSourceMetadata", () => {
@@ -698,6 +734,48 @@ describe("buildConditionAudit", () => {
         expect.objectContaining({ label: "技能 python", status: "met" }),
         expect.objectContaining({ label: "技能 cuda", status: "unknown" }),
         expect.objectContaining({ label: "来源过滤", status: "unmet" })
+      ])
+    );
+  });
+
+  it('does not mark "AI" as met when the context only contains "FAIL"', () => {
+    const audit = buildConditionAudit(
+      {
+        primaryName: "Ada",
+        primaryHeadline: "FAIL pipeline maintainer",
+        primaryLocation: "杭州",
+        summary: "Maintains failover systems"
+      },
+      {
+        docText: "Keeps FAIL-safe backend services reliable",
+        facetRole: ["backend"],
+        facetTags: ["reliability"],
+        facetLocation: ["杭州"]
+      },
+      [],
+      {
+        skills: ["AI"],
+        locations: [],
+        experience: undefined,
+        role: undefined,
+        sourceBias: undefined,
+        mustHave: [],
+        niceToHave: [],
+        exclude: [],
+        preferFresh: false,
+        candidateAnchor: undefined,
+        limit: 10
+      }
+    );
+
+    expect(audit).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: "技能 AI", status: "unknown" })
+      ])
+    );
+    expect(audit).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: "技能 AI", status: "met" })
       ])
     );
   });
