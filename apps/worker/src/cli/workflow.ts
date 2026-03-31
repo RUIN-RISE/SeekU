@@ -18,6 +18,7 @@ import {
 } from "@seeku/db";
 import type { LLMProvider } from "@seeku/llm";
 import { QueryPlanner, HybridRetriever, Reranker, type QueryIntent } from "@seeku/search";
+import { classifyMatchStrength } from "@seeku/shared";
 import { createHash } from "node:crypto";
 import chalk from "chalk";
 import ora, { type Ora } from "ora";
@@ -36,7 +37,6 @@ import {
   ConditionAuditItem,
   ConditionAuditStatus,
   ExportCandidateRecord,
-  MatchStrength,
   MultiDimensionProfile,
   ResultListCommand,
   ScoredCandidate,
@@ -65,6 +65,8 @@ interface DetailOutcome {
   type: "back" | "refine" | "quit";
   prompt?: string;
 }
+
+export { classifyMatchStrength };
 
 export interface QueryMatchExplanation {
   summary: string;
@@ -483,83 +485,6 @@ export function buildQueryMatchExplanation(
     summary: reasons.slice(0, 2).join("，"),
     reasons
   };
-}
-
-function normalizeMatchScoreValue(score: number) {
-  if (!Number.isFinite(score)) {
-    return 0;
-  }
-
-  if (score > 1) {
-    return Math.max(0, Math.min(score / 100, 1));
-  }
-
-  return Math.max(0, Math.min(score, 1));
-}
-
-function categorizeReason(reason: string): "substantive" | "supportive" | "generic" {
-  if (
-    reason.startsWith("技术命中：") ||
-    reason.startsWith("必须项满足：") ||
-    reason.startsWith("角色贴合：") ||
-    reason.startsWith("经验层级贴合：") ||
-    reason.startsWith("检索技能命中：") ||
-    reason.startsWith("检索必须项命中：") ||
-    reason.startsWith("检索角色命中：") ||
-    reason.startsWith("相关证据：") ||
-    reason.startsWith("相关项目：") ||
-    reason === "语义相似度高" ||
-    reason === "关键词重合度高"
-  ) {
-    return "substantive";
-  }
-
-  if (
-    reason.startsWith("地点命中：") ||
-    reason.startsWith("来源过滤命中：") ||
-    reason.startsWith("近期活跃：")
-  ) {
-    return "supportive";
-  }
-
-  return "generic";
-}
-
-export function classifyMatchStrength(score: number, reasons: string[]): MatchStrength {
-  const normalizedScore = normalizeMatchScoreValue(score);
-  const normalizedReasons = reasons.map((reason) => reason.trim()).filter(Boolean);
-  const substantiveCount = normalizedReasons.filter(
-    (reason) => categorizeReason(reason) === "substantive"
-  ).length;
-  const supportiveCount = normalizedReasons.filter(
-    (reason) => categorizeReason(reason) === "supportive"
-  ).length;
-
-  if (substantiveCount >= 2) {
-    return "strong";
-  }
-
-  if (substantiveCount >= 1 && normalizedScore >= 0.55) {
-    return "strong";
-  }
-
-  if (substantiveCount >= 1) {
-    return "medium";
-  }
-
-  if (supportiveCount >= 2 && normalizedScore >= 0.45) {
-    return "medium";
-  }
-
-  if (supportiveCount >= 1 && normalizedScore >= 0.55) {
-    return "medium";
-  }
-
-  if (normalizedScore >= 0.7 && normalizedReasons.length > 0) {
-    return "medium";
-  }
-
-  return "weak";
 }
 
 export function buildResultWarning(

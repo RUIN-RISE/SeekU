@@ -197,6 +197,81 @@ describe("API Server", () => {
         await localServer.close();
       }
     });
+
+    it("POST /search should classify raw reranker reasons through shared logic", async () => {
+      const db = createMockSearchDb(new Map<unknown, unknown[]>([
+        [searchDocuments, [{
+          personId: "person-1",
+          docText: "Python builder in Hangzhou",
+          facetSource: ["github"],
+          facetLocation: ["杭州"],
+          facetRole: [],
+          facetTags: []
+        }]],
+        [evidenceItems, []],
+        [persons, [{
+          id: "person-1",
+          primaryName: "Ada",
+          primaryHeadline: "Python Builder"
+        }]]
+      ]));
+      const searchServices: SearchServices = {
+        provider: mockSearchServices.provider,
+        planner: {
+          parse: async (query: string) => ({
+            rawQuery: query,
+            roles: [],
+            skills: ["python"],
+            locations: [],
+            mustHaves: [],
+            niceToHaves: []
+          })
+        } as any,
+        retriever: {
+          retrieve: async () => [{ personId: "person-1", combinedScore: 0.82 }]
+        } as any,
+        reranker: {
+          rerank: () => [{
+            personId: "person-1",
+            keywordScore: 0,
+            vectorScore: 0,
+            combinedScore: 0.82,
+            matchedText: "Python builder in Hangzhou",
+            finalScore: 0.82,
+            evidenceBoost: 0,
+            freshnessPenalty: 1,
+            matchReasons: ["skill evidence: python"]
+          }]
+        } as any
+      };
+      const localServer = await buildApiServer({ db, searchServices });
+
+      try {
+        const response = await localServer.inject({
+          method: "POST",
+          url: "/search",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          payload: {
+            query: "python"
+          }
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toMatchObject({
+          total: 1,
+          results: [
+            {
+              personId: "person-1",
+              matchStrength: "strong"
+            }
+          ]
+        });
+      } finally {
+        await localServer.close();
+      }
+    });
   });
 
   describe("Profiles Endpoint", () => {

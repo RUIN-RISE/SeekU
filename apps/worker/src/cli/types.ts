@@ -1,3 +1,5 @@
+import type { MatchStrength } from "@seeku/shared";
+
 export interface SearchConditions {
   skills: string[];
   locations: string[];
@@ -18,7 +20,7 @@ export interface SearchCandidateAnchor {
   name?: string;
 }
 
-export type MatchStrength = "strong" | "medium" | "weak";
+export type { MatchStrength };
 export type ConditionAuditStatus = "met" | "unmet" | "unknown";
 
 export interface ConditionAuditItem {

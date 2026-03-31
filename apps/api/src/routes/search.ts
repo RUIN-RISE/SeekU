@@ -20,6 +20,7 @@ import {
   type RerankResult,
   type RetrieverFilters
 } from "@seeku/search";
+import { classifyMatchStrength, type MatchStrength } from "@seeku/shared";
 
 interface SearchRequestBody {
   query: string;
@@ -36,7 +37,7 @@ interface SearchResultCard {
   name: string;
   headline: string | null;
   matchScore: number;
-  matchStrength: "strong" | "medium" | "weak";
+  matchStrength: MatchStrength;
   matchReasons: string[];
   evidencePreview: Array<{
     type: string;
@@ -149,49 +150,6 @@ function groupEvidence(items: EvidenceItem[]): Map<string, EvidenceItem[]> {
   return grouped;
 }
 
-function normalizeMatchScore(score: number) {
-  if (!Number.isFinite(score)) {
-    return 0;
-  }
-
-  if (score > 1) {
-    return Math.max(0, Math.min(score / 100, 1));
-  }
-
-  return Math.max(0, Math.min(score, 1));
-}
-
-function classifyApiMatchStrength(result: RerankResult): "strong" | "medium" | "weak" {
-  const score = normalizeMatchScore(result.finalScore);
-  const reasons = result.matchReasons.map((reason) => reason.trim()).filter(Boolean);
-  const substantiveCount = reasons.filter((reason) =>
-    reason.startsWith("role match:") ||
-    reason.startsWith("skill evidence:") ||
-    reason.startsWith("must-have matched:") ||
-    reason.startsWith("project:") ||
-    reason === "strong semantic similarity" ||
-    reason === "strong keyword overlap"
-  ).length;
-
-  if (substantiveCount >= 2) {
-    return "strong";
-  }
-
-  if (substantiveCount >= 1 && score >= 0.55) {
-    return "strong";
-  }
-
-  if (substantiveCount >= 1) {
-    return "medium";
-  }
-
-  if (score >= 0.7 && reasons.length > 0) {
-    return "medium";
-  }
-
-  return "weak";
-}
-
 function buildApiResultWarning(results: Array<Pick<SearchResultCard, "matchStrength">>) {
   if (results.length === 0 || results.some((result) => result.matchStrength === "strong")) {
     return undefined;
@@ -214,7 +172,7 @@ function buildResponseCard(
     name: person?.primaryName ?? "Unknown",
     headline: person?.primaryHeadline ?? null,
     matchScore: result.finalScore,
-    matchStrength: classifyApiMatchStrength(result),
+    matchStrength: classifyMatchStrength(result.finalScore, result.matchReasons),
     matchReasons:
       result.matchReasons.length > 0
         ? result.matchReasons
