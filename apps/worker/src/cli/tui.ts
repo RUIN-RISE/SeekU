@@ -44,7 +44,7 @@ export class TerminalUI {
    ┃   ${chalk.bold.white("Seeku CLI v1.1.0")}                                         ┃
    ┃   ${chalk.dim("人才搜索助手 - 从需求澄清到 shortlist 决策")}                       ┃
    ┃                                                                 ┃
-   ┃   ${chalk.dim("Data Source: ")}${chalk.cyan("Bonjour Cluster")} ${chalk.dim("|")} ${chalk.cyan("GitHub Engine")}                ┃
+   ┃   ${chalk.dim("Data Source: ")}${chalk.cyan("Bonjour 主资料")} ${chalk.dim("|")} ${chalk.cyan("GitHub 证据（部分覆盖）")}      ┃
    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
     `));
   }
