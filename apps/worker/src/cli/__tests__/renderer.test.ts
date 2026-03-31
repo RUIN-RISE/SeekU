@@ -98,6 +98,49 @@ describe("TerminalRenderer", () => {
     expect(output).toContain("长期做后端与数据系统建设");
   });
 
+  it("shows bonjour, github, website, and project links as first-class detail links", () => {
+    const output = renderer.renderProfile(
+      {
+        id: "person-1",
+        primaryName: "Ada",
+        primaryHeadline: "Python Backend Engineer"
+      } as any,
+      [],
+      {
+        dimensions: {
+          techMatch: 90,
+          locationMatch: 100,
+          careerStability: 75,
+          projectDepth: 80,
+          academicImpact: 55,
+          communityReputation: 60
+        },
+        overallScore: 84,
+        summary: "长期做后端与数据系统建设。",
+        highlights: ["主导过核心平台项目"]
+      },
+      "技术命中：python，地点命中：杭州",
+      {
+        queryReasons: ["技术命中：python", "地点命中：杭州"],
+        matchStrength: "strong",
+        sources: ["Bonjour", "GitHub", "Web"],
+        bonjourUrl: "https://bonjour.example/ada",
+        primaryLinks: [
+          { type: "bonjour", label: "Bonjour", url: "https://bonjour.example/ada" },
+          { type: "github", label: "GitHub", url: "https://github.com/ada" },
+          { type: "website", label: "个人站点", url: "https://ada.dev" },
+          { type: "project", label: "作品页：推理平台", url: "https://ada.dev/projects/inference" }
+        ]
+      }
+    );
+
+    expect(output).toContain("主链接");
+    expect(output).toContain("Bonjour：https://bonjour.example/ada");
+    expect(output).toContain("GitHub：https://github.com/ada");
+    expect(output).toContain("个人站点：https://ada.dev");
+    expect(output).toContain("作品页：推理平台：https://ada.dev/projects/inference");
+  });
+
   it("shows weak-result warning in detail and why views", () => {
     const detailOutput = renderer.renderProfile(
       {

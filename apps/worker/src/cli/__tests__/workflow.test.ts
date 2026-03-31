@@ -3,6 +3,7 @@ import type { MultiDimensionProfile, SearchConditions } from "../types.js";
 import {
   SearchWorkflow,
   buildConditionAudit,
+  buildCandidateSourceMetadata,
   buildQueryMatchExplanation,
   buildResultWarning,
   classifyMatchStrength
@@ -493,6 +494,42 @@ describe("buildQueryMatchExplanation", () => {
     expect(explanation.reasons).toContain("检索技能命中：python");
     expect(explanation.reasons).toContain("语义相似度高");
     expect(explanation.reasons).toContain("关键词重合度高");
+  });
+});
+
+describe("buildCandidateSourceMetadata", () => {
+  it("merges identity sources and promotes github, website, and project links", () => {
+    const metadata = buildCandidateSourceMetadata(
+      [
+        { sourceProfileId: "sp-bonjour" },
+        { sourceProfileId: "sp-github" },
+        { sourceProfileId: "sp-web" }
+      ] as any,
+      new Map([
+        ["sp-bonjour", { source: "bonjour", canonicalUrl: "https://bonjour.bio/ada" }],
+        ["sp-github", { source: "github", canonicalUrl: "https://github.com/ada" }],
+        ["sp-web", { source: "web", canonicalUrl: "https://ada.dev" }]
+      ]),
+      [
+        {
+          evidenceType: "project",
+          title: "Inference Platform",
+          description: "Production inference service",
+          url: "https://ada.dev/projects/inference",
+          occurredAt: new Date("2026-03-29T00:00:00.000Z")
+        }
+      ] as any,
+      ["bonjour"]
+    );
+
+    expect(metadata.sources).toEqual(["Bonjour", "GitHub", "Web"]);
+    expect(metadata.bonjourUrl).toBe("https://bonjour.bio/ada");
+    expect(metadata.primaryLinks).toEqual([
+      { type: "bonjour", label: "Bonjour", url: "https://bonjour.bio/ada" },
+      { type: "github", label: "GitHub", url: "https://github.com/ada" },
+      { type: "website", label: "个人站点", url: "https://ada.dev" },
+      { type: "project", label: "作品页：Inference Platform", url: "https://ada.dev/projects/inference" }
+    ]);
   });
 });
 

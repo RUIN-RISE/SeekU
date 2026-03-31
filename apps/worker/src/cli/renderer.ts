@@ -1,5 +1,6 @@
 import { Person, EvidenceItem, SearchDocument } from "@seeku/db";
 import {
+  CandidatePrimaryLink,
   ComparisonEntry,
   ConditionAuditItem,
   MatchStrength,
@@ -22,6 +23,7 @@ export class TerminalRenderer {
         matchStrength?: MatchStrength;
         sources?: string[];
         bonjourUrl?: string;
+        primaryLinks?: CandidatePrimaryLink[];
         lastSyncedAt?: Date;
       latestEvidenceAt?: Date;
       document?: SearchDocument;
@@ -68,9 +70,7 @@ export class TerminalRenderer {
         ).join(" ")
       : chalk.dim("来源未知");
 
-    const bonjourLine = extra?.bonjourUrl
-      ? chalk.cyan(`🔗 Bonjour 链接：${extra.bonjourUrl}`)
-      : chalk.dim("无 Bonjour 链接");
+    const primaryLinksSection = this.renderPrimaryLinks(extra?.primaryLinks, extra?.bonjourUrl);
 
     const lastSyncedLine = extra?.lastSyncedAt
       ? chalk.dim(`资料刷新：${this.formatDate(extra.lastSyncedAt)}`)
@@ -103,7 +103,8 @@ export class TerminalRenderer {
 ${header}
 
 ${chalk.bold("数据来源：")} ${sourceBadge}
-${bonjourLine}
+${chalk.bold("主链接：")}
+${primaryLinksSection}
 ${lastSyncedLine} | ${latestEvidenceLine}
 ${evidenceSourcesLine}
 ${matchStrengthLine}
@@ -264,6 +265,22 @@ ${chalk.dim("下一步：back 返回 | o 打开 Bonjour | why 评分依据 | ref
     }
 
     return chalk.bgRed.white(" 弱匹配 ");
+  }
+
+  private renderPrimaryLinks(primaryLinks?: CandidatePrimaryLink[], bonjourUrl?: string) {
+    const links = primaryLinks && primaryLinks.length > 0
+      ? primaryLinks
+      : bonjourUrl
+        ? [{ type: "bonjour", label: "Bonjour", url: bonjourUrl }]
+        : [];
+
+    if (links.length === 0) {
+      return chalk.dim("  暂无可打开的主链接");
+    }
+
+    return links
+      .map((link) => chalk.cyan(`  🔗 ${link.label}：${link.url}`))
+      .join("\n");
   }
 
   private renderConditionAudit(conditionAudit?: ConditionAuditItem[]) {

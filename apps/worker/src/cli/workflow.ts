@@ -30,6 +30,7 @@ import { HybridScoringEngine } from "./scorer.js";
 import { TerminalUI } from "./tui.js";
 import { withRetry } from "./retry.js";
 import {
+  CandidatePrimaryLink,
   ComparisonEntry,
   ComparisonEvidenceSummary,
   ConditionAuditItem,
@@ -245,6 +246,114 @@ export function formatSourceLabel(source?: string): string | undefined {
   }
 
   return source;
+}
+
+function normalizeUrlForDedupingValue(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    parsed.hash = "";
+    const pathname = parsed.pathname.replace(/\/+$/, "") || "/";
+    return `${parsed.protocol}//${parsed.host.toLowerCase()}${pathname}${parsed.search}`;
+  } catch {
+    return trimmed.replace(/\/+$/, "").toLowerCase();
+  }
+}
+
+function buildPrimaryProjectLinkLabelValue(
+  item: Pick<EvidenceItem, "evidenceType" | "title" | "description">,
+  index: number
+): string {
+  const headline = buildEvidenceHeadlineValue(item).trim();
+  if (!headline || headline === "未命名证据") {
+    return `作品页 ${index + 1}`;
+  }
+
+  return `作品页：${truncateDisplayValue(headline, 24)}`;
+}
+
+export function buildCandidateSourceMetadata(
+  identities: Array<Pick<PersonIdentity, "sourceProfileId">>,
+  sourceProfileMap: Map<string, Pick<SourceProfile, "source" | "canonicalUrl">>,
+  evidence: Array<Pick<EvidenceItem, "evidenceType" | "title" | "description" | "url" | "occurredAt">>,
+  documentSources: string[] = []
+): {
+  sources: string[];
+  bonjourUrl?: string;
+  primaryLinks: CandidatePrimaryLink[];
+} {
+  const normalizedSources = documentSources
+    .map((source) => formatSourceLabel(source) || source)
+    .filter(Boolean);
+  const identityProfiles = identities
+    .map((identity) => sourceProfileMap.get(identity.sourceProfileId))
+    .filter((profile): profile is Pick<SourceProfile, "source" | "canonicalUrl"> => Boolean(profile));
+  const identitySources = identityProfiles
+    .map((profile) => formatSourceLabel(profile.source))
+    .filter((value): value is string => Boolean(value));
+  const sources = [...new Set([...normalizedSources, ...identitySources])];
+
+  const primaryLinks: CandidatePrimaryLink[] = [];
+  const seenUrls = new Set<string>();
+  const addPrimaryLink = (type: CandidatePrimaryLink["type"], label: string, url?: string | null) => {
+    const trimmed = url?.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    const normalized = normalizeUrlForDedupingValue(trimmed);
+    if (!normalized || seenUrls.has(normalized)) {
+      return;
+    }
+
+    seenUrls.add(normalized);
+    primaryLinks.push({ type, label, url: trimmed });
+  };
+
+  const findProfileBySource = (source: SourceProfile["source"]) =>
+    identityProfiles.find((profile) => profile.source === source);
+
+  const bonjourUrl = findProfileBySource("bonjour")?.canonicalUrl;
+  addPrimaryLink("bonjour", "Bonjour", bonjourUrl);
+  addPrimaryLink("github", "GitHub", findProfileBySource("github")?.canonicalUrl);
+  addPrimaryLink("website", "个人站点", findProfileBySource("web")?.canonicalUrl);
+
+  const evidencePriority: Record<string, number> = {
+    project: 0,
+    repository: 1,
+    experience: 2
+  };
+  const projectLinks = evidence
+    .filter((item) =>
+      Boolean(item.url?.trim()) &&
+      (item.evidenceType === "project" || item.evidenceType === "repository" || item.evidenceType === "experience")
+    )
+    .sort((left, right) => {
+      const priorityDelta =
+        (evidencePriority[left.evidenceType] ?? 99) - (evidencePriority[right.evidenceType] ?? 99);
+      if (priorityDelta !== 0) {
+        return priorityDelta;
+      }
+
+      const leftTime = left.occurredAt?.getTime() ?? 0;
+      const rightTime = right.occurredAt?.getTime() ?? 0;
+      return rightTime - leftTime;
+    })
+    .slice(0, 2);
+
+  projectLinks.forEach((item, index) => {
+    addPrimaryLink("project", buildPrimaryProjectLinkLabelValue(item, index), item.url);
+  });
+
+  return {
+    sources: sources.length > 0 ? sources : bonjourUrl ? ["Bonjour"] : ["Unknown"],
+    bonjourUrl,
+    primaryLinks
+  };
 }
 
 export function describeRelativeDate(date: Date): string {
@@ -1262,6 +1371,7 @@ export class SearchWorkflow {
           matchStrength: selected.matchStrength,
           sources: selected.sources,
           bonjourUrl: selected.bonjourUrl,
+          primaryLinks: selected.primaryLinks,
           lastSyncedAt: selected.lastSyncedAt,
           latestEvidenceAt: selected.latestEvidenceAt
         }
@@ -1579,21 +1689,12 @@ export class SearchWorkflow {
       const candidateEvidence = evidenceMap.get(result.personId) || [];
       const personIdentities = identityMap.get(result.personId) || [];
 
-      // Find Bonjour URL from source profiles
-      const bonjourIdentity = personIdentities.find((identity) => {
-        const profile = sourceProfileMap.get(identity.sourceProfileId);
-        return profile?.source === "bonjour";
-      });
-      const bonjourUrl = bonjourIdentity
-        ? sourceProfileMap.get(bonjourIdentity.sourceProfileId)?.canonicalUrl
-        : undefined;
-
-      // Backfill source badge from identity-derived Bonjour URL when facetSource is sparse.
-      const sources = document?.facetSource && document.facetSource.length > 0
-        ? document.facetSource.map((source) => formatSourceLabel(source) || source)
-        : bonjourUrl
-          ? ["Bonjour"]
-          : ["Unknown"];
+      const { sources, bonjourUrl, primaryLinks } = buildCandidateSourceMetadata(
+        personIdentities,
+        sourceProfileMap,
+        candidateEvidence,
+        document?.facetSource ?? []
+      );
 
       // Latest evidence timestamp
       const latestEvidenceAt = candidateEvidence.length > 0
@@ -1638,6 +1739,7 @@ export class SearchWorkflow {
         conditionAudit,
         sources,
         bonjourUrl,
+        primaryLinks,
         lastSyncedAt: person.updatedAt,
         latestEvidenceAt,
         _hydrated: {
@@ -1751,20 +1853,12 @@ export class SearchWorkflow {
         const personIdentities = identityMap.get(person.id) || [];
         const heuristicScore = this.computeFallbackScore(person, document, candidateEvidence, conditions);
 
-        // Find Bonjour URL
-        const bonjourIdentity = personIdentities.find((identity) => {
-          const profile = sourceProfileMap.get(identity.sourceProfileId);
-          return profile?.source === "bonjour";
-        });
-        const bonjourUrl = bonjourIdentity
-          ? sourceProfileMap.get(bonjourIdentity.sourceProfileId)?.canonicalUrl
-          : undefined;
-
-        const sources = document.facetSource?.length > 0
-          ? document.facetSource.map((source) => formatSourceLabel(source) || source)
-          : bonjourUrl
-            ? ["Bonjour"]
-            : ["Unknown"];
+        const { sources, bonjourUrl, primaryLinks } = buildCandidateSourceMetadata(
+          personIdentities,
+          sourceProfileMap,
+          candidateEvidence,
+          document.facetSource ?? []
+        );
 
         // Latest evidence timestamp
         const latestEvidenceAt = candidateEvidence.length > 0
@@ -1808,6 +1902,7 @@ export class SearchWorkflow {
           conditionAudit,
           sources,
           bonjourUrl,
+          primaryLinks,
           lastSyncedAt: person.updatedAt,
           latestEvidenceAt,
           _hydrated: {

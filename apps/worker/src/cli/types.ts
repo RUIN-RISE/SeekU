@@ -54,6 +54,12 @@ export interface MultiDimensionProfile {
   summary: string;
 }
 
+export interface CandidatePrimaryLink {
+  type: "bonjour" | "github" | "website" | "project";
+  label: string;
+  url: string;
+}
+
 export interface ScoredCandidate {
   personId: string;
   name: string;
@@ -70,6 +76,7 @@ export interface ScoredCandidate {
   // P0: Source & Freshness visibility
   sources: string[]; // ["Bonjour", "GitHub", ...]
   bonjourUrl?: string; // Bonjour profile link
+  primaryLinks?: CandidatePrimaryLink[];
   lastSyncedAt?: Date; // When person data was last updated
   latestEvidenceAt?: Date; // Most recent evidence timestamp
 }
