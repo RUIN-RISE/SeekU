@@ -202,6 +202,7 @@ Plans:
 - [x] B4 — Restore hard source filter
 
 - [x] **Phase 06.1: Security & Quality Hardening** — Security lockdown, retry resilience, CLI registry, test foundation
+- [x] **Phase 06.2: Architecture & Maintainability** — Config centralization, ErrorBoundary, cleanup, evidence pagination
 **Goal:** Eliminate P0 security vulnerabilities and P1 reliability/UX issues from code review
 **Depends on:** Phase 05.6
 **Success Criteria** (what must be TRUE):
@@ -270,7 +271,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 05.1 → 05.5A �
 | 05.5B Source Visibility | 3/3 | ✅ Completed | 2026-03-31 |
 | 05.6 Coverage Repair | 5/5 | ✅ Completed | 2026-03-31 |
 | 06.1. Security & Quality Hardening | 4/4 | ✅ Completed | 2026-04-03 |
-| 06.2. Architecture & Maintainability | 0/TBD | ⏸️ Queued | - |
+| 06.2. Architecture & Maintainability | 1/1 | ✅ Completed | 2026-04-03 |
 | 06.3. Intelligence & Performance | 0/TBD | ⏸️ Queued | - |
 | 6. Conversational & Compliance Polish | 0/TBD | ⏸️ Pending | - |
 
