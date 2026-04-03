@@ -250,7 +250,7 @@ Plans:
 - [x] T4 — SSE streaming endpoint POST /search/stream
 - [x] T5 — SearchPipeline orchestrator with callbacks
 
-### Phase 6: Conversational & Compliance Polish (Future)
+### Phase 6: Conversational & Compliance Polish
 **Goal**: Users can refine searches conversationally and claim profile ownership
 **Depends on**: Phase 06.3
 **Requirements**: UI-05, COMP-03, COMP-04
@@ -259,7 +259,14 @@ Plans:
   2. Users can submit profile claim requests with verification proof
   3. Claimed profiles show verified status after admin approval workflow
 **UI hint**: yes
-**Plans**: TBD
+**Plans**: 5 plans in 4 waves
+
+Plans:
+- [ ] 6-01-PLAN.md — Database + Auth Foundation: profile_claims schema, Auth.js v5 GitHub provider (COMP-03, COMP-04 foundation)
+- [ ] 6-02-PLAN.md — Conversational REPL Interface: ChatInterface, ChatMessage, /chat page (UI-05)
+- [ ] 6-03-PLAN.md — Claim Verification API: email verification, GitHub OAuth callback, JWT tokens (COMP-03, COMP-04)
+- [ ] 6-04-PLAN.md — Verified Badge + Claim UI: VerifiedBadge, ClaimForm, profile detail integration (UI-05, COMP-03)
+- [ ] 6-05-PLAN.md — Profile Editing + Admin Audit: edit endpoint, admin claims page (COMP-04)
 
 ## Progress
 
@@ -280,7 +287,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 05.1 → 05.5A �
 | 06.1. Security & Quality Hardening | 4/4 | ✅ Completed | 2026-04-03 |
 | 06.2. Architecture & Maintainability | 1/1 | ✅ Completed | 2026-04-03 |
 | 06.3. Intelligence & Performance | 5/5 | ✅ Completed | 2026-04-03 |
-| 6. Conversational & Compliance Polish | 0/TBD | ⏸️ Pending | - |
+| 6. Conversational & Compliance Polish | 1/5 | In Progress|  |
 
 ---
-*Last updated: 2026-04-03 - Phase 06.3 Intelligence & Performance completed*
+*Last updated: 2026-04-03 - Phase 6 plans created*

@@ -49,8 +49,8 @@
 
 - [ ] **COMP-01**: Opt-out request form (email + profile link)
 - [ ] **COMP-02**: Opt-out processing (mark person as hidden, remove from search index)
-- [ ] **COMP-03**: Profile claim form (contact + verification proof)
-- [ ] **COMP-04**: Claim processing workflow (verification + profile ownership transfer)
+- [x] **COMP-03**: Profile claim form (contact + verification proof)
+- [x] **COMP-04**: Claim processing workflow (verification + profile ownership transfer)
 
 ---
 
@@ -118,8 +118,8 @@
 | EVAL-04 | Phase 4 | Complete |
 | EVAL-05 | Phase 4 | Complete |
 | UI-05 | Phase 5 | Pending |
-| COMP-03 | Phase 5 | Pending |
-| COMP-04 | Phase 5 | Pending |
+| COMP-03 | Phase 5 | Complete |
+| COMP-04 | Phase 5 | Complete |
 
 ---
 *Last updated: 2026-03-29 after 04-01 completion*
