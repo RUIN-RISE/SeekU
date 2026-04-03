@@ -15,6 +15,7 @@ import {
 import { OptOutRequestInputSchema, type SourceName } from "@seeku/shared";
 
 import { registerSearchRoutes } from "./routes/search.js";
+import { registerStreamSearchRoutes } from "./routes/search-stream.js";
 import { registerProfileRoutes } from "./routes/profiles.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import type { SearchServices } from "./routes/search.js";
@@ -115,6 +116,7 @@ export async function buildApiServer(input?: SeekuDatabase | BuildApiServerOptio
   });
 
   registerSearchRoutes(fastify, database, { services: options.searchServices });
+  registerStreamSearchRoutes(fastify, database);
   registerProfileRoutes(fastify, database);
   registerAdminRoutes(fastify, database);
 
