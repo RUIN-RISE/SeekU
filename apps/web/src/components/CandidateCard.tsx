@@ -191,12 +191,11 @@ export function CandidateCard({ candidate, onSelect }: CandidateCardProps) {
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-lg"
             onClick={(e) => {
               e.stopPropagation();
-              // TODO: 打开证据图谱
-              console.log("View evidence graph for:", candidate.personId);
+              onSelect?.(candidate.personId);
             }}
           >
             <Network className="w-4 h-4" />
-            查看证据图谱
+            查看详情
           </button>
         </div>
       )}
