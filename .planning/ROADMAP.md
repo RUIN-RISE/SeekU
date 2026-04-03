@@ -201,9 +201,50 @@ Plans:
 - [x] C3 — GitHub breadth expansion
 - [x] B4 — Restore hard source filter
 
+- [x] **Phase 06.1: Security & Quality Hardening** — Security lockdown, retry resilience, CLI registry, test foundation
+**Goal:** Eliminate P0 security vulnerabilities and P1 reliability/UX issues from code review
+**Depends on:** Phase 05.6
+**Success Criteria** (what must be TRUE):
+  1. Admin API endpoints require authentication; unauthenticated requests get 401
+  2. CORS restricts to configured origins only
+  3. Identity matcher, search retriever, and planner have passing test suites
+  4. All external API calls retry with exponential backoff on transient failures
+  5. SearchBar triggers search only on Enter key or button click
+  6. CLI uses command registry pattern; all existing commands work identically
+  7. All API route params use Fastify schema validation
+  8. Search API clamps limit to [1, 50] range
+**Plans**: 8 tasks in 4 waves
+
+Plans:
+- [ ] Wave 1: Admin auth, CORS restriction, input validation (Tasks 1-3)
+- [ ] Wave 2: External API retry with exponential backoff (Task 4)
+- [ ] Wave 3: CLI command registry + SearchBar Enter-trigger (Tasks 5-6)
+- [ ] Wave 4: Test foundation — unit + integration tests (Tasks 7-8)
+
+### Phase 06.2: Architecture & Maintainability (INSERTED)
+**Goal:** Clean up architectural debt — config centralization, adapter restoration, error handling
+**Depends on:** Phase 06.1
+**Success Criteria** (what must be TRUE):
+  1. All hard-coded values extracted to env-driven config
+  2. Adapters package contains proper SourceAdapter implementations
+  3. Web app has React Error Boundary
+  4. No leftover console.log or disconnected TODOs
+**Plans**: Placeholder — detailed after Phase 06.1
+
+### Phase 06.3: Intelligence & Performance (INSERTED)
+**Goal:** Upgrade search intelligence — JSON mode planner, semantic cache, cross-encoder reranker, streaming
+**Depends on:** Phase 06.2
+**Success Criteria** (what must be TRUE):
+  1. Query Planner uses LLM JSON mode, zero text parsing
+  2. Repeated/similar queries hit cache, avoiding LLM calls
+  3. Cross-encoder reranker replaces heuristic weights
+  4. Search results stream progressively (keyword first, then vector+reranked)
+  5. Pipeline orchestrator chains all steps with state tracking
+**Plans**: Placeholder — detailed after Phase 06.2
+
 ### Phase 6: Conversational & Compliance Polish (Future)
 **Goal**: Users can refine searches conversationally and claim profile ownership
-**Depends on**: Phase 05.1
+**Depends on**: Phase 06.3
 **Requirements**: UI-05, COMP-03, COMP-04
 **Success Criteria** (what must be TRUE):
   1. Users can iteratively refine search conditions through conversational UI
@@ -215,7 +256,7 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 05.1 → 05.5A → 05.5B → 05.6 → 6
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 05.1 → 05.5A → 05.5B → 05.6 → 06.1 → 06.2 → 06.3 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -228,7 +269,10 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 05.1 → 05.5A �
 | 05.5A Product Honesty | 7/7 | ✅ Completed | 2026-03-31 |
 | 05.5B Source Visibility | 3/3 | ✅ Completed | 2026-03-31 |
 | 05.6 Coverage Repair | 5/5 | ✅ Completed | 2026-03-31 |
+| 06.1. Security & Quality Hardening | 4/4 | ✅ Completed | 2026-04-03 |
+| 06.2. Architecture & Maintainability | 0/TBD | ⏸️ Queued | - |
+| 06.3. Intelligence & Performance | 0/TBD | ⏸️ Queued | - |
 | 6. Conversational & Compliance Polish | 0/TBD | ⏸️ Pending | - |
 
 ---
-*Last updated: 2026-03-31 - Phases 05.5A Product Honesty, 05.5B Source Visibility, and 05.6 Coverage Repair completed*
+*Last updated: 2026-04-03 - Phase 06.1 Security & Quality Hardening completed*
