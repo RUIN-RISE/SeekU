@@ -1,10 +1,13 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
-import { X } from "lucide-react";
+import { X, ShieldCheck } from "lucide-react";
 import { clsx } from "clsx";
+import { useState } from "react";
 import { useProfile } from "@/lib/hooks";
 import { EvidenceTabs } from "./EvidenceTabs";
+import { VerifiedBadge } from "./VerifiedBadge";
+import { ClaimForm } from "./ClaimForm";
 
 interface CandidateDetailModalProps {
   personId: string | null;
@@ -13,6 +16,7 @@ interface CandidateDetailModalProps {
 
 export function CandidateDetailModal({ personId, onClose }: CandidateDetailModalProps) {
   const { data, isLoading, error } = useProfile(personId ?? "");
+  const [showClaimForm, setShowClaimForm] = useState(false);
 
   if (!personId) {
     return null;
@@ -81,7 +85,27 @@ export function CandidateDetailModal({ personId, onClose }: CandidateDetailModal
                     <p className="text-xs text-text-muted mt-1">{data.person.primaryLocation}</p>
                   )}
                 </div>
+                {/* Verified Badge */}
+                {data.person.searchStatus === "claimed" && (
+                  <VerifiedBadge size="md" showLabel verifiedAt={data.claim?.verifiedAt ?? undefined} />
+                )}
               </div>
+
+              {/* Claim Button */}
+              {data.person.searchStatus !== "claimed" && (
+                <button
+                  type="button"
+                  onClick={() => setShowClaimForm(true)}
+                  className={clsx(
+                    "flex items-center gap-2 px-4 py-2 mb-4 rounded-lg",
+                    "text-sm font-medium",
+                    "bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+                  )}
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  认领此档案
+                </button>
+              )}
 
               {/* Evidence Tabs */}
               <EvidenceTabs evidence={data.evidence} />
@@ -91,4 +115,25 @@ export function CandidateDetailModal({ personId, onClose }: CandidateDetailModal
       </Dialog.Portal>
     </Dialog.Root>
   );
+
+  // Claim Form Modal (separate overlay)
+  if (showClaimForm && data?.person) {
+    return (
+      <>
+        {/* Hidden base modal */}
+        <Dialog.Root open={false}>
+          <Dialog.Portal>
+            <Dialog.Overlay className="fixed inset-0 bg-black/50" />
+            <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+          </Dialog.Portal>
+        </Dialog.Root>
+        {/* Claim Form */}
+        <ClaimForm
+          personId={personId}
+          personName={data.person.primaryName}
+          onClose={() => setShowClaimForm(false)}
+        />
+      </>
+    );
+  }
 }

@@ -54,6 +54,7 @@ export interface ProfileResponse {
     summary: string | null;
     primaryLocation: string | null;
     avatarUrl: string | null;
+    searchStatus?: "active" | "hidden" | "claimed";
   };
   evidence: Array<{
     id: string;
@@ -64,6 +65,10 @@ export interface ProfileResponse {
     metadata: Record<string, unknown>;
   }>;
   total: number;
+  claim?: {
+    status: string;
+    verifiedAt: string | null;
+  };
 }
 
 export async function searchAPI(request: SearchRequest): Promise<SearchResponse> {

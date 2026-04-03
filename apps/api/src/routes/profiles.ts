@@ -1,9 +1,10 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import {
   evidenceItems,
   persons,
+  profileClaims,
   type EvidenceItem,
   type Person,
   type SeekuDatabase
@@ -13,6 +14,10 @@ interface ProfileResponse {
   person: Person;
   evidence: EvidenceItem[];
   total: number;
+  claim?: {
+    status: string;
+    verifiedAt: Date | null;
+  };
 }
 
 interface NotFoundResponse {
@@ -47,14 +52,36 @@ async function handleProfile(
   ));
   const offset = Math.max(0, parseInt(query.offset ?? "0", 10) || 0);
 
-  // Fetch person with searchStatus="active" (exclude hidden/claimed)
+  // Fetch person excluding hidden profiles (allow active and claimed)
   const personResults = await db
     .select()
     .from(persons)
-    .where(and(eq(persons.id, personId), eq(persons.searchStatus, "active")));
+    .where(and(eq(persons.id, personId), ne(persons.searchStatus, "hidden")));
 
   if (personResults.length === 0) {
     return reply.status(404).send({ error: "not_found" } as NotFoundResponse);
+  }
+
+  const person = personResults[0];
+
+  // Fetch claim info if profile is claimed
+  let claimInfo: ProfileResponse["claim"] = undefined;
+  if (person.searchStatus === "claimed") {
+    const claimResults = await db
+      .select({
+        status: profileClaims.status,
+        verifiedAt: profileClaims.verifiedAt
+      })
+      .from(profileClaims)
+      .where(and(eq(profileClaims.personId, personId), eq(profileClaims.status, "approved")))
+      .limit(1);
+
+    if (claimResults.length > 0) {
+      claimInfo = {
+        status: claimResults[0].status,
+        verifiedAt: claimResults[0].verifiedAt
+      };
+    }
   }
 
   // Fetch evidence with pagination
@@ -72,9 +99,10 @@ async function handleProfile(
   ]);
 
   return {
-    person: personResults[0],
+    person,
     evidence,
-    total: countResult[0]?.count ?? 0
+    total: countResult[0]?.count ?? 0,
+    claim: claimInfo
   };
 }
 
