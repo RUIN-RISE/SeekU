@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useDebouncedCallback } from "use-debounce";
+import { useState, useCallback } from "react";
+import { Search } from "lucide-react";
 import { useSearch, type SearchResponse } from "@/lib/hooks";
 
 interface SearchBarProps {
@@ -10,24 +10,32 @@ interface SearchBarProps {
 
 export function SearchBar({ onResults }: SearchBarProps) {
   const [inputValue, setInputValue] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
 
-  const debouncedCallback = useDebouncedCallback((value: string) => {
-    setDebouncedQuery(value);
-  }, 300);
+  const { data, isLoading, error } = useSearch(searchQuery);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setInputValue(e.target.value);
-    debouncedCallback(e.target.value);
-  };
-
-  const { data, isLoading, error } = useSearch(debouncedQuery);
-
-  useEffect(() => {
-    if (data && onResults) {
-      onResults(data);
+  const handleSearch = useCallback(() => {
+    const trimmed = inputValue.trim();
+    if (trimmed.length > 0) {
+      setSearchQuery(trimmed);
     }
-  }, [data, onResults]);
+  }, [inputValue]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        handleSearch();
+      }
+    },
+    [handleSearch]
+  );
+
+  // Forward results to parent when data arrives
+  if (data && onResults) {
+    // Use callback ref to avoid calling setState during render
+    Promise.resolve().then(() => onResults(data));
+  }
 
   return (
     <>
@@ -35,17 +43,25 @@ export function SearchBar({ onResults }: SearchBarProps) {
       <input
         type="text"
         value={inputValue}
-        onChange={handleInputChange}
+        onChange={(e) => setInputValue(e.target.value)}
+        onKeyDown={handleKeyDown}
         className="w-full h-full bg-transparent border-none outline-none text-slate-900 text-lg px-2 font-medium absolute inset-0 z-20"
         placeholder=""
       />
 
-      {/* 加载指示器 */}
-      {isLoading && (
-        <div className="absolute right-4 top-1/2 -translate-y-1/2 z-30">
-          <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-        </div>
-      )}
+      {/* 搜索按钮 */}
+      <button
+        onClick={handleSearch}
+        disabled={isLoading}
+        className="flex items-center justify-center w-10 h-10 rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50"
+        aria-label="搜索"
+      >
+        {isLoading ? (
+          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+        ) : (
+          <Search className="w-5 h-5" />
+        )}
+      </button>
 
       {/* 错误提示 */}
       {error && (

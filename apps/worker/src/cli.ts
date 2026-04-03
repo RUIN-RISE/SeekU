@@ -10,6 +10,11 @@ config({ path: resolve(__dirname, "../../../.env") });
 import chalk from "chalk";
 
 import {
+  OpenRouterProvider,
+  SiliconFlowProvider,
+  createProvider,
+} from "@seeku/llm";
+import {
   runBackfillPersonFieldsWorker,
   runEvidenceStorageWorker,
   runGithubSync,
@@ -19,13 +24,17 @@ import {
   runSearchIndexWorker,
   runSearchRebuildWorker,
   runSocialGraphWorker,
-  runSourceProfileRepairWorker
+  runSourceProfileRepairWorker,
+  SearchIndexWorker
 } from "@seeku/workers";
 
-import { runBonjourSyncJob } from "./index.js";
+import { runBonjourDiscoveryScan, runBonjourSyncJob } from "./index.js";
 import { runCoverageCli } from "./cli/coverage.js";
+import { runZjuExtractionPipeline } from "./cli/extraction.js";
 import { runSearchCli, runShowCli } from "./search-cli.js";
 import { runInteractiveSearch } from "./cli/index.js";
+
+// --- Argument Parsing ---
 
 function parseArgs(argv: string[]) {
   const args = new Map<string, string>();
@@ -67,133 +76,114 @@ function parseCursor(raw: string | undefined) {
   return JSON.parse(raw) as Record<string, unknown>;
 }
 
-async function main() {
-  const [, , command, ...rest] = process.argv;
-  const parsed = parseArgs(rest);
-  const knownCommands = new Set([
-    "help",
-    "version",
-    "sync-bonjour",
-    "sync-github",
-    "resolve-identities",
-    "store-evidence",
-    "backfill-person-fields",
-    "enrich-profiles",
-    "mine-network",
-    "repair-source-payloads",
-    "search-index",
-    "search-embeddings",
-    "rebuild-search",
-    "coverage",
-    "search",
-    "show"
-  ]);
+// --- Command Registry ---
 
-  const limit = Number(parsed.args.get("limit") ?? "20");
-  const handles = parsed.args.get("handles")?.split(",").map((value) => value.trim());
-  const cursor = parseCursor(parsed.args.get("cursor"));
-  const jobName = parsed.args.get("job-name");
+type CommandRunner = (parsed: ReturnType<typeof parseArgs>) => Promise<unknown>;
 
-  let result: unknown;
+function splitCsv(value: string | undefined): string[] | undefined {
+  return value?.split(",").map((v) => v.trim()).filter(Boolean);
+}
 
-  if (!command) {
-    await runInteractiveSearch();
-    return;
-  }
+function buildCommandRegistry(): Map<string, CommandRunner> {
+  const registry = new Map<string, CommandRunner>();
 
-  if (!knownCommands.has(command)) {
-    await runInteractiveSearch([command, ...rest].join(" ").trim());
-    return;
-  }
+  // --- Sync commands ---
+  registry.set("sync-bonjour", async (parsed) => {
+    const limit = Number(parsed.args.get("limit") ?? "20");
+    const handles = splitCsv(parsed.args.get("handles"));
+    const cursor = parseCursor(parsed.args.get("cursor"));
+    const jobName = parsed.args.get("job-name");
+    return runBonjourSyncJob({ limit, cursor, handles, jobName });
+  });
 
-  if (command === "version") {
-    console.log(chalk.bold("Seeku CLI v1.1.0"));
-    console.log(chalk.dim("Search Assistant Edition"));
-    return;
-  }
+  registry.set("scan-bonjour", async (parsed) => {
+    const limit = Number(parsed.args.get("limit") ?? "20");
+    const query = (parsed.args.get("query") ?? "浙大,ZJU").split(",").map(q => q.trim());
+    const depth = Number(parsed.args.get("depth") ?? "5");
+    return runBonjourDiscoveryScan({ query, limit, depth });
+  });
 
-  if (command === "sync-bonjour") {
-    result = await runBonjourSyncJob({
-      limit,
-      cursor,
-      handles,
-      jobName
-    });
-  } else if (command === "sync-github") {
-    result = await runGithubSync(handles ?? [], { limit });
-  } else if (command === "resolve-identities") {
-    const bonjourHandles = parsed.args
-      .get("bonjour-handles")
-      ?.split(",")
-      .map((value) => value.trim())
-      .filter(Boolean);
-    const githubHandles = parsed.args
-      .get("github-handles")
-      ?.split(",")
-      .map((value) => value.trim())
-      .filter(Boolean);
-    result = await runIdentityResolutionWorker(bonjourHandles, githubHandles);
-  } else if (command === "store-evidence") {
-    const personIds = parsed.args
-      .get("person-ids")
-      ?.split(",")
-      .map((value) => value.trim())
-      .filter(Boolean);
-    result = await runEvidenceStorageWorker(personIds);
-  } else if (command === "backfill-person-fields") {
-    const personIds = parsed.args
-      .get("person-ids")
-      ?.split(",")
-      .map((value) => value.trim())
-      .filter(Boolean);
-    result = await runBackfillPersonFieldsWorker(personIds);
-  } else if (command === "enrich-profiles") {
-    const personIds = parsed.args
-      .get("person-ids")
-      ?.split(",")
-      .map((value) => value.trim())
-      .filter(Boolean);
-    result = await runProfileEnrichmentWorker({
-      limit,
-      personIds
-    });
-  } else if (command === "mine-network") {
-    result = await runSocialGraphWorker({
-      limit
-    });
-  } else if (command === "repair-source-payloads") {
+  registry.set("sync-github", async (parsed) => {
+    const limit = Number(parsed.args.get("limit") ?? "20");
+    const handles = splitCsv(parsed.args.get("handles"));
+    return runGithubSync(handles ?? [], { limit });
+  });
+
+  // --- Pipeline commands ---
+  registry.set("resolve-identities", async (parsed) => {
+    const bonjourHandles = splitCsv(parsed.args.get("bonjour-handles"));
+    const githubHandles = splitCsv(parsed.args.get("github-handles"));
+    return runIdentityResolutionWorker(bonjourHandles, githubHandles);
+  });
+
+  registry.set("store-evidence", async (parsed) => {
+    const personIds = splitCsv(parsed.args.get("person-ids"));
+    return runEvidenceStorageWorker(personIds);
+  });
+
+  registry.set("backfill-person-fields", async (parsed) => {
+    const personIds = splitCsv(parsed.args.get("person-ids"));
+    return runBackfillPersonFieldsWorker(personIds);
+  });
+
+  registry.set("repair-source-payloads", async (parsed) => {
     const source = parsed.args.get("source");
-    result = await runSourceProfileRepairWorker({
+    const limit = Number(parsed.args.get("limit") ?? "20");
+    const handles = splitCsv(parsed.args.get("handles"));
+    return runSourceProfileRepairWorker({
       source: source === "bonjour" || source === "github" ? source : undefined,
       handles,
       limit
     });
-  } else if (command === "search-index") {
-    const personIds = parsed.args
-      .get("person-ids")
-      ?.split(",")
-      .map((value) => value.trim())
-      .filter(Boolean);
-    result = await runSearchIndexWorker(personIds);
-  } else if (command === "search-embeddings") {
-    const personIds = parsed.args
-      .get("person-ids")
-      ?.split(",")
-      .map((value) => value.trim())
-      .filter(Boolean);
-    result = await runSearchEmbeddingWorker(personIds);
-  } else if (command === "rebuild-search") {
-    const personIds = parsed.args
-      .get("person-ids")
-      ?.split(",")
-      .map((value) => value.trim())
-      .filter(Boolean);
-    result = await runSearchRebuildWorker(personIds);
-  } else if (command === "coverage") {
-    result = await runCoverageCli({
-      json: parsed.flags.has("json")
+  });
+
+  // --- Search index commands ---
+  registry.set("search-index", async (parsed) => {
+    const personIds = splitCsv(parsed.args.get("person-ids"));
+    const indexingProvider = SiliconFlowProvider.fromStrictEnv();
+    return runSearchIndexWorker(personIds, undefined, { provider: indexingProvider });
+  });
+
+  registry.set("search-embeddings", async (parsed) => {
+    const personIds = splitCsv(parsed.args.get("person-ids"));
+    const indexingProvider = SiliconFlowProvider.fromStrictEnv();
+    return runSearchEmbeddingWorker(personIds, undefined, { provider: indexingProvider });
+  });
+
+  registry.set("rebuild-search", async (parsed) => {
+    const personIds = splitCsv(parsed.args.get("person-ids"));
+    const indexingProvider = SiliconFlowProvider.fromStrictEnv();
+    return runSearchRebuildWorker(personIds, undefined, { provider: indexingProvider });
+  });
+
+  // --- Enrichment commands ---
+  registry.set("enrich-profiles", async (parsed) => {
+    const limit = Number(parsed.args.get("limit") ?? "20");
+    const personIds = splitCsv(parsed.args.get("person-ids"));
+    const enrichmentProvider = process.env.OPENROUTER_API_KEY
+      ? OpenRouterProvider.fromEnv()
+      : createProvider();
+    return runProfileEnrichmentWorker({ limit, personIds, provider: enrichmentProvider });
+  });
+
+  registry.set("mine-network", async (parsed) => {
+    const limit = Number(parsed.args.get("limit") ?? "20");
+    const enrichmentProvider = process.env.OPENROUTER_API_KEY
+      ? OpenRouterProvider.fromEnv()
+      : createProvider();
+    return runSocialGraphWorker({ limit, provider: enrichmentProvider });
+  });
+
+  registry.set("extract-zju-talent", async (parsed) => {
+    const limit = Number(parsed.args.get("limit") ?? "20");
+    return runZjuExtractionPipeline({
+      limit,
+      crawl: !parsed.flags.has("no-crawl")
     });
-  } else if (command === "search") {
+  });
+
+  // --- Query commands ---
+  registry.set("search", async (parsed) => {
     const query = parsed.args.get("query") ?? parsed.positionals[0] ?? "";
     const limit = Number(parsed.args.get("limit") ?? "10");
     const json = parsed.flags.has("json");
@@ -201,15 +191,30 @@ async function main() {
 
     if (interactive || (!json && !query)) {
       await runInteractiveSearch();
-      return;
+      return undefined;
     }
 
-    result = await runSearchCli({ query, limit, json });
-  } else if (command === "show") {
+    return runSearchCli({ query, limit, json });
+  });
+
+  registry.set("show", async (parsed) => {
     const personId = parsed.args.get("personId") ?? parsed.positionals[0] ?? "";
     const json = parsed.flags.has("json");
-    result = await runShowCli({ personId, json });
-  } else if (!command || command === "help") {
+    return runShowCli({ personId, json });
+  });
+
+  // --- Utility commands ---
+  registry.set("coverage", async (parsed) => {
+    return runCoverageCli({ json: parsed.flags.has("json") });
+  });
+
+  registry.set("version", async () => {
+    console.log(chalk.bold("Seeku CLI v1.1.0"));
+    console.log(chalk.dim("Search Assistant Edition"));
+    return undefined;
+  });
+
+  registry.set("help", async () => {
     console.log(chalk.bold("\n📖 Seeku CLI Usage Guide\n"));
     console.log(chalk.yellow("Commands:"));
     console.log(`  ${chalk.cyan("seeku")}                 🚀 启动会话式人才搜索助手`);
@@ -218,28 +223,50 @@ async function main() {
     console.log(`  ${chalk.cyan("show [id]")}            查看指定人才的深度画像`);
     console.log(`  ${chalk.cyan("version")}              显示当前版本信息`);
     console.log(`  ${chalk.cyan("help")}                 显示此帮助信息`);
-    
+
     console.log(chalk.yellow("\nSync Commands (Pipeline):"));
-    console.log(`  ${chalk.dim("sync-bonjour, sync-github, resolve-identities, store-evidence, backfill-person-fields, repair-source-payloads, ...")}`);
+    console.log(`  ${chalk.dim("sync-bonjour, scan-bonjour, sync-github, resolve-identities, store-evidence, backfill-person-fields, repair-source-payloads, ...")}`);
 
     console.log(chalk.yellow("\nMaintenance Commands:"));
-    console.log(`  ${chalk.cyan("coverage")}             输出当前 active/indexed/embedded/multi-source/GitHub 覆盖率`);
-    console.log(`  ${chalk.cyan("rebuild-search")}       全量重建 active persons 的 search documents + embeddings`);
+    console.log(`  ${chalk.cyan("extract-zju-talent")}  🚀 运行 ZJU 人才全链路发现与深度提炼管道`);
+    console.log(`  ${chalk.cyan("coverage")}            输出当前 active/indexed/embedded/multi-source 覆盖率`);
+    console.log(`  ${chalk.cyan("rebuild-search")}      全量重建 search documents + embeddings`);
 
     console.log(chalk.yellow("\nOptions:"));
     console.log(`  ${chalk.dim("--limit <num>")}         设置返回结果数量 (默认: 10)`);
     console.log(`  ${chalk.dim("--json")}                以 JSON 格式输出结果`);
     console.log("");
+    return undefined;
+  });
+
+  return registry;
+}
+
+// --- Main ---
+
+async function main() {
+  const [, , command, ...rest] = process.argv;
+  const parsed = parseArgs(rest);
+  const registry = buildCommandRegistry();
+
+  // No command → interactive search
+  if (!command) {
+    await runInteractiveSearch();
     return;
-  } else {
-    console.log(chalk.red(`\n❌ Unknown command: "${command}"`));
-    console.log(chalk.dim("Type 'seeku help' to see available commands.\n"));
-    process.exit(1);
   }
 
-  if (result !== undefined) {
-    console.log(JSON.stringify(result, null, 2));
+  // Known command → dispatch
+  const handler = registry.get(command);
+  if (handler) {
+    const result = await handler(parsed);
+    if (result !== undefined) {
+      console.log(JSON.stringify(result, null, 2));
+    }
+    return;
   }
+
+  // Unknown command → treat as interactive search with initial query
+  await runInteractiveSearch([command, ...rest].join(" ").trim());
 }
 
 main().catch((error) => {
