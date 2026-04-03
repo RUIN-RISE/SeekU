@@ -30,6 +30,8 @@ export const evidenceType = pgEnum("evidence_type", [
   "summary"
 ]);
 export const searchStatus = pgEnum("search_status", ["active", "hidden", "claimed"]);
+export const claimMethod = pgEnum("claim_method", ["email", "github"]);
+export const claimStatus = pgEnum("claim_status", ["pending", "approved", "rejected", "revoked"]);
 
 export const sourceSyncRuns = pgTable("source_sync_runs", {
   id: uuid("id").default(sql`uuid_generate_v4()`).primaryKey(),
@@ -281,3 +283,50 @@ export const profileCache = pgTable("profile_cache", {
 
 export type ProfileCache = typeof profileCache.$inferSelect;
 export type NewProfileCache = typeof profileCache.$inferInsert;
+
+export const extractedProfiles = pgTable("extracted_profiles", {
+  personId: uuid("person_id")
+    .primaryKey()
+    .references(() => persons.id, { onDelete: "cascade" }),
+  name: text("name"),
+  wechat: text("wechat"),
+  email: text("email"),
+  enrollmentYear: text("enrollment_year"),
+  major: text("major"),
+  gender: text("gender"),
+  currentCompany: text("current_company"),
+  bio: text("bio"),
+  industryTags: text("industry_tags").array().notNull().default(sql`'{}'::text[]`),
+  socialLinks: jsonb("social_links").$type<Record<string, string>>().default(sql`'{}'::jsonb`).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type ExtractedProfile = typeof extractedProfiles.$inferSelect;
+export type NewExtractedProfile = typeof extractedProfiles.$inferInsert;
+
+// Profile claims table for talent verification
+
+export const profileClaims = pgTable("profile_claims", {
+  id: uuid("id").default(sql`uuid_generate_v4()`).primaryKey(),
+  personId: uuid("person_id")
+    .notNull()
+    .references(() => persons.id, { onDelete: "cascade" }),
+  method: claimMethod("method").notNull(),
+  verifiedEmail: text("verified_email"),
+  verifiedGitHubLogin: text("verified_github_login"),
+  status: claimStatus("status").default("pending").notNull(),
+  submittedAt: timestamp("submitted_at", { withTimezone: true }).defaultNow().notNull(),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  revokedBy: uuid("revoked_by"),
+  revokeReason: text("revoke_reason"),
+  metadata: jsonb("metadata")
+    .$type<Record<string, unknown>>()
+    .default(sql`'{}'::jsonb`)
+    .notNull(),
+});
+
+export type ClaimMethod = typeof claimMethod.enumValues[number];
+export type ClaimStatus = typeof claimStatus.enumValues[number];
+export type ProfileClaim = typeof profileClaims.$inferSelect;
+export type NewProfileClaim = typeof profileClaims.$inferInsert;

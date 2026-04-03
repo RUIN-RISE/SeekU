@@ -238,10 +238,17 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. Query Planner uses LLM JSON mode, zero text parsing
   2. Repeated/similar queries hit cache, avoiding LLM calls
-  3. Cross-encoder reranker replaces heuristic weights
-  4. Search results stream progressively (keyword first, then vector+reranked)
+  3. Cross-encoder reranker scores query-doc pairs for relevance
+  4. Search results stream progressively via SSE
   5. Pipeline orchestrator chains all steps with state tracking
-**Plans**: Placeholder — detailed after Phase 06.2
+**Plans**: 5/5 tasks completed
+
+Plans:
+- [x] T1 — Query Planner JSON mode with Zod validation
+- [x] T2 — Semantic QueryCache (cosine > 0.95 threshold)
+- [x] T3 — Cross-encoder Reranker (LLM-based scoring)
+- [x] T4 — SSE streaming endpoint POST /search/stream
+- [x] T5 — SearchPipeline orchestrator with callbacks
 
 ### Phase 6: Conversational & Compliance Polish (Future)
 **Goal**: Users can refine searches conversationally and claim profile ownership
@@ -272,8 +279,8 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 05.1 → 05.5A �
 | 05.6 Coverage Repair | 5/5 | ✅ Completed | 2026-03-31 |
 | 06.1. Security & Quality Hardening | 4/4 | ✅ Completed | 2026-04-03 |
 | 06.2. Architecture & Maintainability | 1/1 | ✅ Completed | 2026-04-03 |
-| 06.3. Intelligence & Performance | 0/TBD | ⏸️ Queued | - |
+| 06.3. Intelligence & Performance | 5/5 | ✅ Completed | 2026-04-03 |
 | 6. Conversational & Compliance Polish | 0/TBD | ⏸️ Pending | - |
 
 ---
-*Last updated: 2026-04-03 - Phase 06.1 Security & Quality Hardening completed*
+*Last updated: 2026-04-03 - Phase 06.3 Intelligence & Performance completed*
