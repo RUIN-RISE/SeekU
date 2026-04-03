@@ -53,6 +53,13 @@ const CandidateAnchorSchema = z.object({
   shortlistIndex: z.number().int().positive().optional().nullable().transform(v => v ?? undefined),
   personId: z.string().optional().nullable().transform(v => v ?? undefined),
   name: z.string().optional().nullable().transform(v => v ?? undefined)
+}).nullable().optional().transform((v): SearchCandidateAnchor | undefined => {
+  if (!v) return undefined;
+  return {
+    shortlistIndex: v.shortlistIndex ?? undefined,
+    personId: v.personId ?? undefined,
+    name: v.name ?? undefined
+  };
 });
 
 export const ConditionsSchema = z.object({
@@ -65,7 +72,7 @@ export const ConditionsSchema = z.object({
   niceToHave: z.array(z.string()).default([]),
   exclude: z.array(z.string()).default([]),
   preferFresh: z.boolean().optional().nullable().transform(v => v ?? false),
-  candidateAnchor: CandidateAnchorSchema.optional().nullable().transform(v => v ?? undefined),
+  candidateAnchor: CandidateAnchorSchema,
   limit: z.number().int().positive().max(100).nullable().optional()
 });
 
@@ -152,10 +159,10 @@ function safeParseJSON<T>(
 }
 
 /**
- * Normalize candidate anchor
+ * Normalize candidate anchor - accepts Zod output and ensures proper types
  */
 function normalizeCandidateAnchor(
-  anchor: SearchCandidateAnchor | null | undefined
+  anchor: { shortlistIndex?: number | null; personId?: string | null; name?: string | null } | null | undefined
 ): SearchCandidateAnchor | undefined {
   if (!anchor) return undefined;
 
