@@ -27,6 +27,7 @@ export interface SearchResultCard {
   matchStrength: "strong" | "medium" | "weak";
   matchReasons: string[];
   evidencePreview: EvidencePreview[];
+  searchStatus?: "active" | "hidden" | "claimed";
 }
 
 export interface QueryIntent {

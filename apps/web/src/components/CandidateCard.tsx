@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Star, GitBranch, Briefcase, ExternalLink, BadgeCheck, Network } from "lucide-react";
+import { Star, GitBranch, Briefcase, ExternalLink, Network } from "lucide-react";
 import { clsx } from "clsx";
 import type { SearchResultCard } from "@/lib/api";
+import { VerifiedBadge } from "./VerifiedBadge";
 
 interface CandidateCardProps {
   candidate: SearchResultCard;
@@ -125,10 +126,12 @@ export function CandidateCard({ candidate, onSelect }: CandidateCardProps) {
           >
             <span className="text-xl font-bold text-white">{firstChar}</span>
           </div>
-          {/* 验证标记 */}
-          <div className="absolute -bottom-1 -right-1 bg-blue-500 rounded-full p-1">
-            <BadgeCheck className="w-3 h-3 text-white" />
-          </div>
+          {/* 验证标记 - 仅对claimed用户显示 */}
+          {candidate.searchStatus === "claimed" && (
+            <div className="absolute -bottom-1 -right-1 bg-blue-500 rounded-full p-1">
+              <VerifiedBadge size="sm" />
+            </div>
+          )}
         </div>
 
         <div className="flex-1 min-w-0">
@@ -136,11 +139,10 @@ export function CandidateCard({ candidate, onSelect }: CandidateCardProps) {
             <h3 className="font-bold text-lg text-slate-900 truncate">
               {candidate.name}
             </h3>
-            {/* 验证文字标记 */}
-            <span className="flex items-center gap-1 text-xs text-blue-600 font-medium">
-              <BadgeCheck className="w-3 h-3" />
-              已验证
-            </span>
+            {/* 验证文字标记 - 仅对claimed用户显示 */}
+            {candidate.searchStatus === "claimed" && (
+              <VerifiedBadge size="sm" showLabel />
+            )}
           </div>
           {candidate.headline && (
             <p className="text-sm text-slate-500 truncate mt-0.5">{candidate.headline}</p>

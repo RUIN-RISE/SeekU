@@ -5,13 +5,15 @@ import {
   evidenceItems,
   eq,
   inArray,
+  ne,
   persons,
   searchDocuments,
   type EvidenceItem,
   type SearchDocument,
-  type SeekuDatabase
+  type SeekuDatabase,
+  type SearchStatus
 } from "@seeku/db";
-import { SiliconFlowProvider } from "@seeku/llm";
+import { createProvider, type LLMProvider } from "@seeku/llm";
 import {
   HybridRetriever,
   QueryPlanner,
@@ -21,6 +23,8 @@ import {
   type RetrieverFilters
 } from "@seeku/search";
 import { classifyMatchStrength, type MatchStrength } from "@seeku/shared";
+import { appConfig } from "@seeku/shared/config";
+import { QueryCache } from "@seeku/search";
 
 interface SearchRequestBody {
   query: string;
@@ -45,6 +49,7 @@ interface SearchResultCard {
     url: string | null;
     stars?: number;
   }>;
+  searchStatus?: SearchStatus;
 }
 
 interface SearchResponseBody {
@@ -55,7 +60,7 @@ interface SearchResponseBody {
 }
 
 export interface SearchServices {
-  provider: SiliconFlowProvider;
+  provider: LLMProvider;
   planner: QueryPlanner;
   retriever: HybridRetriever;
   reranker: Reranker;
@@ -65,8 +70,8 @@ interface SearchRouteOptions {
   services?: SearchServices;
 }
 
-const DEFAULT_LIMIT = 20;
-const MAX_LIMIT = 50;
+const DEFAULT_LIMIT = appConfig.search.defaultLimit;
+const MAX_LIMIT = appConfig.search.maxLimit;
 const serviceCache = new WeakMap<SeekuDatabase, SearchServices>();
 
 function parseFilters(input: unknown): RetrieverFilters {
@@ -126,7 +131,7 @@ function getSearchServices(db: SeekuDatabase, overrides?: SearchServices): Searc
     return cached;
   }
 
-  const provider = SiliconFlowProvider.fromEnv();
+  const provider = createProvider();
   const services: SearchServices = {
     provider,
     planner: new QueryPlanner({ provider }),
@@ -164,7 +169,7 @@ function buildApiResultWarning(results: Array<Pick<SearchResultCard, "matchStren
 
 function buildResponseCard(
   result: RerankResult,
-  person: { primaryName: string; primaryHeadline: string | null } | undefined,
+  person: { primaryName: string; primaryHeadline: string | null; searchStatus: SearchStatus } | undefined,
   evidence: EvidenceItem[]
 ): SearchResultCard {
   return {
@@ -185,7 +190,8 @@ function buildResponseCard(
         typeof item.metadata?.stargazers_count === "number"
           ? item.metadata.stargazers_count
           : undefined
-    }))
+    })),
+    searchStatus: person?.searchStatus ?? "active"
   };
 }
 
@@ -230,10 +236,11 @@ async function handleSearch(
       .select({
         id: persons.id,
         primaryName: persons.primaryName,
-        primaryHeadline: persons.primaryHeadline
+        primaryHeadline: persons.primaryHeadline,
+        searchStatus: persons.searchStatus
       })
       .from(persons)
-      .where(and(eq(persons.searchStatus, "active"), inArray(persons.id, personIds)))
+      .where(and(ne(persons.searchStatus, "hidden"), inArray(persons.id, personIds)))
   ]);
 
   const documentMap = new Map<string, SearchDocument>(
