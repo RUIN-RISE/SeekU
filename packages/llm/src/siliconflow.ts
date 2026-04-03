@@ -64,20 +64,21 @@ export class SiliconFlowProvider implements LLMProvider {
       const response = await this.client.chat.completions.create({
         model: options?.model ?? this.defaultChatModel,
         messages: messages.map(m => ({ role: m.role, content: m.content })),
-        temperature: options?.temperature ?? 0.7
+        temperature: options?.temperature ?? 0.7,
+        ...(options?.responseFormat === "json" ? { response_format: { type: "json_object" as const } } : {})
       }, {
         signal: options?.signal
       });
 
-    const choice = response.choices[0];
-    return {
-      content: choice?.message?.content ?? "",
-      model: response.model,
-      usage: response.usage ? {
-        promptTokens: response.usage.prompt_tokens,
-        completionTokens: response.usage.completion_tokens
-      } : undefined
-    };
+      const choice = response.choices[0];
+      return {
+        content: choice?.message?.content ?? "",
+        model: response.model,
+        usage: response.usage ? {
+          promptTokens: response.usage.prompt_tokens,
+          completionTokens: response.usage.completion_tokens
+        } : undefined
+      };
     });
   }
 

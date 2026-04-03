@@ -13,6 +13,8 @@ export interface ChatOptions {
   model?: string;
   temperature?: number;
   signal?: AbortSignal;
+  /** Request structured JSON output from the model */
+  responseFormat?: "json" | "text";
 }
 
 export interface EmbeddingResponse {
