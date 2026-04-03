@@ -2,11 +2,14 @@ import type { EvidenceItem, SearchDocument } from "@seeku/db";
 
 import type { QueryIntent } from "./planner.js";
 import type { SearchResult } from "./retriever.js";
+import type { CrossEncoderScore } from "./cross-encoder.js";
 
 export interface RerankResult extends SearchResult {
   finalScore: number;
   evidenceBoost: number;
   freshnessPenalty: number;
+  crossEncoderScore?: number;
+  crossEncoderReasoning?: string;
   matchReasons: string[];
 }
 
@@ -15,13 +18,16 @@ export interface RerankerConfig {
   repoMatchBoost: number;
   followerBoostScale: number;
   freshnessDecayDays: number;
+  /** Weight for cross-encoder score when available (0-1, default: 0.3) */
+  crossEncoderWeight?: number;
 }
 
 const DEFAULT_CONFIG: RerankerConfig = {
   projectMatchBoost: 0.08,
   repoMatchBoost: 0.04,
   followerBoostScale: 0.02,
-  freshnessDecayDays: 365
+  freshnessDecayDays: 365,
+  crossEncoderWeight: 0.3
 };
 
 function textFromEvidence(item: EvidenceItem): string {
@@ -47,7 +53,8 @@ export class Reranker {
     results: SearchResult[],
     intent: QueryIntent,
     documents: Map<string, SearchDocument>,
-    evidenceByPerson: Map<string, EvidenceItem[]>
+    evidenceByPerson: Map<string, EvidenceItem[]>,
+    crossEncoderScores?: Map<string, CrossEncoderScore>
   ): RerankResult[] {
     return results
       .map((result) => {
@@ -55,14 +62,33 @@ export class Reranker {
         const evidence = evidenceByPerson.get(result.personId) ?? [];
         const evidenceBoost = this.computeEvidenceBoost(evidence, intent);
         const freshnessPenalty = this.computeFreshnessPenalty(document);
-        const finalScore = result.combinedScore * (1 + evidenceBoost) * freshnessPenalty;
+        const crossEncoderResult = crossEncoderScores?.get(result.personId);
+
+        // Combine heuristic score with cross-encoder if available
+        const heuristicScore = result.combinedScore * (1 + evidenceBoost) * freshnessPenalty;
+        const crossEncoderWeight = this.config.crossEncoderWeight ?? 0.3;
+
+        const finalScore = crossEncoderResult
+          ? heuristicScore * (1 - crossEncoderWeight) +
+            crossEncoderResult.relevanceScore * crossEncoderWeight
+          : heuristicScore;
+
+        const matchReasons = this.extractMatchReasons(
+          result,
+          intent,
+          document,
+          evidence,
+          crossEncoderResult
+        );
 
         return {
           ...result,
           finalScore,
           evidenceBoost,
           freshnessPenalty,
-          matchReasons: this.extractMatchReasons(result, intent, document, evidence)
+          crossEncoderScore: crossEncoderResult?.relevanceScore,
+          crossEncoderReasoning: crossEncoderResult?.reasoning,
+          matchReasons
         };
       })
       .sort((left, right) => right.finalScore - left.finalScore);
@@ -111,10 +137,16 @@ export class Reranker {
     result: SearchResult,
     intent: QueryIntent,
     document: SearchDocument | undefined,
-    evidence: EvidenceItem[]
+    evidence: EvidenceItem[],
+    crossEncoderResult?: CrossEncoderScore
   ): string[] {
     const reasons: string[] = [];
     const matchedText = result.matchedText.toLowerCase();
+
+    // Include cross-encoder reasoning if available and meaningful
+    if (crossEncoderResult?.reasoning && crossEncoderResult.relevanceScore >= 0.5) {
+      reasons.push(`LLM: ${crossEncoderResult.reasoning}`);
+    }
 
     for (const role of intent.roles) {
       if (document?.facetRole?.some((value) => value.includes(role)) || matchedText.includes(role)) {
@@ -159,8 +191,9 @@ export function rerank(
   intent: QueryIntent,
   documents: Map<string, SearchDocument>,
   evidenceByPerson: Map<string, EvidenceItem[]>,
-  config: Partial<RerankerConfig> = {}
+  config: Partial<RerankerConfig> = {},
+  crossEncoderScores?: Map<string, CrossEncoderScore>
 ): RerankResult[] {
   const reranker = new Reranker(config);
-  return reranker.rerank(results, intent, documents, evidenceByPerson);
+  return reranker.rerank(results, intent, documents, evidenceByPerson, crossEncoderScores);
 }
