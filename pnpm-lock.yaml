@@ -53,6 +53,9 @@ importers:
       fastify:
         specifier: ^5.3.3
         version: 5.8.4
+      jose:
+        specifier: ^6.2.2
+        version: 6.2.2
 
   apps/web:
     dependencies:

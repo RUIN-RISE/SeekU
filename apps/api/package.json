@@ -19,6 +19,7 @@
     "@seeku/search": "workspace:*",
     "@seeku/shared": "workspace:*",
     "drizzle-orm": "^0.30.10",
-    "fastify": "^5.3.3"
+    "fastify": "^5.3.3",
+    "jose": "^6.2.2"
   }
 }
