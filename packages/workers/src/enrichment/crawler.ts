@@ -1,12 +1,14 @@
 /**
  * SmartCrawler - 智能爬虫调度器 (Hardened)
- * 
+ *
  * DESIGN RATIONALE:
  * 本组件致力于解决高频反爬与内容提取率之间的平衡。
  * 已修复: Magic Numbers 提炼, 结构化日志导出。
- * 
+ *
  * @module Enrichment/Crawler
  */
+
+import { withRetry } from "@seeku/shared";
 
 export const CRAWLER_CONFIG = {
   FAST_TIMEOUT_MS: 10000,
@@ -36,10 +38,13 @@ export class SmartCrawler {
   static async crawl(url: string, jinaApiKey?: string): Promise<CrawlResult> {
     try {
       console.debug(`[SmartCrawler] Fast-fetching: ${url}`);
-      const resp = await fetch(url, {
-        headers: this.HEADERS,
-        signal: AbortSignal.timeout(CRAWLER_CONFIG.FAST_TIMEOUT_MS)
-      });
+      const resp = await withRetry(
+        () => fetch(url, {
+          headers: this.HEADERS,
+          signal: AbortSignal.timeout(CRAWLER_CONFIG.FAST_TIMEOUT_MS)
+        }),
+        { maxRetries: 2, baseDelayMs: 2000 }
+      );
 
       if (CRAWLER_CONFIG.BOT_SIGNALS.includes(resp.status)) {
         console.info(`[SmartCrawler] Anti-bot (${resp.status}), switching to Jina: ${url}`);

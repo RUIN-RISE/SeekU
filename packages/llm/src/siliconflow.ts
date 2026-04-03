@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import type { LLMProvider, LLMProviderConfig, ChatMessage, ChatResponse, EmbeddingResponse, ChatOptions } from "./provider.js";
+import { withRetry } from "@seeku/shared";
 
 // SiliconFlow defaults (Stepfun models)
 const SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1";
@@ -24,7 +25,24 @@ export class SiliconFlowProvider implements LLMProvider {
     this.embeddingDimension = config.embeddingDimension ?? DEFAULT_EMBEDDING_DIMENSION;
   }
 
-  // Convenience constructor using env vars
+  // Convenience constructor using env vars (Strictly SiliconFlow only)
+  static fromStrictEnv(): SiliconFlowProvider {
+    const apiKey = process.env.SILICONFLOW_API_KEY;
+    if (!apiKey) {
+      throw new Error("SILICONFLOW_API_KEY is required for strict SiliconFlowProvider initialization");
+    }
+    return new SiliconFlowProvider({
+      apiKey,
+      baseURL: process.env.SILICONFLOW_BASE_URL ?? SILICONFLOW_BASE_URL,
+      defaultChatModel: process.env.SILICONFLOW_CHAT_MODEL ?? DEFAULT_CHAT_MODEL,
+      defaultEmbeddingModel: process.env.SILICONFLOW_EMBEDDING_MODEL ?? DEFAULT_EMBEDDING_MODEL,
+      embeddingDimension: process.env.SILICONFLOW_EMBEDDING_DIMENSION
+        ? parseInt(process.env.SILICONFLOW_EMBEDDING_DIMENSION, 10)
+        : DEFAULT_EMBEDDING_DIMENSION
+    });
+  }
+
+  // Convenience constructor using env vars (Allows legacy fallback)
   static fromEnv(): SiliconFlowProvider {
     const apiKey = process.env.SILICONFLOW_API_KEY ?? process.env.OPENAI_API_KEY;
     if (!apiKey) {
@@ -42,13 +60,14 @@ export class SiliconFlowProvider implements LLMProvider {
   }
 
   async chat(messages: ChatMessage[], options?: ChatOptions): Promise<ChatResponse> {
-    const response = await this.client.chat.completions.create({
-      model: options?.model ?? this.defaultChatModel,
-      messages: messages.map(m => ({ role: m.role, content: m.content })),
-      temperature: options?.temperature ?? 0.7
-    }, {
-      signal: options?.signal // Pass AbortSignal to OpenAI SDK
-    });
+    return withRetry(async () => {
+      const response = await this.client.chat.completions.create({
+        model: options?.model ?? this.defaultChatModel,
+        messages: messages.map(m => ({ role: m.role, content: m.content })),
+        temperature: options?.temperature ?? 0.7
+      }, {
+        signal: options?.signal
+      });
 
     const choice = response.choices[0];
     return {
@@ -59,43 +78,45 @@ export class SiliconFlowProvider implements LLMProvider {
         completionTokens: response.usage.completion_tokens
       } : undefined
     };
+    });
   }
 
   async embed(text: string, options?: { model?: string }): Promise<EmbeddingResponse> {
-    const response = await this.client.embeddings.create({
-      model: options?.model ?? this.defaultEmbeddingModel,
-      input: text
-    });
+    return withRetry(async () => {
+      const response = await this.client.embeddings.create({
+        model: options?.model ?? this.defaultEmbeddingModel,
+        input: text
+      });
 
-    const data = response.data[0];
-    return {
-      embedding: data.embedding,
-      model: response.model,
-      dimension: data.embedding.length,
-      usage: { promptTokens: response.usage.prompt_tokens }
-    };
+      const data = response.data[0];
+      return {
+        embedding: data.embedding,
+        model: response.model,
+        dimension: data.embedding.length,
+        usage: { promptTokens: response.usage.prompt_tokens }
+      };
+    });
   }
 
   async embedBatch(texts: string[], options?: { model?: string }): Promise<EmbeddingResponse[]> {
-    // Batch size limit for SiliconFlow
     const BATCH_SIZE = 50;
     const results: EmbeddingResponse[] = [];
 
     for (let i = 0; i < texts.length; i += BATCH_SIZE) {
       const batch = texts.slice(i, i + BATCH_SIZE);
-      const response = await this.client.embeddings.create({
-        model: options?.model ?? this.defaultEmbeddingModel,
-        input: batch
-      });
-
-      for (const data of response.data) {
-        results.push({
+      const batchResults = await withRetry(async () => {
+        const response = await this.client.embeddings.create({
+          model: options?.model ?? this.defaultEmbeddingModel,
+          input: batch
+        });
+        return response.data.map((data) => ({
           embedding: data.embedding,
           model: response.model,
           dimension: data.embedding.length,
           usage: data.index === 0 ? { promptTokens: response.usage.prompt_tokens } : undefined
-        });
-      }
+        }));
+      });
+      results.push(...batchResults);
     }
 
     return results;
