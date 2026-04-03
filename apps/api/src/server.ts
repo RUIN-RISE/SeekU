@@ -2,6 +2,7 @@ import "dotenv/config";
 
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import { sql } from "drizzle-orm";
 
 import {
   createDatabaseConnection,
@@ -67,6 +68,18 @@ function inferSourceAndHandle(input: {
   };
 }
 
+function parseCorsOrigins(): string | boolean | string[] {
+  const envOrigins = process.env.CORS_ORIGINS;
+  if (envOrigins) {
+    const origins = envOrigins.split(",").map((s) => s.trim()).filter(Boolean);
+    return origins.length === 1 ? origins[0] : origins;
+  }
+  if (process.env.NODE_ENV === "development") {
+    return true;
+  }
+  return ["http://localhost:3001"];
+}
+
 function resolveBuildOptions(input?: SeekuDatabase | BuildApiServerOptions): BuildApiServerOptions {
   if (!input) {
     return {};
@@ -86,15 +99,20 @@ export async function buildApiServer(input?: SeekuDatabase | BuildApiServerOptio
   });
 
   await fastify.register(cors, {
-    origin: true
+    origin: parseCorsOrigins()
   });
 
   const ownedConnection = options.db ? null : createDatabaseConnection();
   const database = options.db ?? ownedConnection!.db;
 
-  fastify.get("/health", async () => ({
-    status: "ok"
-  }));
+  fastify.get("/health", async () => {
+    try {
+      await database.execute(sql`SELECT 1`);
+      return { status: "ok", database: "connected" };
+    } catch {
+      return { status: "degraded", database: "disconnected" };
+    }
+  });
 
   registerSearchRoutes(fastify, database, { services: options.searchServices });
   registerProfileRoutes(fastify, database);
@@ -130,16 +148,10 @@ export async function buildApiServer(input?: SeekuDatabase | BuildApiServerOptio
     });
   });
 
-  fastify.get("/opt-out-requests/:id", async (request, reply) => {
-    const params = request.params as { id?: string };
+  fastify.get<{ Params: { id: string } }>("/opt-out-requests/:id", async (request, reply) => {
+    const { id } = request.params;
 
-    if (!params.id) {
-      return reply.status(400).send({
-        error: "missing_id"
-      });
-    }
-
-    const item = await getOptOutRequest(database, params.id);
+    const item = await getOptOutRequest(database, id);
 
     if (!item) {
       return reply.status(404).send({
@@ -152,16 +164,10 @@ export async function buildApiServer(input?: SeekuDatabase | BuildApiServerOptio
     };
   });
 
-  fastify.post("/opt-out-requests/:id/process", async (request, reply) => {
-    const params = request.params as { id?: string };
+  fastify.post<{ Params: { id: string } }>("/opt-out-requests/:id/process", async (request, reply) => {
+    const { id } = request.params;
 
-    if (!params.id) {
-      return reply.status(400).send({
-        error: "missing_id"
-      });
-    }
-
-    const processed = await processOptOutRequest(database, params.id);
+    const processed = await processOptOutRequest(database, id);
 
     return reply.send({
       request: serializeOptOutRequest(processed.request),
