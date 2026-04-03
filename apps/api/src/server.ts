@@ -21,6 +21,8 @@ import { registerAdminRoutes } from "./routes/admin.js";
 import { registerClaimRoutes } from "./routes/claim.js";
 import { registerClaimVerifyRoutes } from "./routes/claim-verify.js";
 import { registerClaimGitHubRoutes } from "./routes/claim-github.js";
+import { registerProfileEditRoutes } from "./routes/profile-edit.js";
+import { registerAdminClaimsRoutes } from "./routes/admin-claims.js";
 import type { SearchServices } from "./routes/search.js";
 
 interface BuildApiServerOptions {
@@ -125,6 +127,8 @@ export async function buildApiServer(input?: SeekuDatabase | BuildApiServerOptio
   registerClaimRoutes(fastify, database);
   registerClaimVerifyRoutes(fastify, database);
   registerClaimGitHubRoutes(fastify, database);
+  registerProfileEditRoutes(fastify, database);
+  registerAdminClaimsRoutes(fastify, database);
 
   fastify.post("/opt-out-requests", async (request, reply) => {
     const parsed = OptOutRequestInputSchema.safeParse(request.body);

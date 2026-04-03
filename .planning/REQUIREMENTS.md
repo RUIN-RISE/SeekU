@@ -43,7 +43,7 @@
 - [x] **UI-02**: Results page with candidate cards (name, headline, match score, evidence preview)
 - [x] **UI-03**: Candidate detail page with evidence tabs (projects, repos, socials, signals)
 - [x] **UI-04**: Admin page showing sync status, eval results, and manual trigger buttons
-- [ ] **UI-05**: Search refinement conversation UI (iteratively adjust conditions)
+- [x] **UI-05**: Search refinement conversation UI (iteratively adjust conditions)
 
 ### Compliance Layer
 
@@ -117,7 +117,7 @@
 | EVAL-03 | Phase 4 | Complete |
 | EVAL-04 | Phase 4 | Complete |
 | EVAL-05 | Phase 4 | Complete |
-| UI-05 | Phase 5 | Pending |
+| UI-05 | Phase 5 | Complete |
 | COMP-03 | Phase 5 | Complete |
 | COMP-04 | Phase 5 | Complete |
 
