@@ -22,6 +22,12 @@ export function Header() {
             搜索
           </Link>
           <Link
+            href="/chat"
+            className="text-text-light hover:text-accent-blue transition-colors font-body"
+          >
+            对话搜索
+          </Link>
+          <Link
             href="/admin"
             className="text-text-light hover:text-accent-blue transition-colors font-body"
           >
