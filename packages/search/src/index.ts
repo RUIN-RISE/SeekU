@@ -6,3 +6,4 @@ export * from "./reranker.js";
 export * from "./coverage.js";
 export * from "./query-cache.js";
 export * from "./cross-encoder.js";
+export * from "./pipeline.js";
