@@ -62,6 +62,7 @@ export interface ProfileResponse {
     url: string | null;
     metadata: Record<string, unknown>;
   }>;
+  total: number;
 }
 
 export async function searchAPI(request: SearchRequest): Promise<SearchResponse> {
