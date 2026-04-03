@@ -1,13 +1,14 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
-import { X, ShieldCheck } from "lucide-react";
+import { X, ShieldCheck, Pencil } from "lucide-react";
 import { clsx } from "clsx";
 import { useState } from "react";
 import { useProfile } from "@/lib/hooks";
 import { EvidenceTabs } from "./EvidenceTabs";
 import { VerifiedBadge } from "./VerifiedBadge";
 import { ClaimForm } from "./ClaimForm";
+import { ProfileEditForm } from "./ProfileEditForm";
 
 interface CandidateDetailModalProps {
   personId: string | null;
@@ -17,6 +18,7 @@ interface CandidateDetailModalProps {
 export function CandidateDetailModal({ personId, onClose }: CandidateDetailModalProps) {
   const { data, isLoading, error } = useProfile(personId ?? "");
   const [showClaimForm, setShowClaimForm] = useState(false);
+  const [showEditForm, setShowEditForm] = useState(false);
 
   if (!personId) {
     return null;
@@ -107,6 +109,22 @@ export function CandidateDetailModal({ personId, onClose }: CandidateDetailModal
                 </button>
               )}
 
+              {/* Edit Profile Button (D-07) - only for claimed profiles */}
+              {data.person.searchStatus === "claimed" && (
+                <button
+                  type="button"
+                  onClick={() => setShowEditForm(true)}
+                  className={clsx(
+                    "flex items-center gap-2 px-4 py-2 mb-4 rounded-lg",
+                    "text-sm font-medium",
+                    "bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                  )}
+                >
+                  <Pencil className="w-4 h-4" />
+                  编辑档案
+                </button>
+              )}
+
               {/* Evidence Tabs */}
               <EvidenceTabs evidence={data.evidence} />
             </div>
@@ -132,6 +150,36 @@ export function CandidateDetailModal({ personId, onClose }: CandidateDetailModal
           personId={personId}
           personName={data.person.primaryName}
           onClose={() => setShowClaimForm(false)}
+        />
+      </>
+    );
+  }
+
+  // Edit Form Modal (separate overlay)
+  if (showEditForm && data?.person) {
+    return (
+      <>
+        {/* Hidden base modal */}
+        <Dialog.Root open={false}>
+          <Dialog.Portal>
+            <Dialog.Overlay className="fixed inset-0 bg-black/50" />
+            <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+          </Dialog.Portal>
+        </Dialog.Root>
+        {/* Edit Form */}
+        <ProfileEditForm
+          personId={personId}
+          currentProfile={{
+            id: data.person.id,
+            primaryHeadline: data.person.primaryHeadline,
+            evidence: data.evidence.map((e) => ({
+              id: e.id,
+              evidenceType: e.evidenceType,
+              title: e.title,
+              url: e.url
+            }))
+          }}
+          onClose={() => setShowEditForm(false)}
         />
       </>
     );
