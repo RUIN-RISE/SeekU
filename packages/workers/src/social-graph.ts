@@ -11,6 +11,7 @@ import {
   sourceProfiles,
   type SeekuDatabase
 } from "@seeku/db";
+import { type LLMProvider } from "@seeku/llm";
 import { EnrichmentHub } from "./enrichment/hub.js";
 
 /**
@@ -20,11 +21,14 @@ export interface MiningOptions {
   limit?: number;
   db?: SeekuDatabase;
   depth?: number;
+  provider?: LLMProvider;
 }
 
 export interface MiningResult {
   linksProcessed: number;
   newProfilesCreated: number;
+  discoveryPhase: { processed: number; newProfiles: number };
+  networkPhase: { attempted: number; newProfiles: number };
   errors: Array<{ url: string; message: string }>;
 }
 
@@ -40,12 +44,14 @@ export interface MiningResult {
 export async function runSocialGraphWorker(options: MiningOptions = {}): Promise<MiningResult> {
   const ownedConnection = options.db ? null : createDatabaseConnection();
   const db = options.db ?? ownedConnection!.db;
-  const hub = new EnrichmentHub(db);
+  const hub = new EnrichmentHub(db, options.provider);
   const workBudget = options.limit ?? 20;
 
   const result: MiningResult = {
     linksProcessed: 0,
     newProfilesCreated: 0,
+    discoveryPhase: { processed: 0, newProfiles: 0 },
+    networkPhase: { attempted: 0, newProfiles: 0 },
     errors: []
   };
 
@@ -53,6 +59,7 @@ export async function runSocialGraphWorker(options: MiningOptions = {}): Promise
     // --- 策略 A: 递归同步 (Discovery Leads) ---
     // 优先消耗预算处理现有线索
     const discoveryLeads = await hub.processDiscoveryLeads(workBudget);
+    result.discoveryPhase = discoveryLeads;
     result.linksProcessed = discoveryLeads.processed;
     result.newProfilesCreated = discoveryLeads.newProfiles;
 
@@ -93,6 +100,8 @@ export async function runSocialGraphWorker(options: MiningOptions = {}): Promise
         const perSeedLimit = Math.min(10, remainingBudget);
         const minedResult = await hub.mineGithubNetwork(handle, perSeedLimit);
 
+        result.networkPhase.attempted += minedResult.attempted;
+        result.networkPhase.newProfiles += minedResult.newProfiles;
         result.linksProcessed += minedResult.attempted;
         result.newProfilesCreated += minedResult.newProfiles;
         remainingBudget -= minedResult.attempted;

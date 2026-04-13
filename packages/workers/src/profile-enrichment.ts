@@ -9,6 +9,7 @@ import {
   eq,
   type SeekuDatabase
 } from "@seeku/db";
+import { type LLMProvider } from "@seeku/llm";
 import { EnrichmentHub } from "./enrichment/hub.js";
 
 /**
@@ -18,6 +19,7 @@ export interface EnrichmentOptions {
   limit?: number;
   personIds?: string[];
   db?: SeekuDatabase;
+  provider?: LLMProvider;
 }
 
 export interface EnrichmentResult {
@@ -36,7 +38,7 @@ export interface EnrichmentResult {
 export async function runProfileEnrichmentWorker(options: EnrichmentOptions = {}): Promise<EnrichmentResult> {
   const ownedConnection = options.db ? null : createDatabaseConnection();
   const db = options.db ?? ownedConnection!.db;
-  const hub = new EnrichmentHub(db);
+  const hub = new EnrichmentHub(db, options.provider);
   const limit = options.limit ?? 10;
 
   const result: EnrichmentResult = {

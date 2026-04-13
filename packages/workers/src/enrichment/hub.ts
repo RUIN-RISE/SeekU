@@ -6,7 +6,7 @@ import {
   upsertSourceProfile,
   type SeekuDatabase
 } from "@seeku/db";
-import { SiliconFlowProvider } from "@seeku/llm";
+import { type LLMProvider, SiliconFlowProvider } from "@seeku/llm";
 import { GithubClient } from "@seeku/adapters";
 import type { NormalizedProfile } from "@seeku/shared";
 
@@ -30,7 +30,7 @@ export class EnrichmentHub {
   private summarizer: ProfileSummarizer;
   private discovery: SocialDiscoveryService;
 
-  constructor(db: SeekuDatabase, provider?: SiliconFlowProvider) {
+  constructor(db: SeekuDatabase, provider?: LLMProvider) {
     this.db = db;
     this.crawler = SmartCrawler;
     this.summarizer = new ProfileSummarizer(provider);

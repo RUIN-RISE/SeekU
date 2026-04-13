@@ -1,4 +1,5 @@
-import { profileCache, type NewProfileCache, eq } from "./index.js";
+import { profileCache, type NewProfileCache } from "./schema.js";
+import { eq } from "drizzle-orm";
 import { type NodePgDatabase } from "drizzle-orm/node-postgres";
 
 const PROFILE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;

@@ -185,42 +185,69 @@ export async function upsertSourceProfile(db: SeekuDatabase, input: UpsertSource
   // Note: This will strip any 'undefined' values but keep 'null'
   const normalizedPayload = coerceJsonObject(JSON.parse(JSON.stringify(input.profile)));
   const rawPayload = coerceJsonObject(input.rawPayload);
+  const baseValues = {
+    source: input.profile.source,
+    sourceProfileId: input.profile.sourceProfileId,
+    sourceHandle: input.profile.sourceHandle,
+    canonicalUrl: input.profile.canonicalUrl,
+    displayName: input.profile.displayName,
+    headline: input.profile.headline,
+    bio: input.profile.bio,
+    locationText: input.profile.locationText,
+    avatarUrl: input.profile.avatarUrl,
+    rawPayload: toJsonbSql(rawPayload),
+    normalizedPayload: toJsonbSql(normalizedPayload),
+    profileHash: input.profileHash,
+    lastSyncRunId: input.lastSyncRunId,
+    isDeleted: input.isDeleted ?? false
+  } as const;
+  const updateSet = {
+    sourceProfileId: input.profile.sourceProfileId,
+    sourceHandle: input.profile.sourceHandle,
+    canonicalUrl: input.profile.canonicalUrl,
+    displayName: input.profile.displayName,
+    headline: input.profile.headline,
+    bio: input.profile.bio,
+    locationText: input.profile.locationText,
+    avatarUrl: input.profile.avatarUrl,
+    rawPayload: toJsonbSql(rawPayload),
+    normalizedPayload: toJsonbSql(normalizedPayload),
+    profileHash: input.profileHash,
+    lastSeenAt: sql`now()`,
+    lastSyncedAt: sql`now()`,
+    lastSyncRunId: input.lastSyncRunId,
+    isDeleted: input.isDeleted ?? false
+  } as const;
+
+  if (input.profile.sourceProfileId) {
+    const [existingBySourceProfileId] = await db
+      .select()
+      .from(sourceProfiles)
+      .where(
+        and(
+          eq(sourceProfiles.source, input.profile.source),
+          eq(sourceProfiles.sourceProfileId, input.profile.sourceProfileId)
+        )
+      )
+      .limit(1);
+
+    if (existingBySourceProfileId) {
+      const [updated] = await db
+        .update(sourceProfiles)
+        .set(updateSet)
+        .where(eq(sourceProfiles.id, existingBySourceProfileId.id))
+        .returning();
+
+      return updated;
+    }
+  }
 
   const [profile] = await db
     .insert(sourceProfiles)
-    .values({
-      source: input.profile.source,
-      sourceProfileId: input.profile.sourceProfileId,
-      sourceHandle: input.profile.sourceHandle,
-      canonicalUrl: input.profile.canonicalUrl,
-      displayName: input.profile.displayName,
-      headline: input.profile.headline,
-      bio: input.profile.bio,
-      locationText: input.profile.locationText,
-      avatarUrl: input.profile.avatarUrl,
-      rawPayload: toJsonbSql(rawPayload),
-      normalizedPayload: toJsonbSql(normalizedPayload),
-      profileHash: input.profileHash,
-      lastSyncRunId: input.lastSyncRunId,
-      isDeleted: input.isDeleted ?? false
-    })
+    .values(baseValues)
     .onConflictDoUpdate({
       target: [sourceProfiles.source, sourceProfiles.sourceHandle],
-      set: {
-        sourceProfileId: input.profile.sourceProfileId,
-        canonicalUrl: input.profile.canonicalUrl,
-        displayName: input.profile.displayName,
-        headline: input.profile.headline,
-        bio: input.profile.bio,
-        locationText: input.profile.locationText,
-        avatarUrl: input.profile.avatarUrl,
-        rawPayload: toJsonbSql(rawPayload),
-        normalizedPayload: toJsonbSql(normalizedPayload),
-        profileHash: input.profileHash,
-        lastSeenAt: sql`now()`,
-        lastSyncedAt: sql`now()`,
-        lastSyncRunId: input.lastSyncRunId
-      }
+      set: updateSet
     })
     .returning();
 

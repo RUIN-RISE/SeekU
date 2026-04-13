@@ -72,14 +72,23 @@ export class SearchIndexWorker {
   constructor(db: SeekuDatabase, config: SearchIndexWorkerConfig = {}) {
     this.db = db;
     this.batchSize = config.batchSize ?? DEFAULT_BATCH_SIZE;
+    
+    // Hard-lock to SiliconFlow for indexing and embeddings to ensure 4096-dim vector compatibility.
+    // This prevents provider drift if OPENAI_API_KEY is accidentally set.
+    const provider = config.provider ?? SiliconFlowProvider.fromStrictEnv();
+    
     this.embeddingGenerator = new EmbeddingGenerator({
-      provider: config.provider ?? SiliconFlowProvider.fromEnv(),
+      provider,
       batchSize: config.embeddingBatchSize ?? config.batchSize ?? DEFAULT_BATCH_SIZE
     } satisfies EmbeddingGeneratorConfig);
   }
 
   private async resolvePersons(personIds?: string[]): Promise<Person[]> {
-    if (personIds && personIds.length > 0) {
+    if (personIds !== undefined) {
+      if (personIds.length === 0) {
+        return [];
+      }
+
       return this.db.select().from(persons).where(inArray(persons.id, personIds));
     }
 
@@ -178,8 +187,12 @@ export class SearchIndexWorker {
     };
   }
 
-  private async resolveDocumentsForEmbedding(personIds?: string[]): Promise<SearchDocument[]> {
-    if (personIds && personIds.length > 0) {
+  private async resolveDocumentsForEmbedding(personIds?: string[], limit?: number): Promise<SearchDocument[]> {
+    if (personIds !== undefined) {
+      if (personIds.length === 0) {
+        return [];
+      }
+
       return this.db
         .select()
         .from(searchDocuments)
@@ -198,7 +211,7 @@ export class SearchIndexWorker {
           lt(searchEmbeddings.embeddedAt, searchDocuments.updatedAt)
         )
       )
-      .limit(this.batchSize);
+      .limit(limit ?? this.batchSize);
 
     return rows.map((row) => row.document);
   }
@@ -226,6 +239,47 @@ export class SearchIndexWorker {
       documents,
       embeddings
     };
+  }
+
+  /**
+   * Rebuild ALL active candidates in batches
+   */
+  async rebuildAll(): Promise<SearchIndexRunSummary> {
+    const totalProcessed: SearchIndexRunSummary = {
+      documents: { personsProcessed: 0, documentsUpserted: 0, personIds: [] },
+      embeddings: { documentsProcessed: 0, embeddingsUpserted: 0, personIds: [] }
+    };
+
+    // 1. Sync all documents in batches
+    let offset = 0;
+    while (true) {
+      const activeBatch = await this.db
+        .select()
+        .from(persons)
+        .where(eq(persons.searchStatus, "active"))
+        .limit(this.batchSize)
+        .offset(offset);
+
+      if (activeBatch.length === 0) break;
+
+      const summary = await this.rebuildDocuments(activeBatch.map((p) => p.id));
+      totalProcessed.documents.personsProcessed += summary.personsProcessed;
+      totalProcessed.documents.documentsUpserted += summary.documentsUpserted;
+      totalProcessed.documents.personIds.push(...summary.personIds);
+      offset += this.batchSize;
+    }
+
+    // 2. Sync all embeddings in batches
+    while (true) {
+      const summary = await this.rebuildEmbeddings();
+      if (summary.documentsProcessed === 0) break;
+
+      totalProcessed.embeddings.documentsProcessed += summary.documentsProcessed;
+      totalProcessed.embeddings.embeddingsUpserted += summary.embeddingsUpserted;
+      totalProcessed.embeddings.personIds.push(...summary.personIds);
+    }
+
+    return totalProcessed;
   }
 }
 
@@ -271,7 +325,11 @@ export async function runSearchRebuildWorker(
 
   try {
     const worker = new SearchIndexWorker(database, config);
-    return await worker.rebuild(personIds);
+    if (personIds !== undefined) {
+      return await worker.rebuild(personIds);
+    }
+
+    return await worker.rebuildAll();
   } finally {
     await ownedConnection?.close();
   }

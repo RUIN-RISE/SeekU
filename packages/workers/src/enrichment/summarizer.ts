@@ -1,4 +1,5 @@
-import { SiliconFlowProvider } from "@seeku/llm";
+import type { LLMProvider } from "@seeku/llm";
+import { createProvider } from "@seeku/llm";
 
 /**
  * ProfileSummarizer - AI 驱动的人才洞察引擎 (Hardened)
@@ -23,10 +24,10 @@ const SUMMARIZER_CONFIG = {
 } as const;
 
 export class ProfileSummarizer {
-  private provider: SiliconFlowProvider;
+  private provider: LLMProvider;
 
-  constructor(provider?: SiliconFlowProvider) {
-    this.provider = provider ?? SiliconFlowProvider.fromEnv();
+  constructor(provider?: LLMProvider) {
+    this.provider = provider ?? createProvider();
   }
 
   /**

@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "openai": "^4.85.0"
+    "openai": "^4.85.0",
+    "@seeku/shared": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.8.2",
