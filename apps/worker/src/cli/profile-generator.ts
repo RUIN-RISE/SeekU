@@ -1,6 +1,6 @@
 import { Person, EvidenceItem } from "@seeku/db";
 import type { LLMProvider } from "@seeku/llm";
-import { SiliconFlowProvider } from "@seeku/llm";
+import { createProvider } from "@seeku/llm";
 import { MultiDimensionProfile, SearchConditions } from "./types.js";
 import { ProfileSummarySchema, sanitizeForPrompt, safeParseJSON } from "./schemas.js";
 import { CLI_CONFIG } from "./config.js";
@@ -16,7 +16,7 @@ export class ProfileGenerator {
 
   // Factory method for convenience (backward compatibility)
   static withDefaultProvider(): ProfileGenerator {
-    return new ProfileGenerator(SiliconFlowProvider.fromEnv());
+    return new ProfileGenerator(createProvider());
   }
 
   async generate(
