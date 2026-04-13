@@ -7,6 +7,7 @@ import { normalizeBonjourProfile } from "./normalize.js";
 
 export * from "./client.js";
 export * from "./discover.js";
+export * from "./dump.js";
 export * from "./normalize.js";
 
 export class BonjourAdapter implements SourceAdapter<BonjourProfile> {

@@ -56,7 +56,11 @@ function normalizeHandleishUrl(value: string) {
   }
 }
 
-function mapSocialType(type: string): AliasType {
+function mapSocialType(type: unknown): AliasType {
+  if (typeof type !== "string") {
+    return "other";
+  }
+
   return SOCIAL_TYPE_MAP[type.toLowerCase()] ?? "other";
 }
 
@@ -78,10 +82,41 @@ function buildLocationText(profile: BonjourProfile) {
   return compact([region.countryName, region.provinceName, region.cityName]).join(" / ") || undefined;
 }
 
+function extractSocialLinks(text: string | null | undefined): Alias[] {
+  if (!text) {
+    return [];
+  }
+
+  const aliases: Alias[] = [];
+
+  // GitHub Regex: github.com/xxx or @xxx (heuristic)
+  const githubMatches = text.matchAll(/(?:github\.com\/|@)([a-zA-Z0-9-]{1,39})/gi);
+  for (const match of githubMatches) {
+    const handle = match[1];
+    // Filter out common false positives like @浙大
+    if (handle.length > 2 && !["浙大", "浙江大学", "ZJU"].includes(handle.toUpperCase())) {
+      aliases.push({ type: "github", value: handle, confidence: 0.8 });
+    }
+  }
+
+  // X/Twitter Regex: x.com/xxx or twitter.com/xxx
+  const xMatches = text.matchAll(/(?:x\.com\/|twitter\.com\/)([a-zA-Z0-9_]{1,15})/gi);
+  for (const match of xMatches) {
+    aliases.push({ type: "x", value: match[1], confidence: 0.8 });
+  }
+
+  return aliases;
+}
+
 function extractAliases(profile: BonjourProfile): Alias[] {
   const aliases = new Map<string, Alias>();
 
+  // 1. From explicit social links
   for (const social of profile.socials ?? []) {
+    if (typeof social.type !== "string") {
+      continue;
+    }
+
     const rawValue = trimToUndefined(social.content);
     if (!rawValue) {
       continue;
@@ -97,6 +132,44 @@ function extractAliases(profile: BonjourProfile): Alias[] {
         value,
         confidence: 1
       });
+    }
+  }
+
+  // 2. From gridItems (Bonjour's modular UI components often contain social links)
+  for (const item of profile.gridItems ?? []) {
+    const social = (item.content as Record<string, unknown> | undefined)?.social;
+    if (!social || typeof social !== "object" || Array.isArray(social)) {
+      continue;
+    }
+
+    const socialRecord = social as Record<string, unknown>;
+    const rawValue =
+      typeof socialRecord.content === "string" ? trimToUndefined(socialRecord.content) : undefined;
+    if (!rawValue) {
+      continue;
+    }
+
+    const type = mapSocialType(socialRecord.type);
+    const value = normalizeAliasValue(type, rawValue);
+    const key = `${type}:${value.toLowerCase()}`;
+
+    if (!aliases.has(key)) {
+      aliases.set(key, {
+        type,
+        value,
+        confidence: 1
+      });
+    }
+  }
+
+  // 3. Heuristic extraction from bio/description
+  const searchText = `${profile.name || ""} ${profile.bio || ""} ${profile.description || ""}`;
+  const heuristicAliases = extractSocialLinks(searchText);
+  
+  for (const alias of heuristicAliases) {
+    const key = `${alias.type}:${alias.value.toLowerCase()}`;
+    if (!aliases.has(key)) {
+      aliases.set(key, alias);
     }
   }
 

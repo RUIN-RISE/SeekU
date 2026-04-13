@@ -159,4 +159,16 @@ export class GithubClient {
       per_page: 30
     });
   }
+
+  async searchUsers(query: string, options: { page?: number; per_page?: number } = {}) {
+    return this.fetchWithRetry<{
+      total_count: number;
+      incomplete_results: boolean;
+      items: GithubUserSummary[];
+    }>("/search/users", {
+      q: query,
+      page: options.page ?? 1,
+      per_page: options.per_page ?? 30
+    });
+  }
 }

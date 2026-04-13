@@ -13,6 +13,66 @@ import {
   createBonjourAdapter,
   type BonjourAdapter
 } from "@seeku/adapters";
+import { BonjourScanner as WorkerScanner } from "@seeku/workers";
+
+export interface BonjourScanJobOptions {
+  query: string[];
+  limit?: number;
+  depth?: number;
+  db?: SeekuDatabase;
+}
+
+export interface BonjourScanSummary {
+  status: "succeeded" | "failed";
+  foundCount: number;
+  syncedSummary: BonjourSyncJobSummary | null;
+  error?: string;
+}
+
+export async function runBonjourDiscoveryScan(options: BonjourScanJobOptions): Promise<BonjourScanSummary> {
+  const ownedConnection = options.db ? null : createDatabaseConnection();
+  const db = options.db ?? ownedConnection!.db;
+
+  try {
+    const scanner = new WorkerScanner();
+    const result = await scanner.scanByKeywords(options.query, {
+      limitPerCategory: options.limit,
+      maxDepth: options.depth
+    });
+
+    if (result.handles.length === 0) {
+      return {
+        status: "succeeded",
+        foundCount: 0,
+        syncedSummary: null
+      };
+    }
+
+    console.info(`[Discovery] Scanned ${result.totalPostsChecked} posts, found ${result.handles.length} matches. Syncing...`);
+
+    const syncSummary = await runBonjourSyncJob({
+      db,
+      handles: result.handles,
+      limit: result.handles.length,
+      jobName: `bonjour.discovery.${options.query.join("_")}`
+    });
+
+    return {
+      status: "succeeded",
+      foundCount: result.handles.length,
+      syncedSummary: syncSummary
+    };
+  } catch (error) {
+    return {
+      status: "failed",
+      foundCount: 0,
+      syncedSummary: null,
+      error: error instanceof Error ? error.message : String(error)
+    };
+  } finally {
+    await ownedConnection?.close();
+  }
+}
 
 export interface BonjourSyncJobOptions {
   limit: number;

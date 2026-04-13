@@ -3,6 +3,10 @@ import { DEFAULT_ADAPTER_CONFIG, type AdapterConfig } from "../types.js";
 export const BONJOUR_BASE_URL =
   "https://fc-mp-b1a9bc8c-0aab-44ca-9af2-2bd604163a78.next.bspapp.com";
 
+interface BonjourClientConfig extends AdapterConfig {
+  authToken?: string;
+}
+
 export interface BonjourSocial {
   type: string;
   content: string;
@@ -105,6 +109,39 @@ export interface BonjourCommunityPost {
   profile_link?: BonjourProfileReference[];
 }
 
+export interface BonjourCommunityComment {
+  _id: string;
+  content?: string;
+  post_id: string;
+  admin_state?: string;
+  user_state?: string;
+  profile_link?: string;
+  create_time?: string;
+  update_time?: string;
+  profile?: {
+    _id?: string;
+    profile_link?: string;
+    name?: string;
+    description?: string;
+    avatar?: string;
+  };
+}
+
+export interface BonjourFriendLinkEntry {
+  profile_link: string;
+  name?: string;
+  avatar?: string;
+  description?: string;
+  comment?: unknown;
+  create_time?: string;
+  update_time?: string;
+}
+
+export interface BonjourFriendLinkResponse {
+  friend: BonjourFriendLinkEntry[];
+  friended: BonjourFriendLinkEntry[];
+}
+
 interface BonjourApiSuccess<T> {
   success: true;
   data: T;
@@ -129,11 +166,11 @@ function isBonjourApiFailure<T>(payload: BonjourApiResponse<T>): payload is Bonj
 }
 
 export class BonjourClient {
-  private readonly config: AdapterConfig;
+  private readonly config: BonjourClientConfig;
   private lastRequestAt = 0;
   private requestQueue: Promise<void> = Promise.resolve();
 
-  constructor(config: Partial<AdapterConfig> = {}) {
+  constructor(config: Partial<BonjourClientConfig> = {}) {
     this.config = {
       baseUrl: BONJOUR_BASE_URL,
       ...DEFAULT_ADAPTER_CONFIG,
@@ -172,7 +209,8 @@ export class BonjourClient {
         return await this.withRateLimit(async () => {
           const response = await fetch(url, {
             headers: {
-              accept: "application/json"
+              accept: "application/json",
+              ...(this.config.authToken ? { token: this.config.authToken } : {})
             },
             signal: AbortSignal.timeout(this.config.timeout)
           });
@@ -217,18 +255,21 @@ export class BonjourClient {
     return url;
   }
 
-  async fetchProfileByLink(link: string): Promise<BonjourProfile> {
+  async fetchProfileByLink(link: string, options: { inflate?: boolean } = {}): Promise<BonjourProfile> {
     return this.fetchWithRetry<BonjourProfile>(
-      this.buildUrl(`/profile/${encodeURIComponent(link)}`)
+      this.buildUrl(
+        `/profile/${encodeURIComponent(link)}`,
+        options.inflate ? { inflate: "true" } : undefined
+      )
     );
   }
 
-  async fetchProfileByHandle(handle: string): Promise<BonjourProfile> {
-    return this.fetchProfileByLink(handle);
+  async fetchProfileByHandle(handle: string, options: { inflate?: boolean } = {}): Promise<BonjourProfile> {
+    return this.fetchProfileByLink(handle, options);
   }
 
-  async fetchProfileByProfileLink(profileLink: string): Promise<BonjourProfile> {
-    return this.fetchProfileByLink(profileLink);
+  async fetchProfileByProfileLink(profileLink: string, options: { inflate?: boolean } = {}): Promise<BonjourProfile> {
+    return this.fetchProfileByLink(profileLink, options);
   }
 
   async fetchCategories(): Promise<BonjourCategory[]> {
@@ -262,6 +303,35 @@ export class BonjourClient {
         limit,
         skip
       })
+    );
+  }
+
+  async fetchGlobalCommunityPosts(limit = 20, skip = 0): Promise<BonjourCommunityPost[]> {
+    return this.fetchWithRetry<BonjourCommunityPost[]>(
+      this.buildUrl("/user/community", {
+        limit,
+        skip
+      })
+    );
+  }
+
+  async fetchCommunityCommentsByPostId(postId: string): Promise<BonjourCommunityComment[]> {
+    return this.fetchWithRetry<BonjourCommunityComment[]>(
+      this.buildUrl("/user/communitycomment", {
+        _id: postId
+      })
+    );
+  }
+
+  async fetchOwnProfile(): Promise<BonjourProfile> {
+    return this.fetchWithRetry<BonjourProfile>(this.buildUrl("/user/profile"));
+  }
+
+  async fetchFriendLinks(handle?: string): Promise<BonjourFriendLinkResponse> {
+    return this.fetchWithRetry<BonjourFriendLinkResponse>(
+      handle
+        ? this.buildUrl(`/user/friend/${encodeURIComponent(handle)}`)
+        : this.buildUrl("/user/friend")
     );
   }
 }
