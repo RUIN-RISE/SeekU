@@ -1,8 +1,11 @@
 node_modules
 dist
 .turbo
+.DS_Store
 .env
 .env.local
+.env.*
+!.env.example
 *.log
 *.tsbuildinfo
 .next
@@ -10,4 +13,6 @@ apps/web/.next
 output
 .planning
 .claude-design
+.claude
+.antigravity
 .gemini
