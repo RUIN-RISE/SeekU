@@ -44,12 +44,10 @@ vi.mock("@seeku/db", () => ({
 }));
 
 vi.mock("@seeku/llm", () => ({
-  SiliconFlowProvider: {
-    fromEnv: vi.fn(() => ({
-      embed: mockEmbed,
-      chat: vi.fn(async () => ({ content: "test" }))
-    }))
-  }
+  createProvider: vi.fn(() => ({
+    embed: mockEmbed,
+    chat: vi.fn(async () => ({ content: "test" }))
+  }))
 }));
 
 vi.mock("@seeku/search", () => ({

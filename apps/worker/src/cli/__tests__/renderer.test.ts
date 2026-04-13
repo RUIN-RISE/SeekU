@@ -408,10 +408,10 @@ describe("TerminalRenderer", () => {
       limit: 10
     });
 
-    expect(output).toContain("关键证据");
-    expect(output).toContain("建议");
-    expect(output).toContain("下一步");
-    expect(output).toContain("Seeku 决策对比视图");
+    expect(output).toContain("核心证据");
+    expect(output).toContain("AI 建议");
+    expect(output).toContain("建议动作");
+    expect(output).toContain("Seeku 决策对比工作台 (Decision View)");
     expect(output).not.toContain("Top Evidence");
     expect(output).not.toContain("Recommendation");
     expect(output).not.toContain("Next Click");
@@ -473,11 +473,11 @@ describe("TerminalRenderer", () => {
     expect(output).toContain("Bonjour");
     expect(output).toContain("GitHub");
     expect(output).toContain("新鲜 2天");
-    expect(output).toContain("Bonjour 链接：https://bonjour.example/ada");
+    expect(output).toContain("🔗 Bonjour：https://bonjour.example/ada");
     expect(output).toContain("主导搜索平台重构");
     expect(output).toContain("维护 Python 自动化工具链");
-    expect(output).toContain("推荐先看");
-    expect(output).toContain("建议优先打开：技术命中明确，地点完全匹配");
-    expect(output).toContain("先看详情，再打开 Bonjour 深看");
+    expect(output).toContain("💡 决策优先");
+    expect(output).toContain("执行理由");
+    expect(output).toContain("即刻动作");
   });
 });

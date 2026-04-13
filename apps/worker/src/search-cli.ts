@@ -14,7 +14,7 @@ import {
   type EvidenceItem,
   type SearchDocument
 } from "@seeku/db";
-import { SiliconFlowProvider } from "@seeku/llm";
+import { createProvider } from "@seeku/llm";
 import { QueryPlanner, HybridRetriever, Reranker, type QueryIntent } from "@seeku/search";
 import { FALLBACK_MATCH_REASONS } from "@seeku/shared";
 import type { ScriptSearchResponseOutput, ScriptSearchResultOutput, SearchConditions } from "./cli/types.js";
@@ -130,7 +130,7 @@ export async function runSearchCli(options: SearchCliOptions): Promise<ScriptSea
   const { db, close } = createDatabaseConnection();
 
   try {
-    const provider = SiliconFlowProvider.fromEnv();
+    const provider = createProvider();
     const planner = new QueryPlanner({ provider });
     const retriever = new HybridRetriever({ db, provider, limit: 50 });
     const reranker = new Reranker();
@@ -240,6 +240,7 @@ export async function runSearchCli(options: SearchCliOptions): Promise<ScriptSea
         matchReasons: result.matchReasons,
         matchReason,
         whyMatched: matchReason,
+        queryReasons: explanation.reasons,
         source: formatSourceSummary(sources),
         sources,
         freshness: freshnessDate ? describeRelativeDate(freshnessDate) : "时间未知",

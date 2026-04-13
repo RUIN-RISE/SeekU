@@ -174,8 +174,8 @@ ${chalk.dim("下一步：back 返回 | o 打开 Bonjour | why 评分依据 | ref
   renderComparison(entries: ComparisonEntry[], conditions?: SearchConditions): string {
     const recommended = [...entries].sort((left, right) => right.decisionScore - left.decisionScore)[0];
     const contextLine = conditions
-      ? chalk.dim(`当前判断上下文：${this.formatConditionsSummary(conditions)}`)
-      : chalk.dim("当前判断上下文：未提供");
+      ? chalk.dim(`当前判断环境：${this.formatConditionsSummary(conditions)}`)
+      : chalk.dim("当前判断环境：未提供");
 
     const content = entries
       .map((entry) => {
@@ -184,8 +184,9 @@ ${chalk.dim("下一步：back 返回 | o 打开 Bonjour | why 评分依据 | ref
         const sourceBadge = this.formatSourceBadge(candidate.sources);
         const freshness = this.formatFreshness(candidate.latestEvidenceAt, candidate.lastSyncedAt);
         const bonjourLine = candidate.bonjourUrl
-          ? chalk.cyan(`🔗 Bonjour 链接：${candidate.bonjourUrl}`)
-          : chalk.dim("🔗 Bonjour 链接：无");
+          ? chalk.cyan(`  🔗 Bonjour：${candidate.bonjourUrl}`)
+          : chalk.dim("  🔗 Bonjour：无");
+
         const evidenceLines =
           topEvidence.length > 0
             ? topEvidence
@@ -193,38 +194,52 @@ ${chalk.dim("下一步：back 返回 | o 打开 Bonjour | why 评分依据 | ref
                   const freshnessLabel = item.freshnessLabel
                     ? chalk.dim(` · ${item.freshnessLabel}`)
                     : "";
-                  return `  ${index + 1}. ${chalk.cyan(`[${item.sourceLabel}]`)} ${chalk.dim(`[${item.evidenceType}]`)} ${item.title}${freshnessLabel}`;
+                  const icon = item.sourceLabel === "GitHub" ? "" : "";
+                  return `  ${chalk.dim(`[${index + 1}]`)} ${chalk.cyan(icon)} ${chalk.dim(`[${item.evidenceType}]`)} ${item.title}${freshnessLabel}`;
                 })
                 .join("\n")
             : chalk.dim("  暂无可展示的高价值证据");
 
+        const radarLine = [
+          `技术 ${this.getScoreColor(profile.dimensions.techMatch)(profile.dimensions.techMatch.toFixed(0))}%`,
+          `项目 ${this.getScoreColor(profile.dimensions.projectDepth)(profile.dimensions.projectDepth.toFixed(0))}%`,
+          `地点 ${this.getScoreColor(profile.dimensions.locationMatch)(profile.dimensions.locationMatch.toFixed(0))}%`,
+          `稳健 ${this.getScoreColor(profile.dimensions.careerStability)(profile.dimensions.careerStability.toFixed(0))}%`
+        ].join(chalk.dim(" | "));
+
+        const decisionTagStyled = entry.decisionTag === "优先深看"
+          ? chalk.bgGreen.black(` ${entry.decisionTag} `)
+          : entry.decisionTag === "继续比较"
+            ? chalk.bgYellow.black(` ${entry.decisionTag} `)
+            : chalk.bgWhite.black(` ${entry.decisionTag} `);
+
         return [
           `${chalk.bold.blueBright(`${titlePrefix}${candidate.name}`)} ${chalk.dim("|")} ${candidate.headline || "暂无标题"}`,
-          `${chalk.bold(entry.decisionTag)} · 综合分 ${chalk.green(candidate.matchScore.toFixed(1))} · ${sourceBadge} ${freshness}`,
-          `六维判断：技术 ${profile.dimensions.techMatch.toFixed(0)} | 项目 ${profile.dimensions.projectDepth.toFixed(0)} | 地点 ${profile.dimensions.locationMatch.toFixed(0)} | 稳健 ${profile.dimensions.careerStability.toFixed(0)}`,
-          `当前查询下为什么值得比较：${candidate.matchReason || "与本轮条件相关"}`,
+          `${decisionTagStyled} ${chalk.dim("·")} 综合匹配度 ${chalk.green(candidate.matchScore.toFixed(1))} ${chalk.dim("·")} ${sourceBadge} ${freshness}`,
+          `${chalk.bold("能力概览")}：${radarLine}`,
+          `${chalk.bold("本次命中")}：${candidate.matchReason || "与本轮条件相关"}`,
           bonjourLine,
-          `${chalk.bold("关键证据")}\n${evidenceLines}`,
-          `${chalk.bold("建议")}：${entry.recommendation}`,
-          `${chalk.bold("下一步")}：${entry.nextStep}`
+          `${chalk.bold("核心证据")}\n${evidenceLines}`,
+          `${chalk.bold("AI 建议")}：${chalk.italic(entry.recommendation)}`,
+          `${chalk.bold("建议动作")}：${chalk.dim(entry.nextStep)}`
         ].join("\n");
       })
       .join(`\n${chalk.dim("─".repeat(72))}\n`);
 
     const recommendationBlock = recommended
       ? [
-          `${chalk.bold("推荐先看")}：${chalk.blueBright(recommended.candidate.name)}`,
-          `${chalk.bold("理由")}：${recommended.recommendation}`,
-          `${chalk.bold("建议动作")}：${recommended.nextStep}`
+          `${chalk.bold.green("💡 决策优先")}：${chalk.blueBright(recommended.candidate.name)}`,
+          `${chalk.bold("执行理由")}：${recommended.recommendation}`,
+          `${chalk.bold("即刻动作")}：${chalk.cyan(recommended.nextStep)}`
         ].join("\n")
-      : `${chalk.bold("推荐先看")}：暂无`;
+      : `${chalk.bold("决策优先")}：暂无`;
 
     return boxen([contextLine, "", content, "", recommendationBlock].join("\n"), {
       padding: 1,
       margin: 1,
-      borderStyle: "round",
-      borderColor: "green",
-      title: "Seeku 决策对比视图",
+      borderStyle: "double",
+      borderColor: "cyan",
+      title: "Seeku 决策对比工作台 (Decision View)",
       titleAlignment: "center"
     });
   }
@@ -233,6 +248,12 @@ ${chalk.dim("下一步：back 返回 | o 打开 Bonjour | why 评分依据 | ref
     if (score >= 85) return chalk.greenBright;
     if (score >= 70) return chalk.green;
     if (score >= 50) return chalk.yellow;
+    return chalk.red;
+  }
+
+  private getScoreColor(score: number) {
+    if (score >= 80) return chalk.green;
+    if (score >= 60) return chalk.yellow;
     return chalk.red;
   }
 

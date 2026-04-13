@@ -1,5 +1,5 @@
 import { createDatabaseConnection } from "@seeku/db";
-import { SiliconFlowProvider, type LLMProvider } from "@seeku/llm";
+import { createProvider, type LLMProvider } from "@seeku/llm";
 import { SearchWorkflow } from "./workflow.js";
 import chalk from "chalk";
 
@@ -10,7 +10,7 @@ export async function runInteractiveSearch(initialPrompt?: string) {
   let close: (() => Promise<void>) | undefined;
 
   try {
-    const llmProvider: LLMProvider = SiliconFlowProvider.fromEnv();
+    const llmProvider: LLMProvider = createProvider();
     const connection = createDatabaseConnection();
     close = connection.close;
 

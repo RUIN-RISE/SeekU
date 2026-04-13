@@ -15,6 +15,7 @@ import {
   createProvider,
 } from "@seeku/llm";
 import {
+  runBonjourStrongAliasDedupeWorker,
   runBackfillPersonFieldsWorker,
   runEvidenceStorageWorker,
   runGithubSync,
@@ -30,6 +31,12 @@ import {
 
 import { runBonjourDiscoveryScan, runBonjourSyncJob } from "./index.js";
 import { runCoverageCli } from "./cli/coverage.js";
+import { runBuildBonjourAuthProbeSeedsCommand } from "./cli/build-bonjour-auth-probe-seeds.js";
+import { runDumpBonjourAuthHandlesCommand } from "./cli/dump-bonjour-auth-handles.js";
+import { runDumpBonjourRawCommand } from "./cli/dump-bonjour-raw.js";
+import { runFilterBonjourImportHandlesCommand } from "./cli/filter-bonjour-import-handles.js";
+import { runImportBonjourDumpCommand } from "./cli/import-bonjour-dump.js";
+import { runScanGithubZjuCommand } from "./cli/scan-github-zju.js";
 import { runZjuExtractionPipeline } from "./cli/extraction.js";
 import { runSearchCli, runShowCli } from "./search-cli.js";
 import { runInteractiveSearch } from "./cli/index.js";
@@ -78,7 +85,7 @@ function parseCursor(raw: string | undefined) {
 
 // --- Command Registry ---
 
-type CommandRunner = (parsed: ReturnType<typeof parseArgs>) => Promise<unknown>;
+type CommandRunner = (parsed: ReturnType<typeof parseArgs>, rawArgv: string[]) => Promise<unknown>;
 
 function splitCsv(value: string | undefined): string[] | undefined {
   return value?.split(",").map((v) => v.trim()).filter(Boolean);
@@ -103,10 +110,34 @@ function buildCommandRegistry(): Map<string, CommandRunner> {
     return runBonjourDiscoveryScan({ query, limit, depth });
   });
 
+  registry.set("import-bonjour-dump", async (_parsed, rawArgv) => {
+    return runImportBonjourDumpCommand(rawArgv);
+  });
+
+  registry.set("dump-bonjour-auth-handles", async (_parsed, rawArgv) => {
+    return runDumpBonjourAuthHandlesCommand(rawArgv);
+  });
+
+  registry.set("build-bonjour-auth-probe-seeds", async (_parsed, rawArgv) => {
+    return runBuildBonjourAuthProbeSeedsCommand(rawArgv);
+  });
+
+  registry.set("dump-bonjour-raw", async (_parsed, rawArgv) => {
+    return runDumpBonjourRawCommand(rawArgv);
+  });
+
+  registry.set("filter-bonjour-import-handles", async (_parsed, rawArgv) => {
+    return runFilterBonjourImportHandlesCommand(rawArgv);
+  });
+
   registry.set("sync-github", async (parsed) => {
     const limit = Number(parsed.args.get("limit") ?? "20");
     const handles = splitCsv(parsed.args.get("handles"));
     return runGithubSync(handles ?? [], { limit });
+  });
+
+  registry.set("scan-github-zju", async (parsed) => {
+    return runScanGithubZjuCommand(parsed);
   });
 
   // --- Pipeline commands ---
@@ -124,6 +155,10 @@ function buildCommandRegistry(): Map<string, CommandRunner> {
   registry.set("backfill-person-fields", async (parsed) => {
     const personIds = splitCsv(parsed.args.get("person-ids"));
     return runBackfillPersonFieldsWorker(personIds);
+  });
+
+  registry.set("dedupe-bonjour", async () => {
+    return runBonjourStrongAliasDedupeWorker();
   });
 
   registry.set("repair-source-payloads", async (parsed) => {
@@ -258,7 +293,7 @@ async function main() {
   // Known command → dispatch
   const handler = registry.get(command);
   if (handler) {
-    const result = await handler(parsed);
+    const result = await handler(parsed, rest);
     if (result !== undefined) {
       console.log(JSON.stringify(result, null, 2));
     }

@@ -44,7 +44,7 @@ export class TerminalUI {
    ┃   ${chalk.bold.white("Seeku CLI v1.1.0")}                                         ┃
    ┃   ${chalk.dim("人才搜索助手 - 从需求澄清到 shortlist 决策")}                       ┃
    ┃                                                                 ┃
-   ┃   ${chalk.dim("Data Source: ")}${chalk.cyan("Bonjour 主资料")} ${chalk.dim("|")} ${chalk.cyan("GitHub 证据（部分覆盖）")}      ┃
+   ┃   ${chalk.dim("底座数据：")}${chalk.cyan("Bonjour 主资料")} ${chalk.dim("|")} ${chalk.cyan("GitHub 证据（分批覆盖中）")}      ┃
    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
     `));
   }
@@ -165,11 +165,11 @@ export class TerminalUI {
       lines.push(
         `${linePrefix} ${chalk.bold(`${index + 1}.`)} ${nameLabel}  ${chalk.green(candidate.matchScore.toFixed(1))}  ${matchStrengthBadge} ${sourceBadge} ${freshness}${poolBadge ? ` ${poolBadge}` : ""}`
       );
-      lines.push(`${detailPrefix} ${chalk.dim(candidate.location || "地点未知")} · ${candidate.headline || "No headline"}`);
+      lines.push(`${detailPrefix} ${chalk.dim(candidate.location || "地点未知")} · ${candidate.headline || "暂无标题"}`);
       if (linkHint) {
         lines.push(linkHint);
       }
-      lines.push(`${detailPrefix} ${chalk.yellow("为什么匹配")}：${candidate.matchReason || "与本轮条件高度相关"}`);
+      lines.push(`${detailPrefix} ${chalk.yellow("匹配理由")}：${candidate.matchReason || "与本轮条件高度相关"}`);
       if (candidate.conditionAudit && candidate.conditionAudit.length > 0) {
         lines.push(`${detailPrefix} ${chalk.dim(`条件审计：${this.formatConditionAuditSummary(candidate.conditionAudit)}`)}`);
       }
@@ -272,7 +272,7 @@ export class TerminalUI {
   }
 
   async promptDetailAction(name: string): Promise<DetailAction> {
-    console.log(chalk.dim(`动作：back 返回 | o 打开 Bonjour | why 看评分依据 | refine 继续收敛 | q 退出`));
+    console.log(chalk.dim(`动作：back 返回 | o 打开 (Bonjour) | why 评分依据 | refine 进一步收敛 | q 退出`));
     const raw = await this.promptLine(`${name}>`, "back");
     const normalized = raw.trim().toLowerCase();
 
@@ -586,6 +586,26 @@ export class TerminalUI {
 
         if (key.name === "return") {
           finalize({ type: "view", indexes: [state.selectedIndex + 1] });
+          return;
+        }
+
+        if (key.name === "home") {
+          finalize({ type: "moveSelection", direction: "top" });
+          return;
+        }
+
+        if (key.name === "end") {
+          finalize({ type: "moveSelection", direction: "bottom" });
+          return;
+        }
+
+        // Mapping for page navigation
+        if (key.name === "pageup") {
+          finalize({ type: "moveSelection", direction: -5 });
+          return;
+        }
+        if (key.name === "pagedown") {
+          finalize({ type: "moveSelection", direction: 5 });
           return;
         }
 

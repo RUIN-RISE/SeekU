@@ -1,5 +1,5 @@
 import type { LLMProvider } from "@seeku/llm";
-import { SiliconFlowProvider } from "@seeku/llm";
+import { createProvider } from "@seeku/llm";
 import enquirer from "enquirer";
 import chalk from "chalk";
 import type { Ora } from "ora";
@@ -127,7 +127,7 @@ export class ChatInterface {
 
   // Factory method for convenience (backward compatibility)
   static withDefaultProvider(): ChatInterface {
-    return new ChatInterface(SiliconFlowProvider.fromEnv());
+    return new ChatInterface(createProvider());
   }
 
   async extractConditions(input: string): Promise<Partial<SearchConditions>> {
@@ -412,17 +412,16 @@ Return ONLY a JSON object with this exact schema:
   "limit": number | null
 }
 
-RULES:
-1. Always return the full updated condition object.
+CRITICAL RULES:
+1. Always return the full updated condition object, not just changes.
 2. In "tighten" mode, preserve existing constraints unless the user explicitly replaces them.
 3. In "relax" mode, broaden or remove constraints the user asks to loosen.
-4. Keep the output concise and normalized.
-5. exclude is for explicit negatives such as "去掉销售", "不要外包", "排除猎头".
-6. preferFresh should be true when the user says to prioritize recent / active profiles.
-7. If the user references a shortlist candidate like "像 2 号", set candidateAnchor using shortlistContext.
-8. For phrases like "像 2 号但更偏后端", keep candidateAnchor and add the delta preference into role / mustHave / niceToHave.
-9. candidateAnchor should stay null unless the user is clearly referring to an existing chosen candidate.
-10. Return JSON only.
+4. If the user refers to a candidate like "像 2 号", set candidateAnchor using shortlistContext.
+5. For instructions like "像 2 号但更偏后端", keep candidateAnchor for #2 AND update role/skills to include "后端".
+6. Explicitly deduplicate all arrays (skills, locations, mustHave, etc.).
+7. candidateAnchor should stay null unless the user is clearly referring to an existing candidate.
+8. If the user says "清空参考" or "不要参考了", set candidateAnchor to null.
+9. Return valid JSON ONLY. No markdown, no conversation.
 `;
 
     try {

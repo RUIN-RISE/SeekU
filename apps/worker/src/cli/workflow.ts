@@ -968,8 +968,20 @@ export class SearchWorkflow {
     }
 
     if (command.type === "moveSelection") {
-      const delta = command.direction === "up" ? -1 : 1;
-      const nextSelectedIndex = Math.max(0, Math.min(state.selectedIndex + delta, state.visibleCount - 1));
+      let nextSelectedIndex = state.selectedIndex;
+      if (command.direction === "up") {
+        nextSelectedIndex -= 1;
+      } else if (command.direction === "down") {
+        nextSelectedIndex += 1;
+      } else if (command.direction === "top") {
+        nextSelectedIndex = 0;
+      } else if (command.direction === "bottom") {
+        nextSelectedIndex = state.visibleCount - 1;
+      } else if (typeof command.direction === "number") {
+        nextSelectedIndex += command.direction;
+      }
+      
+      nextSelectedIndex = Math.max(0, Math.min(nextSelectedIndex, state.visibleCount - 1));
       return continueWith({
         selectedIndex: nextSelectedIndex,
         reuseViewport: true
@@ -1943,6 +1955,14 @@ export class SearchWorkflow {
         (term) => contextHasTermValue(term, context)
       );
       if (hasExcludedTerm) {
+        return false;
+      }
+    }
+
+    if (conditions.sourceBias) {
+      const expectedSource = conditions.sourceBias === "bonjour" ? "Bonjour" : "GitHub";
+      // This is the 'hard filter' part - even if the retriever allowed it, we strictly filter here
+      if (document && !document.facetSource.includes(expectedSource)) {
         return false;
       }
     }

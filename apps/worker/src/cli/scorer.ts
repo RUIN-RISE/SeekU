@@ -1,6 +1,6 @@
 import { Person, EvidenceItem } from "@seeku/db";
 import type { LLMProvider } from "@seeku/llm";
-import { SiliconFlowProvider } from "@seeku/llm";
+import { createProvider } from "@seeku/llm";
 import {
   SearchConditions,
   DimensionScores,
@@ -46,7 +46,7 @@ export class HybridScoringEngine {
 
   // Factory method for convenience (backward compatibility)
   static withDefaultProvider(): HybridScoringEngine {
-    return new HybridScoringEngine(SiliconFlowProvider.fromEnv());
+    return new HybridScoringEngine(createProvider());
   }
 
   // --- Rule Based Scores (60% Weighting) ---
@@ -343,25 +343,26 @@ CRITICAL: Return ONLY the JSON, no markdown, no explanation.
 
   scoreSourcePriority(candidate: Pick<CandidateRerankSignals, "sources" | "bonjourUrl">): number {
     if (!candidate.sources || candidate.sources.length === 0 || candidate.sources[0] === "Unknown") {
-      return candidate.bonjourUrl ? 78 : 10;
+      return candidate.bonjourUrl ? 30 : 10;
     }
 
-    let score = 20;
+    let score = 30;
 
-    if (candidate.sources.includes("Bonjour")) {
-      score += 52;
-    }
-
-    if (candidate.bonjourUrl) {
-      score += 18;
+    // Favor candidates with multi-source coverage rather than specific platforms
+    if (candidate.sources.length > 1) {
+      score += 15;
     }
 
     if (candidate.sources.includes("GitHub")) {
-      score += 8;
+      score += 20;
     }
 
-    if (candidate.sources.length > 1) {
-      score += 6;
+    if (candidate.sources.includes("Bonjour")) {
+      score += 15;
+    }
+
+    if (candidate.bonjourUrl) {
+      score += 10;
     }
 
     return Math.min(100, score);

@@ -16,7 +16,7 @@ describe("TerminalUI banner", () => {
     const banner = logSpy.mock.calls.map((call) => call.join(" ")).join("\n");
     expect(stdoutSpy).toHaveBeenCalled();
     expect(banner).toContain("Bonjour 主资料");
-    expect(banner).toContain("GitHub 证据（部分覆盖）");
+    expect(banner).toContain("GitHub 证据（分批覆盖中）");
     expect(banner).not.toContain("GitHub Engine");
   });
 });
