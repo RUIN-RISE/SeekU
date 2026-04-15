@@ -33,6 +33,7 @@ import { runBonjourDiscoveryScan, runBonjourSyncJob } from "./index.js";
 import { runCoverageCli } from "./cli/coverage.js";
 import { runBuildBonjourAuthProbeSeedsCommand } from "./cli/build-bonjour-auth-probe-seeds.js";
 import { runDumpBonjourAuthHandlesCommand } from "./cli/dump-bonjour-auth-handles.js";
+import { runImportBonjourFriendLinksCommand } from "./cli/import-bonjour-friend-links.js";
 import { runDumpBonjourRawCommand } from "./cli/dump-bonjour-raw.js";
 import { runFilterBonjourImportHandlesCommand } from "./cli/filter-bonjour-import-handles.js";
 import { runImportBonjourDumpCommand } from "./cli/import-bonjour-dump.js";
@@ -112,6 +113,10 @@ function buildCommandRegistry(): Map<string, CommandRunner> {
 
   registry.set("import-bonjour-dump", async (_parsed, rawArgv) => {
     return runImportBonjourDumpCommand(rawArgv);
+  });
+
+  registry.set("import-bonjour-friend-links", async (_parsed, rawArgv) => {
+    return runImportBonjourFriendLinksCommand(rawArgv);
   });
 
   registry.set("dump-bonjour-auth-handles", async (_parsed, rawArgv) => {
@@ -260,7 +265,7 @@ function buildCommandRegistry(): Map<string, CommandRunner> {
     console.log(`  ${chalk.cyan("help")}                 显示此帮助信息`);
 
     console.log(chalk.yellow("\nSync Commands (Pipeline):"));
-    console.log(`  ${chalk.dim("sync-bonjour, scan-bonjour, sync-github, resolve-identities, store-evidence, backfill-person-fields, repair-source-payloads, ...")}`);
+    console.log(`  ${chalk.dim("sync-bonjour, scan-bonjour, import-bonjour-dump, import-bonjour-friend-links, sync-github, resolve-identities, store-evidence, backfill-person-fields, repair-source-payloads, ...")}`);
 
     console.log(chalk.yellow("\nMaintenance Commands:"));
     console.log(`  ${chalk.cyan("extract-zju-talent")}  🚀 运行 ZJU 人才全链路发现与深度提炼管道`);
