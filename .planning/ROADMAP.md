@@ -286,10 +286,29 @@ Plans:
 - [x] 6-04-PLAN.md — Verified Badge + Claim UI: VerifiedBadge, ClaimForm, profile detail integration (UI-05, COMP-03)
 - [x] 6-05-PLAN.md — Profile Editing + Admin Audit: edit endpoint, admin claims page (COMP-04)
 
+### Phase 7: CLI Search Agent Orchestration
+**Goal**: Evolve Seeku CLI into a decision-oriented search agent that can autonomously clarify, search, compare 2-3 candidates, and recommend with evidence and confidence gates
+**Depends on**: Phase 6
+**Requirements**: AGENT-01, AGENT-02, AGENT-03, AGENT-04, AGENT-05, AGENT-06
+**Success Criteria** (what must be TRUE):
+  1. The CLI agent can choose among clarify, search, narrow, compare, and decide actions without hard-coding a rigid user-led flow
+  2. Session state persists the user goal, current conditions, shortlist, compare set, confidence state, and open uncertainties
+  3. The CLI can produce a structured 2-3 person comparison around a concrete hiring/search goal
+  4. Final recommendations are blocked unless they pass shortlist, evidence, and confidence gates
+  5. Low-confidence cases result in a conditional recommendation or explicit refusal instead of unsupported certainty
+  6. Agent evaluation shows non-regressive search quality on core query families and useful compare outputs on real goals
+**Plans**: 4 plans in 3 waves
+
+Plans:
+- [ ] 07-01-PLAN.md — Agent tools and session state foundation
+- [ ] 07-02-PLAN.md — Structured compare engine and confidence gates
+- [ ] 07-03-PLAN.md — Free-form CLI agent policy and interaction loop
+- [ ] 07-04-PLAN.md — Agent eval harness and acceptance validation
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 05.1 → 05.5A → 05.5B → 05.6 → 06.1 → 06.2 → 06.3 → 6
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 05.1 → 05.5A → 05.5B → 05.6 → 06.1 → 06.2 → 06.3 → 6 → 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -306,6 +325,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 05.1 → 05.5A �
 | 06.2. Architecture & Maintainability | 1/1 | ✅ Completed | 2026-04-03 |
 | 06.3. Intelligence & Performance | 5/5 | ✅ Completed | 2026-04-03 |
 | 6. Conversational & Compliance Polish | 5/5 | ✅ Completed | 2026-04-03 |
+| 7. CLI Search Agent Orchestration | 0/4 | 📝 Planned | — |
 
 ---
-*Last updated: 2026-04-13 - Roadmap reconciled with completed Phase 6 / v1.0 baseline*
+*Last updated: 2026-04-16 - Added milestone v1.2 Agentic Search CLI and planned Phase 7*

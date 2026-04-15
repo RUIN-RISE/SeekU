@@ -8,6 +8,16 @@ Seeku is a Chinese AI talent search engine designed for AI Builders, Founders, a
 
 **Find the right AI talent through what they've done, not what they claim.** Evidence-based matching over profile text matching.
 
+## Current Milestone: v1.2 Agentic Search CLI
+
+**Goal:** Evolve Seeku into a CLI-first decision-oriented search agent that can autonomously clarify, search, compare 2-3 candidates, and recommend with explicit evidence and confidence gates.
+
+**Target features:**
+- Free-form CLI search agent loop for clarify/search/narrow/compare/decide
+- Explicit tool contracts and session state for agent decision flow
+- Structured 2-3 person compare with confidence-gated recommendation
+- Honest low-confidence behavior that refuses unsupported certainty
+
 ## Requirements
 
 ### Validated
@@ -30,6 +40,12 @@ Seeku is a Chinese AI talent search engine designed for AI Builders, Founders, a
 - [ ] **UI-03**: Admin dashboard for sync status and eval results
 - [ ] **COMPLY-01**: Opt-out mechanism for profile removal requests
 - [ ] **COMPLY-02**: Profile claim mechanism for talent to verify ownership
+- [ ] **AGENT-01**: CLI search assistant autonomously chooses among clarify, search, refine, compare, and decide actions within the talent-search domain
+- [ ] **AGENT-02**: Agent session state persists user goal, current conditions, shortlist, compare set, confidence state, and open uncertainties across turns
+- [ ] **AGENT-03**: Agent produces a structured 2-3 person comparison on shared decision dimensions
+- [ ] **AGENT-04**: Final recommendation is gated by shortlist membership, evidence traceability, and explicit confidence classification
+- [ ] **AGENT-05**: Low-confidence cases return a conditional or refusal result instead of an unsupported recommendation
+- [ ] **AGENT-06**: Agent acceptance and regression evals verify that decision quality improves without regressing core search families such as Q4, Q6, and Q8
 
 ### Out of Scope
 
@@ -80,6 +96,7 @@ Seeku is a Chinese AI talent search engine designed for AI Builders, Founders, a
 | Evidence-driven ranking over text matching | "What they've done" > "What they write in bio" | — Pending |
 | Thin UI first, conversation later | Validate data quality before polishing interaction | — Pending |
 | Official Bonjour partnership in parallel | Dependency risk mitigation, 25-30% data source reliance | — Pending |
+| Agent orchestration must sit above the search core | Preserve evidence-driven retrieval/reranking quality while making the CLI behave more autonomously | Accepted for v1.2 planning |
 
 ## Evolution
 
@@ -99,4 +116,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-28 after initialization*
+*Last updated: 2026-04-16 for milestone v1.2 Agentic Search CLI kickoff*

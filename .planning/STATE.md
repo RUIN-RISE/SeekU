@@ -1,14 +1,14 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
-status: Phase 6 Completed
-stopped_at: v1.1 controlled-open cycle closed; workspace cleanup is the default next move
-last_updated: "2026-04-15T16:20:00.000Z"
+milestone: v1.2
+milestone_name: agentic-search-cli
+status: Phase 7 Planning
+stopped_at: v1.2 Agentic Search CLI milestone opened; Phase 7 planning is the default next move
+last_updated: "2026-04-16T10:30:00.000Z"
 progress:
-  total_phases: 13
+  total_phases: 14
   completed_phases: 13
-  total_plans: 43
+  total_plans: 47
   completed_plans: 43
 ---
 
@@ -19,14 +19,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-28)
 
 **Core value:** Find the right AI talent through what they've done, not what they claim. Evidence-based matching over profile text matching.
-**Current focus:** Milestone v1.0 complete; the current `v1.1 controlled-open` cycle is closed with saved sustain evidence, and the next default move is workspace cleanup rather than another retrieval or discovery loop
+**Current focus:** Milestone `v1.2 Agentic Search CLI` is now open for planning. The next default move is Phase 7 planning for the CLI search agent orchestration milestone.
 
 ## Current Position
 
-Phase: 6 (Conversational & Compliance Polish) — ✅ COMPLETED
-Milestone: v1.0 — ✅ COMPLETE
-GitHub expansion: OPEN (CONTROLLED SUSTAIN) — the current `v1.1` cycle is closed; discovery remains paused by default
-Next operator task: clean the workspace by landing the shaped mainline, docs, sidecar, and verification-helper batches without re-opening discovery by default
+Phase: 7 (CLI Search Agent Orchestration) — 📝 PLANNING
+Milestone: v1.2 Agentic Search CLI — 🚧 OPEN FOR PLANNING
+GitHub expansion: OPEN (CONTROLLED SUSTAIN) — closed as a prior cycle; discovery remains paused by default unless new evidence regresses
+Next operator task: execute the Phase 7 planning flow from the approved CLI search agent spec, starting with toolization, compare/recommendation gates, and evaluation coverage
 
 ## Performance Metrics
 
@@ -70,11 +70,12 @@ Next operator task: clean the workspace by landing the shaped mainline, docs, si
 - `v1.1` controlled-open is now closed for the current cycle; future follow-up should start from the saved checkpoint and closeout note rather than from an assumed new repair loop
 - `Q4` remains the active residual quality risk, but the saved 2026-04-15 checkpoint upgraded it from weak visibility to `watch-but-stable`
 - first controlled-open mainline retrieval batch was executed on 2026-04-15; `Q8` improved materially, `Q6` stayed stable, and `Q4` improved into saved `watch-but-stable`
+- the new `v1.2 Agentic Search CLI` milestone must preserve those search-quality gains while adding autonomous CLI decision flow
 
 ## Session Continuity
 
-Last session: 2026-04-15T16:20:00.000Z
-Stopped at: v1.1 controlled-open closeout judged complete; next focus is workspace cleanup and batch landing
+Last session: 2026-04-16T10:30:00.000Z
+Stopped at: v1.2 Agentic Search CLI milestone kickoff approved; next focus is Phase 7 planning
 
 ## Routing Update (2026-04-14 S1 Closure Reconciliation)
 
@@ -125,3 +126,17 @@ Stopped at: v1.1 controlled-open closeout judged complete; next focus is workspa
   - clean the current workspace first
   - land the shaped mainline/docs/sidecar/helper batches without mixing scopes
   - do not reopen discovery or start another repair loop unless new saved evidence regresses
+
+## Milestone Kickoff Update (2026-04-16 Agentic Search CLI)
+
+- approved spec: `docs/superpowers/specs/2026-04-16-cli-search-agent-design.md`
+- milestone decision:
+  - new milestone: `v1.2 Agentic Search CLI`
+  - routing choice: treat this as a new milestone, not as a continuation of historical `05.2` / `05.4` CLI search-agent phases
+- execution thesis:
+  - keep the current search core (`planner / retriever / reranker`) as the evidence engine
+  - add an agent orchestration layer above it for CLI-first clarify/search/narrow/compare/decide flow
+  - make recommendation rights depend on explicit compare + confidence gates
+- default planning route:
+  - `Phase 7: CLI Search Agent Orchestration`
+  - start with toolization and session state, then compare/recommendation gates, then free-form agent policy, then evaluation
