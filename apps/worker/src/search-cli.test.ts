@@ -4,6 +4,7 @@ const mockCreateDatabaseConnection = vi.fn();
 const mockClose = vi.fn();
 const mockPlannerParse = vi.fn();
 const mockRetrieverRetrieve = vi.fn();
+const mockRetrieverRetrieveKeyword = vi.fn();
 const mockRerankerRerank = vi.fn();
 const mockEmbed = vi.fn();
 const mockBuildQueryMatchExplanation = vi.fn();
@@ -55,7 +56,8 @@ vi.mock("@seeku/search", () => ({
     parse: mockPlannerParse
   })),
   HybridRetriever: vi.fn(() => ({
-    retrieve: mockRetrieverRetrieve
+    retrieve: mockRetrieverRetrieve,
+    retrieveKeyword: mockRetrieverRetrieveKeyword
   })),
   Reranker: vi.fn(() => ({
     rerank: mockRerankerRerank
@@ -99,6 +101,7 @@ describe("CLI Search", () => {
       niceToHaves: []
     });
     mockRetrieverRetrieve.mockResolvedValue([]);
+    mockRetrieverRetrieveKeyword.mockResolvedValue([]);
     mockRerankerRerank.mockReturnValue([]);
     mockBuildQueryMatchExplanation.mockReturnValue({
       summary: "技术命中：python",

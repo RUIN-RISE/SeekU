@@ -30,6 +30,21 @@ const DEFAULT_CONFIG: RerankerConfig = {
   crossEncoderWeight: 0.3
 };
 
+const OPEN_SOURCE_QUERY_TERMS = ["open source", "开源"] as const;
+const OPEN_SOURCE_TEXT_TERMS = ["open source", "open-source", "开源"] as const;
+const TECH_LEAD_ROLE_TERMS = ["tech lead", "technical lead", "技术负责人", "负责人", "lead"] as const;
+const SPECIALIZED_QUERY_TERMS = [
+  "rag",
+  "retrieval",
+  "检索",
+  "multimodal",
+  "multi-modal",
+  "多模态",
+  "computer vision",
+  "计算机视觉",
+  "llm"
+] as const;
+
 function textFromEvidence(item: EvidenceItem): string {
   return `${item.title ?? ""} ${item.description ?? ""}`.trim().toLowerCase();
 }
@@ -38,8 +53,17 @@ function asNumber(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+function hasRepositoryEvidence(evidence: EvidenceItem[]): boolean {
+  return evidence.some((item) => item.evidenceType === "repository");
+}
+
 function uniqueReasons(reasons: string[]): string[] {
   return [...new Set(reasons.filter(Boolean))].slice(0, 5);
+}
+
+function textIncludesAny(text: string, terms: readonly string[]): boolean {
+  const normalized = text.toLowerCase();
+  return terms.some((term) => normalized.includes(term));
 }
 
 export class Reranker {
@@ -60,7 +84,7 @@ export class Reranker {
       .map((result) => {
         const document = documents.get(result.personId);
         const evidence = evidenceByPerson.get(result.personId) ?? [];
-        const evidenceBoost = this.computeEvidenceBoost(evidence, intent);
+        const evidenceBoost = this.computeEvidenceBoost(evidence, intent, document);
         const freshnessPenalty = this.computeFreshnessPenalty(document);
         const crossEncoderResult = crossEncoderScores?.get(result.personId);
 
@@ -94,9 +118,17 @@ export class Reranker {
       .sort((left, right) => right.finalScore - left.finalScore);
   }
 
-  private computeEvidenceBoost(evidence: EvidenceItem[], intent: QueryIntent): number {
+  private computeEvidenceBoost(
+    evidence: EvidenceItem[],
+    intent: QueryIntent,
+    document?: SearchDocument
+  ): number {
     const skills = intent.skills.map((skill) => skill.toLowerCase());
     let boost = 0;
+    const wantsOpenSource = this.queryWantsOpenSource(intent);
+    const wantsTechLead = this.queryWantsTechLead(intent);
+    const wantsSpecializedFocus = this.queryWantsSpecializedFocus(intent);
+    const documentText = document?.docText?.toLowerCase() ?? "";
 
     for (const item of evidence) {
       const text = textFromEvidence(item);
@@ -114,6 +146,46 @@ export class Reranker {
       }
     }
 
+    if (
+      wantsSpecializedFocus
+      && document?.facetSource?.includes("github")
+      && (
+        skills.some((skill) => documentText.includes(skill))
+        || evidence.some((item) => {
+          const text = textFromEvidence(item);
+          return item.evidenceType === "repository" && skills.some((skill) => text.includes(skill));
+        })
+      )
+    ) {
+      boost += 0.12;
+
+      if (hasRepositoryEvidence(evidence)) {
+        boost += 0.08;
+      }
+    }
+
+    if (wantsOpenSource) {
+      if (document?.facetSource?.includes("github")) {
+        boost += 0.12;
+      }
+
+      if ((document?.docText && textIncludesAny(document.docText, OPEN_SOURCE_TEXT_TERMS))
+        || evidence.some((item) => item.evidenceType === "repository")) {
+        boost += 0.08;
+      }
+    }
+
+    if (wantsTechLead) {
+      const roleText = [
+        ...(document?.facetRole ?? []),
+        document?.docText ?? ""
+      ].join(" ").toLowerCase();
+
+      if (textIncludesAny(roleText, TECH_LEAD_ROLE_TERMS)) {
+        boost += 0.08;
+      }
+    }
+
     const followerCount = evidence.reduce((sum, item) => {
       return (
         sum +
@@ -126,6 +198,25 @@ export class Reranker {
     boost += this.config.followerBoostScale * Math.log10(followerCount + 1);
 
     return boost;
+  }
+
+  private queryWantsOpenSource(intent: QueryIntent): boolean {
+    const text = [intent.rawQuery, ...intent.skills, ...intent.mustHaves, ...intent.niceToHaves]
+      .join(" ")
+      .toLowerCase();
+    return textIncludesAny(text, OPEN_SOURCE_QUERY_TERMS);
+  }
+
+  private queryWantsTechLead(intent: QueryIntent): boolean {
+    const text = [intent.rawQuery, ...intent.roles].join(" ").toLowerCase();
+    return textIncludesAny(text, TECH_LEAD_ROLE_TERMS);
+  }
+
+  private queryWantsSpecializedFocus(intent: QueryIntent): boolean {
+    const text = [intent.rawQuery, ...intent.skills, ...intent.mustHaves, ...intent.niceToHaves]
+      .join(" ")
+      .toLowerCase();
+    return textIncludesAny(text, SPECIALIZED_QUERY_TERMS);
   }
 
   private computeFreshnessPenalty(document?: SearchDocument): number {
@@ -151,6 +242,37 @@ export class Reranker {
     for (const role of intent.roles) {
       if (document?.facetRole?.some((value) => value.includes(role)) || matchedText.includes(role)) {
         reasons.push(`role match: ${role}`);
+      }
+    }
+
+    if (this.queryWantsOpenSource(intent) && document?.facetSource?.includes("github")) {
+      reasons.push("github open-source evidence");
+    }
+
+    if (
+      this.queryWantsSpecializedFocus(intent)
+      && document?.facetSource?.includes("github")
+    ) {
+      const documentText = (document?.docText ?? "").toLowerCase();
+      const hasSpecializedEvidence = intent.skills.some((skill) => documentText.includes(skill))
+        || evidence.some((item) => {
+          const text = textFromEvidence(item);
+          return item.evidenceType === "repository"
+            && intent.skills.some((skill) => text.includes(skill));
+        });
+
+      if (hasSpecializedEvidence) {
+        reasons.push("github technical evidence");
+      }
+    }
+
+    if (this.queryWantsTechLead(intent)) {
+      const roleText = [
+        ...(document?.facetRole ?? []),
+        document?.docText ?? ""
+      ].join(" ").toLowerCase();
+      if (textIncludesAny(roleText, TECH_LEAD_ROLE_TERMS)) {
+        reasons.push("tech lead evidence");
       }
     }
 

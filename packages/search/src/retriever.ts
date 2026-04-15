@@ -33,9 +33,158 @@ const DEFAULT_KEYWORD_WEIGHT = 0.4;
 const DEFAULT_VECTOR_WEIGHT = 0.6;
 const DEFAULT_LIMIT = 50;
 const DEFAULT_KEYWORD_THRESHOLD = 0.08;
+const SPECIALIZED_QUERY_TERMS = [
+  "rag",
+  "retrieval",
+  "检索",
+  "multimodal",
+  "multi-modal",
+  "多模态",
+  "computer vision",
+  "计算机视觉",
+  "llm"
+] as const;
+const SHORT_TECH_TERMS = ["rag", "llm", "nlp", "cv"] as const;
+const OPEN_SOURCE_QUERY_TERMS = ["open source", "开源"] as const;
+const OPEN_SOURCE_TEXT_TERMS = ["open source", "open-source", "开源"] as const;
+const WEAK_MUST_HAVE_PATTERNS = [
+  /\bgithub\b/i,
+  /\bbonjour\b/i,
+  /\bactive\b/i,
+  /recently active/i,
+  /活跃/
+] as const;
+
+const ROLE_EQUIVALENTS: Record<string, string[]> = {
+  "tech lead": ["tech lead", "technical lead", "技术负责人", "负责人"],
+  engineer: ["engineer", "工程师", "ai工程师", "后端工程师"],
+  "backend engineer": ["backend engineer", "backend", "后端", "后端工程师", "工程师"],
+  developer: ["developer", "开发者", "工程师"],
+  founder: ["founder", "创始人", "联合创始人", "co-founder", "cofounder"],
+  researcher: ["researcher", "研究员", "研究者", "ai研究员"],
+  scientist: ["scientist", "科学家"],
+  "product manager": ["product manager", "product", "pm", "产品经理"],
+  designer: ["designer", "设计师", "视觉设计"],
+  manager: ["manager", "经理"],
+};
+
+const SKILL_EQUIVALENTS: Record<string, string[]> = {
+  "machine learning": ["machine learning", "ml"],
+  backend: ["backend", "后端"],
+  infra: ["infra", "infrastructure", "系统优化", "devops"],
+  multimodal: ["multimodal", "multi-modal", "多模态"],
+  "computer vision": ["computer vision", "cv", "计算机视觉"],
+  retrieval: ["retrieval", "检索"],
+  "open source": ["open source", "open-source", "开源"],
+  agent: ["agent", "智能体"],
+  ai: ["ai", "人工智能"],
+  llm: ["llm", "大模型"],
+  rag: ["rag"],
+  nlp: ["nlp", "自然语言处理"],
+};
 
 function uniqueLowercase(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim().toLowerCase()).filter(Boolean))];
+}
+
+function expandEquivalentTerms(values: string[], equivalents: Record<string, string[]>): string[] {
+  const expanded = new Set<string>();
+
+  for (const value of uniqueLowercase(values)) {
+    expanded.add(value);
+
+    for (const [canonical, variants] of Object.entries(equivalents)) {
+      const family = uniqueLowercase([canonical, ...variants]);
+      if (family.includes(value)) {
+        for (const item of family) {
+          expanded.add(item);
+        }
+      }
+    }
+  }
+
+  return [...expanded];
+}
+
+function expandRoleTerms(values: string[]): string[] {
+  return expandEquivalentTerms(values, ROLE_EQUIVALENTS);
+}
+
+function expandSkillTerms(values: string[]): string[] {
+  return expandEquivalentTerms(values, SKILL_EQUIVALENTS);
+}
+
+function textIncludesAny(text: string, terms: readonly string[]): boolean {
+  const normalized = text.toLowerCase();
+  return terms.some((term) => normalized.includes(term));
+}
+
+function isStrongTextMatchTerm(term: string): boolean {
+  const normalized = term.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  if (SHORT_TECH_TERMS.includes(normalized as typeof SHORT_TECH_TERMS[number])) {
+    return true;
+  }
+
+  if (/[\u3400-\u9fff]/u.test(normalized)) {
+    return true;
+  }
+
+  if (normalized.includes(" ") || normalized.includes("-")) {
+    return true;
+  }
+
+  return normalized.length >= 4;
+}
+
+function buildTextMatchCondition(terms: string[]): SQL | null {
+  const matchableTerms = uniqueLowercase(terms).filter(isStrongTextMatchTerm).slice(0, 12);
+  if (matchableTerms.length === 0) {
+    return null;
+  }
+
+  return sql`(${sql.join(
+    matchableTerms.map((term) => {
+      const escaped = escapeLikePattern(term);
+      return sql`${searchDocuments.docText} ILIKE ${`%${escaped}%`}`;
+    }),
+    sql.raw(" OR ")
+  )})`;
+}
+
+function queryWantsSpecializedFocus(intent: QueryIntent, expandedSkills: string[] = []): boolean {
+  const text = [intent.rawQuery, ...intent.skills, ...expandedSkills].join(" ").toLowerCase();
+  return SPECIALIZED_QUERY_TERMS.some((term) => text.includes(term));
+}
+
+export interface KeywordIntentSignals {
+  wantsOpenSource: boolean;
+  openSourceTextTerms: string[];
+  leadershipTextTerms: string[];
+}
+
+export function buildKeywordIntentSignals(intent: QueryIntent): KeywordIntentSignals {
+  const wantsOpenSource = textIncludesAny(
+    [intent.rawQuery, ...intent.skills, ...intent.mustHaves, ...intent.niceToHaves].join(" "),
+    OPEN_SOURCE_QUERY_TERMS
+  );
+
+  if (!wantsOpenSource) {
+    return {
+      wantsOpenSource,
+      openSourceTextTerms: [],
+      leadershipTextTerms: []
+    };
+  }
+
+  return {
+    wantsOpenSource,
+    openSourceTextTerms: [...OPEN_SOURCE_TEXT_TERMS],
+    leadershipTextTerms: expandRoleTerms(intent.roles).filter(isStrongTextMatchTerm)
+  };
 }
 
 function clampScore(score: number): number {
@@ -66,6 +215,7 @@ function buildMustHaveConditions(intent: QueryIntent): SQL[] {
   return intent.mustHaves
     .map((term) => term.trim())
     .filter(Boolean)
+    .filter((term) => !WEAK_MUST_HAVE_PATTERNS.some((pattern) => pattern.test(term)))
     .slice(0, 20) // Limit number of conditions to prevent query explosion
     .map((term) => {
       const escaped = escapeLikePattern(term);
@@ -134,10 +284,12 @@ function expandLocationVariants(locations: string[]): string[] {
 }
 
 function buildKeywordQuery(intent: QueryIntent): string {
+  const expandedRoles = expandRoleTerms(intent.roles);
+  const expandedSkills = expandSkillTerms(intent.skills);
   const parts = [
     intent.rawQuery,
-    ...intent.roles,
-    ...intent.skills,
+    ...expandedRoles,
+    ...expandedSkills,
     ...intent.mustHaves,
     ...intent.niceToHaves
   ];
@@ -170,42 +322,128 @@ export class HybridRetriever {
 
   async retrieveKeyword(intent: QueryIntent, filters?: RetrieverFilters): Promise<SearchResult[]> {
     const keywordQuery = buildKeywordQuery(intent);
+    const expandedRoles = expandRoleTerms(intent.roles);
+    const expandedSkills = expandSkillTerms(intent.skills);
+    const keywordSignals = buildKeywordIntentSignals(intent);
+    const wantsSpecializedFocus = queryWantsSpecializedFocus(intent, expandedSkills);
     if (!keywordQuery) {
       return [];
     }
 
+    const roleMatchExpr = sql<number>`CASE WHEN ${searchDocuments.facetRole} && ${toTextArray(
+      expandedRoles.length > 0 ? expandedRoles : ["__none__"]
+    )} THEN 1 ELSE 0 END`;
+    const skillMatchExpr = sql<number>`CASE WHEN ${searchDocuments.facetTags} && ${toTextArray(
+      expandedSkills.length > 0 ? expandedSkills : ["__none__"]
+    )} THEN 1 ELSE 0 END`;
+    const scoreExpr = sql<number>`similarity(${searchDocuments.docText}, ${keywordQuery})`;
+    const githubSourceCondition = keywordSignals.wantsOpenSource
+      ? sql`${searchDocuments.facetSource} && ${toTextArray(["github"])}`
+      : null;
+    const skillTextCondition = buildTextMatchCondition(expandedSkills);
+    const leadershipTextCondition = buildTextMatchCondition(keywordSignals.leadershipTextTerms);
+    const openSourceTextCondition = buildTextMatchCondition(keywordSignals.openSourceTextTerms);
+    const skillTextMatchExpr = skillTextCondition
+      ? sql<number>`CASE WHEN ${skillTextCondition} THEN 1 ELSE 0 END`
+      : sql<number>`0`;
+    const leadershipTextMatchExpr = leadershipTextCondition
+      ? sql<number>`CASE WHEN ${leadershipTextCondition} THEN 1 ELSE 0 END`
+      : sql<number>`0`;
+    const openSourceTextMatchExpr = openSourceTextCondition
+      ? sql<number>`CASE WHEN ${openSourceTextCondition} THEN 1 ELSE 0 END`
+      : sql<number>`0`;
+    const githubSourceMatchExpr = githubSourceCondition
+      ? sql<number>`CASE WHEN ${githubSourceCondition} THEN 1 ELSE 0 END`
+      : sql<number>`0`;
+    const specializedGithubCondition = wantsSpecializedFocus && skillTextCondition
+      ? sql`(${searchDocuments.facetSource} && ${toTextArray(["github"])} AND ${skillTextCondition})`
+      : null;
+    const specializedGithubMatchExpr = specializedGithubCondition
+      ? sql<number>`CASE WHEN ${specializedGithubCondition} THEN 1 ELSE 0 END`
+      : sql<number>`0`;
+
     const queryConditions: SQL[] = [
-      sql`similarity(${searchDocuments.docText}, ${keywordQuery}) > ${DEFAULT_KEYWORD_THRESHOLD}`
+      sql`${scoreExpr} > ${DEFAULT_KEYWORD_THRESHOLD}`
     ];
 
-    if (intent.roles.length > 0) {
-      queryConditions.push(sql`${searchDocuments.facetRole} && ${toTextArray(intent.roles)}`);
+    if (expandedRoles.length > 0) {
+      queryConditions.push(sql`${searchDocuments.facetRole} && ${toTextArray(expandedRoles)}`);
     }
 
-    if (intent.skills.length > 0) {
-      queryConditions.push(sql`${searchDocuments.facetTags} && ${toTextArray(intent.skills)}`);
+    if (expandedSkills.length > 0) {
+      queryConditions.push(sql`${searchDocuments.facetTags} && ${toTextArray(expandedSkills)}`);
     }
+
+    if (skillTextCondition) {
+      queryConditions.push(skillTextCondition);
+    }
+
+    if (leadershipTextCondition) {
+      queryConditions.push(leadershipTextCondition);
+    }
+
+    if (openSourceTextCondition) {
+      queryConditions.push(openSourceTextCondition);
+    }
+
+    if (githubSourceCondition) {
+      const githubOpenSourceSignals = [
+        openSourceTextCondition,
+        leadershipTextCondition,
+        expandedRoles.length > 0 ? sql`${searchDocuments.facetRole} && ${toTextArray(expandedRoles)}` : null,
+        expandedSkills.length > 0 ? sql`${searchDocuments.facetTags} && ${toTextArray(expandedSkills)}` : null
+      ].filter((value): value is SQL => Boolean(value));
+
+      if (githubOpenSourceSignals.length > 0) {
+        queryConditions.push(sql`(${githubSourceCondition} AND (${sql.join(githubOpenSourceSignals, sql.raw(" OR "))}))`);
+      }
+    }
+
+    if (specializedGithubCondition) {
+      queryConditions.push(specializedGithubCondition);
+    }
+
+    const keywordRankExpr = sql<number>`
+      ${scoreExpr}
+      + ${roleMatchExpr} * 0.08
+      + ${skillMatchExpr} * 0.12
+      + ${skillTextMatchExpr} * 0.10
+      + ${leadershipTextMatchExpr} * 0.08
+      + ${openSourceTextMatchExpr} * 0.18
+      + ${githubSourceMatchExpr} * 0.06
+      + ${specializedGithubMatchExpr} * 0.12
+    `;
 
     const rows = await this.db
       .select({
         personId: searchDocuments.personId,
         docText: searchDocuments.docText,
-        roleMatch: sql<number>`CASE WHEN ${searchDocuments.facetRole} && ${toTextArray(
-          intent.roles.length > 0 ? intent.roles : ["__none__"]
-        )} THEN 1 ELSE 0 END`,
-        skillMatch: sql<number>`CASE WHEN ${searchDocuments.facetTags} && ${toTextArray(
-          intent.skills.length > 0 ? intent.skills : ["__none__"]
-        )} THEN 1 ELSE 0 END`,
-        score: sql<number>`similarity(${searchDocuments.docText}, ${keywordQuery})`
+        roleMatch: roleMatchExpr,
+        skillMatch: skillMatchExpr,
+        skillTextMatch: skillTextMatchExpr,
+        leadershipTextMatch: leadershipTextMatchExpr,
+        openSourceTextMatch: openSourceTextMatchExpr,
+        githubSourceMatch: githubSourceMatchExpr,
+        specializedGithubMatch: specializedGithubMatchExpr,
+        score: scoreExpr
       })
       .from(searchDocuments)
       .innerJoin(persons, eq(persons.id, searchDocuments.personId))
       .where(and(...buildFilterConditions(intent, filters), sql`(${sql.join(queryConditions, sql.raw(" OR "))})`))
-      .orderBy(desc(sql`similarity(${searchDocuments.docText}, ${keywordQuery})`))
+      .orderBy(desc(keywordRankExpr))
       .limit(this.limit);
 
     return rows.map((row) => {
-      const boostedScore = clampScore(row.score + row.roleMatch * 0.08 + row.skillMatch * 0.12);
+      const boostedScore = clampScore(
+        row.score
+        + row.roleMatch * 0.08
+        + row.skillMatch * 0.12
+        + row.skillTextMatch * 0.10
+        + row.leadershipTextMatch * 0.08
+        + row.openSourceTextMatch * 0.18
+        + row.githubSourceMatch * 0.06
+        + row.specializedGithubMatch * 0.12
+      );
 
       return {
         personId: row.personId,
@@ -252,7 +490,36 @@ export class HybridRetriever {
     });
   }
 
-  mergeResults(keywordResults: SearchResult[], vectorResults: SearchResult[]): SearchResult[] {
+  private resolveBlendWeights(intent: QueryIntent): { keywordWeight: number; vectorWeight: number } {
+    if (queryWantsSpecializedFocus(intent)) {
+      if (!intent.sourceBias) {
+        return { keywordWeight: 0.85, vectorWeight: 0.15 };
+      }
+      return { keywordWeight: 0.58, vectorWeight: 0.42 };
+    }
+
+    return { keywordWeight: this.keywordWeight, vectorWeight: this.vectorWeight };
+  }
+
+  private applyBlendWeights(
+    results: SearchResult[],
+    blendWeights: { keywordWeight: number; vectorWeight: number }
+  ): SearchResult[] {
+    return results
+      .map((result) => ({
+        ...result,
+        combinedScore:
+          result.keywordScore * blendWeights.keywordWeight
+          + result.vectorScore * blendWeights.vectorWeight
+      }))
+      .sort((left, right) => right.combinedScore - left.combinedScore);
+  }
+
+  mergeResults(
+    keywordResults: SearchResult[],
+    vectorResults: SearchResult[],
+    blendWeights: { keywordWeight: number; vectorWeight: number }
+  ): SearchResult[] {
     const merged = new Map<string, SearchResult>();
 
     for (const result of keywordResults) {
@@ -273,26 +540,36 @@ export class HybridRetriever {
         personId: result.personId,
         keywordScore,
         vectorScore,
-        combinedScore: keywordScore * this.keywordWeight + vectorScore * this.vectorWeight,
+        combinedScore: keywordScore * blendWeights.keywordWeight + vectorScore * blendWeights.vectorWeight,
         matchedText: mergeMatchedText(existing.matchedText, result.matchedText)
       });
     }
 
-    return [...merged.values()].sort((left, right) => right.combinedScore - left.combinedScore);
+    return this.applyBlendWeights([...merged.values()], blendWeights);
   }
 
   async retrieve(
     intent: QueryIntent,
     options: { filters?: RetrieverFilters; embedding?: number[] } = {}
   ): Promise<SearchResult[]> {
-    const embedding =
-      options.embedding ?? (await generateEmbedding(this.provider, buildKeywordQuery(intent) || intent.rawQuery));
-    const [keywordResults, vectorResults] = await Promise.all([
-      this.retrieveKeyword(intent, options.filters),
-      this.retrieveVector(embedding, intent, options.filters)
-    ]);
+    const blendWeights = this.resolveBlendWeights(intent);
+    const keywordResults = await this.retrieveKeyword(intent, options.filters);
+    let vectorResults: SearchResult[] = [];
 
-    return this.mergeResults(keywordResults, vectorResults).slice(0, this.limit);
+    try {
+      const embedding =
+        options.embedding ?? (await generateEmbedding(this.provider, buildKeywordQuery(intent) || intent.rawQuery));
+      vectorResults = await this.retrieveVector(embedding, intent, options.filters);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      console.warn(`[HybridRetriever] Vector retrieval failed, falling back to keyword-only results: ${reason}`);
+    }
+
+    if (vectorResults.length === 0) {
+      return this.applyBlendWeights(keywordResults, blendWeights).slice(0, this.limit);
+    }
+
+    return this.mergeResults(keywordResults, vectorResults, blendWeights).slice(0, this.limit);
   }
 }
 

@@ -136,8 +136,7 @@ export async function runSearchCli(options: SearchCliOptions): Promise<ScriptSea
     const reranker = new Reranker();
 
     const intent = await planner.parse(options.query);
-    const queryEmbedding = await provider.embed(intent.rawQuery);
-    const retrieved = await retriever.retrieve(intent, { embedding: queryEmbedding.embedding });
+    const retrieved = await retriever.retrieve(intent);
 
     if (retrieved.length === 0) {
       return options.json ? { results: [], total: 0 } : "No results found.";

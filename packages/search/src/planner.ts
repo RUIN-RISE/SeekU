@@ -65,6 +65,56 @@ const EXPERIENCE_HINTS = [
 ] as const;
 
 const SOURCE_HINTS = ["github", "bonjour"] as const;
+const OPEN_SOURCE_QUERY_TERMS = ["open source", "open-source", "开源"] as const;
+const WEAK_MUST_HAVE_PATTERNS = [
+  /\bgithub\b/i,
+  /\bbonjour\b/i,
+  /\bactive\b/i,
+  /recently active/i,
+  /活跃/
+] as const;
+
+const ROLE_HINT_PATTERNS = [
+  { canonical: "builder", patterns: ["builder", "构建者", "开发者"] },
+  { canonical: "tech lead", patterns: ["tech lead", "technical lead", "技术负责人"] },
+  { canonical: "engineer", patterns: ["engineer", "工程师"] },
+  { canonical: "researcher", patterns: ["researcher", "研究员", "研究者"] },
+  { canonical: "scientist", patterns: ["scientist", "科学家"] },
+  { canonical: "founder", patterns: ["founder", "创始人", "联合创始人", "co-founder", "cofounder"] },
+  { canonical: "cto", patterns: ["cto"] },
+  { canonical: "product manager", patterns: ["product manager", "product", "pm", "产品经理"] },
+  { canonical: "designer", patterns: ["designer", "设计师", "视觉设计"] },
+  { canonical: "manager", patterns: ["manager", "经理"] },
+  { canonical: "developer", patterns: ["developer", "开发者"] }
+] as const;
+
+const SKILL_HINT_PATTERNS = [
+  { canonical: "python", patterns: ["python"] },
+  { canonical: "typescript", patterns: ["typescript"] },
+  { canonical: "javascript", patterns: ["javascript"] },
+  { canonical: "rust", patterns: ["rust"] },
+  { canonical: "go", patterns: ["go"] },
+  { canonical: "java", patterns: ["java"] },
+  { canonical: "pytorch", patterns: ["pytorch"] },
+  { canonical: "tensorflow", patterns: ["tensorflow"] },
+  { canonical: "machine learning", patterns: ["machine learning", "ml"] },
+  { canonical: "deep learning", patterns: ["deep learning"] },
+  { canonical: "rag", patterns: ["rag"] },
+  { canonical: "llm", patterns: ["llm", "大模型"] },
+  { canonical: "nlp", patterns: ["nlp", "自然语言处理"] },
+  { canonical: "agent", patterns: ["agent", "智能体"] },
+  { canonical: "ai", patterns: ["ai", "人工智能"] },
+  { canonical: "backend", patterns: ["backend", "后端"] },
+  { canonical: "infra", patterns: ["infra", "infrastructure", "系统优化", "devops"] },
+  { canonical: "multimodal", patterns: ["multimodal", "multi-modal", "多模态"] },
+  { canonical: "computer vision", patterns: ["computer vision", "cv", "计算机视觉"] },
+  { canonical: "retrieval", patterns: ["retrieval", "检索"] },
+  { canonical: "open source", patterns: ["open source", "open-source", "开源"] }
+] as const;
+
+const UNIVERSITY_MUST_HAVE_HINTS = [
+  { canonical: "zhejiang university", patterns: ["浙大", "zju", "zhejiang university"] }
+] as const;
 
 function normalizeList(values: unknown): string[] {
   if (!Array.isArray(values)) {
@@ -75,6 +125,72 @@ function normalizeList(values: unknown): string[] {
     .filter((value): value is string => typeof value === "string")
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean);
+}
+
+function mergeNormalizedLists(...lists: Array<string[] | undefined>): string[] {
+  return [...new Set(
+    lists
+      .flatMap((list) => list ?? [])
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean)
+  )];
+}
+
+function splitWeakMustHaves(values: string[]) {
+  const strong: string[] = [];
+  const weak: string[] = [];
+
+  for (const value of mergeNormalizedLists(values)) {
+    if (WEAK_MUST_HAVE_PATTERNS.some((pattern) => pattern.test(value))) {
+      weak.push(value);
+      continue;
+    }
+
+    strong.push(value);
+  }
+
+  return { strong, weak };
+}
+
+function collectHintMatches(
+  normalizedQuery: string,
+  hints: ReadonlyArray<{ canonical: string; patterns: readonly string[] }>
+): string[] {
+  const matches = new Set<string>();
+
+  for (const hint of hints) {
+    if (hint.patterns.some((pattern) => normalizedQuery.includes(pattern.toLowerCase()))) {
+      matches.add(hint.canonical);
+    }
+  }
+
+  return [...matches];
+}
+
+function inferSourceBias(normalizedQuery: string): QueryIntent["sourceBias"] {
+  const explicitSource = SOURCE_HINTS.find((value) => normalizedQuery.includes(value));
+  if (explicitSource) {
+    return explicitSource;
+  }
+
+  if (OPEN_SOURCE_QUERY_TERMS.some((term) => normalizedQuery.includes(term))) {
+    return "github";
+  }
+
+  return undefined;
+}
+
+function normalizeSourceBias(value: string | null | undefined): QueryIntent["sourceBias"] {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = value.toLowerCase();
+  if (normalized === "github" || normalized === "bonjour") {
+    return normalized;
+  }
+
+  return undefined;
 }
 
 function parseJsonObject(content: string): Record<string, unknown> | null {
@@ -148,43 +264,18 @@ function heuristicIntent(query: string): QueryIntent {
     }
   }
 
-  const roleHints = [
-    "engineer",
-    "researcher",
-    "scientist",
-    "founder",
-    "cto",
-    "product",
-    "designer",
-    "manager"
-  ];
-  const skillHints = [
-    "python",
-    "typescript",
-    "javascript",
-    "rust",
-    "go",
-    "java",
-    "pytorch",
-    "tensorflow",
-    "machine learning",
-    "deep learning",
-    "rag",
-    "llm",
-    "nlp",
-    "agent",
-    "ai"
-  ];
-
-  for (const role of roleHints) {
-    if (normalized.includes(role)) {
-      roles.add(role);
-    }
+  for (const role of collectHintMatches(normalized, ROLE_HINT_PATTERNS)) {
+    roles.add(role);
   }
 
-  for (const skill of skillHints) {
-    if (normalized.includes(skill)) {
-      skills.add(skill);
+  for (const skill of collectHintMatches(normalized, SKILL_HINT_PATTERNS)) {
+    skills.add(skill);
+  }
+
+  for (const hint of UNIVERSITY_MUST_HAVE_HINTS) {
+    if (hint.patterns.some((pattern) => normalized.includes(pattern))) {
+      mustHaves.add(hint.canonical);
+      locations.add("hangzhou");
     }
   }
 
@@ -196,7 +287,7 @@ function heuristicIntent(query: string): QueryIntent {
   }
 
   const experienceLevel = EXPERIENCE_HINTS.find((value) => normalized.includes(value));
-  const sourceBias = SOURCE_HINTS.find((value) => normalized.includes(value));
+  const sourceBias = inferSourceBias(normalized);
 
   return {
     rawQuery: query,
@@ -225,15 +316,19 @@ function sanitizeIntent(query: string, parsed: Record<string, unknown> | null): 
   }
 
   const intent = result.data;
+  const mustHaveLists = splitWeakMustHaves(mergeNormalizedLists(intent.mustHaves, heuristic.mustHaves));
+  const niceToHaves = mergeNormalizedLists(intent.niceToHaves, heuristic.niceToHaves, mustHaveLists.weak);
+  const llmSourceBias = normalizeSourceBias(intent.sourceBias);
+
   return {
     rawQuery: query,
-    roles: intent.roles.map(v => v.toLowerCase()),
-    skills: intent.skills.map(v => v.toLowerCase()),
-    locations: intent.locations.map(v => v.toLowerCase()),
+    roles: mergeNormalizedLists(intent.roles, heuristic.roles),
+    skills: mergeNormalizedLists(intent.skills, heuristic.skills),
+    locations: mergeNormalizedLists(intent.locations, heuristic.locations),
     experienceLevel: intent.experienceLevel?.toLowerCase() ?? heuristic.experienceLevel,
-    sourceBias: intent.sourceBias?.toLowerCase() ?? heuristic.sourceBias,
-    mustHaves: intent.mustHaves.map(v => v.toLowerCase()),
-    niceToHaves: intent.niceToHaves.map(v => v.toLowerCase())
+    sourceBias: llmSourceBias ?? heuristic.sourceBias,
+    mustHaves: mustHaveLists.strong,
+    niceToHaves
   };
 }
 
