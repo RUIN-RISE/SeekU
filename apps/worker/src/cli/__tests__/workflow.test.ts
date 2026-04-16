@@ -319,6 +319,11 @@ describe("SearchWorkflow shortlist command handling", () => {
     expect(mockRenderer.renderComparison).toHaveBeenCalledWith(comparisonEntries, BASE_CONDITIONS);
     expect(mockTui.promptCompareAction).toHaveBeenCalledTimes(1);
     expect(logSpy).toHaveBeenCalledWith("COMPARE VIEW");
+    expect((workflow as any).sessionState.confidenceStatus.level).toBe("low");
+    expect((workflow as any).sessionState.recommendedCandidate).toBeNull();
+    expect((workflow as any).sessionState.openUncertainties).toEqual([
+      "对比已生成，但尚未完成证据置信度评估。"
+    ]);
     expect(result.type).toBe("continue");
   });
 

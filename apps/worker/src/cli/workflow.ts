@@ -22,6 +22,31 @@ import { classifyMatchStrength } from "@seeku/shared";
 import { createHash } from "node:crypto";
 import chalk from "chalk";
 import ora, { type Ora } from "ora";
+import {
+  addCompareCandidates,
+  clearCompareSet,
+  createSearchSessionState,
+  recordClarification,
+  recordSearchExecution,
+  removeCompareCandidates as removeCompareCandidatesFromState,
+  replaceSearchHistory,
+  rewindSearchHistory,
+  setConfidenceStatus,
+  setOpenUncertainties,
+  setSessionConditions,
+  setSessionShortlist,
+  setSessionUserGoal,
+  type AgentSessionState
+} from "./agent-state.js";
+import {
+  buildRefineContextCandidates,
+  createSearchAgentTools,
+  inspectCandidateFromState,
+  prepareComparisonCandidates,
+  resolveCandidateAnchorWithContext,
+  type AgentInspectCandidateOutput,
+  type SearchAgentTools
+} from "./agent-tools.js";
 import { ChatInterface } from "./chat.js";
 import { CLI_CONFIG } from "./config.js";
 import { ShortlistExporter } from "./exporter.js";
@@ -79,17 +104,6 @@ interface QueryMatchExplanationOptions {
   sources?: string[];
   referenceDate?: Date;
   experienceMatched?: boolean;
-}
-
-interface RefineContextCandidate {
-  shortlistIndex: number;
-  personId: string;
-  name: string;
-  headline: string | null;
-  location: string | null;
-  sources: string[];
-  matchReason?: string;
-  summary?: string;
 }
 
 const SKIPPED_QUERY_VALUES = new Set(["不限", "skip", "none"]);
@@ -696,9 +710,13 @@ export class SearchWorkflow {
   private retriever: HybridRetriever;
   private reranker: Reranker;
   private spinner: Ora;
+  private sessionState: AgentSessionState;
+  private tools: SearchAgentTools<
+    HydratedCandidate,
+    AgentInspectCandidateOutput<HydratedCandidate>,
+    ComparisonEntry
+  >;
   private processingProfiles = new Map<string, Promise<MultiDimensionProfile>>();
-  private comparePool: HydratedCandidate[] = [];
-  private searchHistory: SearchHistoryEntry[] = [];
 
   constructor(
     private db: SeekuDatabase,
@@ -719,6 +737,57 @@ export class SearchWorkflow {
     });
     this.reranker = new Reranker();
     this.spinner = ora({ isEnabled: CLI_CONFIG.ui.spinnerEnabled });
+    this.sessionState = createSearchSessionState();
+    this.tools = createSearchAgentTools({
+      searchCandidates: async ({ query, conditions }) => ({
+        query,
+        conditions,
+        candidates: await this.performSearch(query, conditions)
+      }),
+      inspectCandidate: async ({ personId, shortlist, activeCompareSet }) =>
+        inspectCandidateFromState({ personId, shortlist, activeCompareSet }),
+      reviseQuery: async ({ currentConditions, prompt, shortlist = [] }) => {
+        const context = buildRefineContextCandidates(shortlist);
+        this.spinner.start("正在更新这轮搜索条件...");
+        const updated = await this.chat.reviseConditions(
+          currentConditions,
+          prompt,
+          "edit",
+          context.length > 0 ? { shortlist: context } : undefined
+        );
+        this.spinner.stop();
+        return {
+          conditions: this.normalizeConditions(
+            resolveCandidateAnchorWithContext(prompt, updated, context)
+          ),
+          context
+        };
+      },
+      prepareComparison: async ({ targets, allCandidates }) => {
+        const comparisonEntries = this.buildComparisonEntries(targets, allCandidates, this.sessionState.currentConditions);
+        return {
+          targets,
+          entries: comparisonEntries
+        };
+      }
+    });
+  }
+
+  private get comparePool(): HydratedCandidate[] {
+    return this.sessionState.activeCompareSet as HydratedCandidate[];
+  }
+
+  private set comparePool(candidates: HydratedCandidate[]) {
+    this.sessionState = clearCompareSet(this.sessionState);
+    this.sessionState = addCompareCandidates(this.sessionState, candidates);
+  }
+
+  private get searchHistory(): SearchHistoryEntry[] {
+    return this.sessionState.searchHistory;
+  }
+
+  private set searchHistory(entries: SearchHistoryEntry[]) {
+    this.sessionState = replaceSearchHistory(this.sessionState, entries);
   }
 
   async execute(initialPrompt?: string): Promise<void> {
@@ -759,6 +828,8 @@ export class SearchWorkflow {
   private async runClarifyLoop(initialInput: string): Promise<SearchConditions | null> {
     let query = initialInput.trim();
     let conditions = await this.extractDraftFromQuery(query);
+    this.sessionState = setSessionUserGoal(this.sessionState, query);
+    this.sessionState = recordClarification(this.sessionState, query, conditions);
 
     while (true) {
       this.tui.displayInitialSearch(query);
@@ -780,6 +851,8 @@ export class SearchWorkflow {
         }
         query = restarted;
         conditions = await this.extractDraftFromQuery(query);
+        this.sessionState = setSessionUserGoal(this.sessionState, query);
+        this.sessionState = recordClarification(this.sessionState, query, conditions);
         continue;
       }
 
@@ -801,6 +874,7 @@ export class SearchWorkflow {
           action === "add" ? "tighten" : "relax"
         );
         this.spinner.stop();
+        this.sessionState = recordClarification(this.sessionState, instruction, conditions);
       }
     }
   }
@@ -808,6 +882,7 @@ export class SearchWorkflow {
   private async runSearchLoop(initialConditions: SearchConditions): Promise<SearchLoopOutcome> {
     let conditions = this.normalizeConditions(initialConditions);
     let sortMode: SortMode = "overall";
+    this.sessionState = setSessionConditions(this.sessionState, conditions);
 
     while (true) {
       const effectiveQuery = this.buildEffectiveQuery(conditions);
@@ -819,7 +894,11 @@ export class SearchWorkflow {
       let candidates: HydratedCandidate[];
       try {
         this.spinner.start("正在搜索匹配候选人...");
-        candidates = await this.performSearch(effectiveQuery, conditions);
+        const searchResult = await this.tools.searchCandidates({
+          query: effectiveQuery,
+          conditions
+        });
+        candidates = searchResult.candidates;
         this.spinner.stop();
       } catch (error) {
         this.spinner.fail("搜索失败。");
@@ -827,6 +906,11 @@ export class SearchWorkflow {
       }
 
       if (candidates.length === 0) {
+        this.sessionState = setSessionShortlist(this.sessionState, []);
+        this.sessionState = setOpenUncertainties(
+          this.sessionState,
+          ["当前条件下没有检索到足够候选人。"]
+        );
         this.tui.displayNoResults(conditions);
         const prompt = await this.chat.askFreeform("想怎么调整这轮搜索？例如：去掉销售 / 更看重最近活跃 / 更偏 Bonjour");
         if (!prompt) {
@@ -838,10 +922,10 @@ export class SearchWorkflow {
         continue;
       }
 
-      // Record search history
-      this.searchHistory.push({
+      this.sessionState = recordSearchExecution(this.sessionState, {
         conditions: { ...conditions },
         resultCount: candidates.length,
+        shortlist: candidates,
         timestamp: new Date()
       });
 
@@ -1127,7 +1211,7 @@ export class SearchWorkflow {
     }
 
     if (command.type === "clear") {
-      this.comparePool = [];
+      this.sessionState = clearCompareSet(this.sessionState);
       return continueWith({
         statusMessage: {
           tone: "success",
@@ -1139,7 +1223,7 @@ export class SearchWorkflow {
 
     if (command.type === "history") {
       this.tui.resetShortlistViewport();
-      this.tui.displayHistory(this.searchHistory);
+      this.tui.displayHistory(this.sessionState.searchHistory);
       return continueWith();
     }
 
@@ -1169,7 +1253,11 @@ export class SearchWorkflow {
       let comparisonEntries: ComparisonEntry[] = [];
       if (exportTarget === "pool" && targets.length >= 2) {
         await this.ensureProfiles(targets, conditions, "正在准备对比池导出...");
-        comparisonEntries = this.buildComparisonEntries(targets, candidates, conditions);
+        const prepared = await this.tools.prepareComparison({
+          targets,
+          allCandidates: candidates
+        });
+        comparisonEntries = prepared.entries;
       }
 
       const artifact = await this.exporter.export({
@@ -1195,10 +1283,7 @@ export class SearchWorkflow {
       this.tui.resetShortlistViewport();
       this.tui.displayUndo(previousEntry.conditions);
 
-      // Remove last TWO entries: current + the one we're restoring to
-      // We'll re-add the restored state as a new search
-      this.searchHistory.pop(); // Remove current
-      this.searchHistory.pop(); // Remove the one we're restoring
+      this.sessionState = rewindSearchHistory(this.sessionState, 2);
 
       return {
         type: "done",
@@ -1238,8 +1323,23 @@ export class SearchWorkflow {
         }
       }
 
+      this.sessionState = addCompareCandidates(this.sessionState, targets);
       await this.ensureProfiles(targets, conditions, "正在准备候选人对比...");
-      const comparisonEntries = this.buildComparisonEntries(targets, candidates, conditions);
+      const { entries: comparisonEntries } = await this.tools.prepareComparison({
+        targets,
+        allCandidates: candidates
+      });
+      this.sessionState = setConfidenceStatus(
+        this.sessionState,
+        {
+          level: "low",
+          rationale: "comparison-prepared-without-evidence-assessment",
+          updatedAt: new Date()
+        }
+      );
+      this.sessionState = setOpenUncertainties(this.sessionState, [
+        "对比已生成，但尚未完成证据置信度评估。"
+      ]);
       console.log(
         this.renderer.renderComparison(comparisonEntries, conditions)
       );
@@ -1251,7 +1351,7 @@ export class SearchWorkflow {
         }
 
         if (action === "clear") {
-          this.comparePool = [];
+          this.sessionState = clearCompareSet(this.sessionState);
           this.tui.displayPoolCleared();
           return continueWith();
         }
@@ -1399,24 +1499,18 @@ export class SearchWorkflow {
   }
 
   private addCandidatesToPool(targets: HydratedCandidate[]): number {
-    let addedCount = 0;
-
-    for (const target of targets) {
-      if (this.comparePool.some((candidate) => candidate.personId === target.personId)) {
-        continue;
-      }
-
-      this.comparePool.push(target);
-      addedCount += 1;
-    }
-
+    const beforeCount = this.comparePool.length;
+    this.sessionState = addCompareCandidates(this.sessionState, targets);
+    const addedCount = this.comparePool.length - beforeCount;
     return addedCount;
   }
 
   private removeCandidatesFromPool(targets: HydratedCandidate[]): number {
-    const removableIds = new Set(targets.map((target) => target.personId));
     const beforeCount = this.comparePool.length;
-    this.comparePool = this.comparePool.filter((candidate) => !removableIds.has(candidate.personId));
+    this.sessionState = removeCompareCandidatesFromState(
+      this.sessionState,
+      targets.map((target) => target.personId)
+    );
     return beforeCount - this.comparePool.length;
   }
 
@@ -2133,48 +2227,34 @@ export class SearchWorkflow {
     allCandidates: HydratedCandidate[],
     conditions?: SearchConditions
   ): ComparisonEntry[] {
-    const entries = targets
-      .filter(
-        (candidate): candidate is HydratedCandidate & { profile: MultiDimensionProfile } =>
-          Boolean(candidate.profile)
-      )
-      .map((candidate) => {
-        const shortlistIndex = allCandidates.findIndex((item) => item.personId === candidate.personId);
-        const decisionScore = this.computeComparisonDecisionScore(candidate, candidate.profile);
+    const hydratedTargets = targets.filter(
+      (candidate): candidate is HydratedCandidate & { profile: MultiDimensionProfile } =>
+        Boolean(candidate.profile)
+    );
 
-        return {
-          shortlistIndex: shortlistIndex >= 0 ? shortlistIndex + 1 : undefined,
-          candidate,
-          profile: candidate.profile,
-          topEvidence: this.buildComparisonEvidence(candidate._hydrated.evidence),
-          decisionScore
-        };
-      });
-
-    const rankedIds = [...entries]
-      .sort((left, right) => right.decisionScore - left.decisionScore)
-      .map((entry) => entry.candidate.personId);
-
-    return entries.map((entry) => {
-      const rank = rankedIds.indexOf(entry.candidate.personId);
-      const decisionTag = this.classifyComparisonDecisionTag(rank);
-
-      return {
-        ...entry,
-        decisionTag,
-        recommendation: this.buildComparisonRecommendation(
-          entry.candidate,
-          entry.profile,
-          decisionTag,
-          conditions
-        ),
-        nextStep: this.buildComparisonNextStep(
-          entry.candidate,
-          entry.shortlistIndex,
-          decisionTag
-        )
-      };
-    });
+    return prepareComparisonCandidates(
+      {
+        targets: hydratedTargets,
+        allCandidates
+      },
+      {
+        score: (candidate) =>
+          this.computeComparisonDecisionScore(candidate, candidate.profile as MultiDimensionProfile),
+        recommendation: (candidate, decisionTag) =>
+          this.buildComparisonRecommendation(
+            candidate,
+            candidate.profile as MultiDimensionProfile,
+            decisionTag,
+            conditions
+          ),
+        nextStep: (candidate, shortlistIndex, decisionTag) =>
+          this.buildComparisonNextStep(candidate, shortlistIndex, decisionTag)
+      }
+    ).map((entry) => ({
+      ...entry,
+      profile: entry.candidate.profile as MultiDimensionProfile,
+      topEvidence: this.buildComparisonEvidence(entry.candidate._hydrated.evidence)
+    }));
   }
 
   private buildExportRecords(
@@ -2239,18 +2319,6 @@ export class SearchWorkflow {
     }
 
     return score;
-  }
-
-  private classifyComparisonDecisionTag(rank: number): ComparisonEntry["decisionTag"] {
-    if (rank === 0) {
-      return "优先深看";
-    }
-
-    if (rank === 1) {
-      return "继续比较";
-    }
-
-    return "补充候选";
   }
 
   private buildComparisonEvidence(evidence: EvidenceItem[]): ComparisonEvidenceSummary[] {
@@ -2396,63 +2464,13 @@ export class SearchWorkflow {
     prompt: string,
     candidates: HydratedCandidate[] = []
   ): Promise<SearchConditions> {
-    const refineContext = this.buildRefineContextCandidates(candidates);
-    this.spinner.start("正在更新这轮搜索条件...");
-    const updated = await this.chat.reviseConditions(
-      current,
+    const revised = await this.tools.reviseQuery({
+      currentConditions: current,
       prompt,
-      "edit",
-      refineContext.length > 0 ? { shortlist: refineContext } : undefined
-    );
-    this.spinner.stop();
-    return this.normalizeConditions(
-      this.resolveCandidateAnchorWithContext(prompt, updated, refineContext)
-    );
-  }
-
-  private buildRefineContextCandidates(candidates: HydratedCandidate[]): RefineContextCandidate[] {
-    return candidates
-      .slice(0, 8)
-      .map((candidate, index) => ({
-        shortlistIndex: index + 1,
-        personId: candidate.personId,
-        name: candidate.name,
-        headline: candidate.headline,
-        location: candidate.location,
-        sources: candidate.sources,
-        matchReason: candidate.matchReason,
-        summary: candidate.profile?.summary
-      }));
-  }
-
-  private resolveCandidateAnchorWithContext(
-    prompt: string,
-    conditions: SearchConditions,
-    context: RefineContextCandidate[]
-  ): SearchConditions {
-    const anchor = conditions.candidateAnchor ? { ...conditions.candidateAnchor } : undefined;
-    const indexMatch = prompt.match(/(?:像|参考|类似)\s*(\d+)\s*号/);
-    const index = indexMatch?.[1] ? Number(indexMatch[1]) : anchor?.shortlistIndex;
-    const byIndex = typeof index === "number"
-      ? context.find((candidate) => candidate.shortlistIndex === index)
-      : undefined;
-    const byName = context.find((candidate) =>
-      prompt.toLowerCase().includes(candidate.name.toLowerCase())
-    );
-    const resolved = byIndex || byName;
-
-    if (!resolved) {
-      return conditions;
-    }
-
-    return {
-      ...conditions,
-      candidateAnchor: {
-        shortlistIndex: resolved.shortlistIndex,
-        personId: resolved.personId,
-        name: resolved.name
-      }
-    };
+      shortlist: candidates
+    });
+    this.sessionState = recordClarification(this.sessionState, prompt, revised.conditions);
+    return revised.conditions;
   }
 
   private applySearchStateOrdering(
@@ -2517,11 +2535,13 @@ export class SearchWorkflow {
     if (sortMode === "overall") {
       const ordered = this.applySearchStateOrdering(candidates, conditions);
       candidates.splice(0, candidates.length, ...ordered);
+      this.sessionState = setSessionShortlist(this.sessionState, candidates);
       return;
     }
 
     if (this.isRerankOnlySortMode(sortMode)) {
       candidates.sort((left, right) => this.compareRerankOnlyCandidates(left, right, sortMode));
+      this.sessionState = setSessionShortlist(this.sessionState, candidates);
       return;
     }
 
@@ -2543,6 +2563,7 @@ export class SearchWorkflow {
     };
 
     candidates.sort((left, right) => scoreOf(right) - scoreOf(left));
+    this.sessionState = setSessionShortlist(this.sessionState, candidates);
   }
 
   private isRerankOnlySortMode(
