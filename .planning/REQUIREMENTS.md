@@ -47,12 +47,12 @@
 
 ### Agent Layer
 
-- [ ] **AGENT-01**: CLI search assistant autonomously chooses among clarify, search, refine, compare, and decide actions within the talent-search domain
-- [ ] **AGENT-02**: Agent session state persists user goal, normalized conditions, shortlist, compare set, confidence state, and open uncertainties across turns
-- [ ] **AGENT-03**: Agent produces a structured 2-3 person comparison with shared decision dimensions
-- [ ] **AGENT-04**: Final recommendation is gated by shortlist membership, evidence traceability, and explicit confidence classification
-- [ ] **AGENT-05**: Low-confidence cases return a conditional or refusal result instead of an unsupported recommendation
-- [ ] **AGENT-06**: Agent evals verify useful compare outputs without regressing key search families
+- [x] **AGENT-01**: CLI search assistant autonomously chooses among clarify, search, refine, compare, and decide actions within the talent-search domain
+- [x] **AGENT-02**: Agent session state persists user goal, normalized conditions, shortlist, compare set, confidence state, and open uncertainties across turns
+- [x] **AGENT-03**: Agent produces a structured 2-3 person comparison with shared decision dimensions
+- [x] **AGENT-04**: Final recommendation is gated by shortlist membership, evidence traceability, and explicit confidence classification
+- [x] **AGENT-05**: Low-confidence cases return a conditional or refusal result instead of an unsupported recommendation
+- [x] **AGENT-06**: Agent evals verify useful compare outputs without regressing key search families
 
 ### Compliance Layer
 
@@ -129,12 +129,12 @@
 | UI-05 | Phase 5 | Complete |
 | COMP-03 | Phase 5 | Complete |
 | COMP-04 | Phase 5 | Complete |
-| AGENT-01 | Phase 7 | Planned |
-| AGENT-02 | Phase 7 | Planned |
-| AGENT-03 | Phase 7 | Planned |
-| AGENT-04 | Phase 7 | Planned |
-| AGENT-05 | Phase 7 | Planned |
-| AGENT-06 | Phase 7 | Planned |
+| AGENT-01 | Phase 7 | Completed |
+| AGENT-02 | Phase 7 | Completed |
+| AGENT-03 | Phase 7 | Completed |
+| AGENT-04 | Phase 7 | Completed |
+| AGENT-05 | Phase 7 | Completed |
+| AGENT-06 | Phase 7 | Completed |
 
 ---
 *Last updated: 2026-04-16 for milestone v1.2 Agentic Search CLI kickoff*

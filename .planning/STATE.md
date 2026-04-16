@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: agentic-search-cli
-status: Phase 7 Planning
-stopped_at: v1.2 Agentic Search CLI milestone opened; Phase 7 planning is the default next move
-last_updated: "2026-04-16T10:30:00.000Z"
+status: v1.2 Completed
+stopped_at: Phase 7 complete; v1.2 Agentic Search CLI is closed and the next default move is milestone closeout / ship routing
+last_updated: "2026-04-16T04:10:00.000Z"
 progress:
   total_phases: 14
-  completed_phases: 13
+  completed_phases: 14
   total_plans: 47
-  completed_plans: 43
+  completed_plans: 47
 ---
 
 # Project State
@@ -19,14 +19,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-28)
 
 **Core value:** Find the right AI talent through what they've done, not what they claim. Evidence-based matching over profile text matching.
-**Current focus:** Milestone `v1.2 Agentic Search CLI` is now open for planning. The next default move is Phase 7 planning for the CLI search agent orchestration milestone.
+**Current focus:** Milestone `v1.2 Agentic Search CLI` is complete. The next default move is milestone closeout / ship routing rather than another Phase 7 plan.
 
 ## Current Position
 
-Phase: 7 (CLI Search Agent Orchestration) — 📝 PLANNING
-Milestone: v1.2 Agentic Search CLI — 🚧 OPEN FOR PLANNING
+Phase: 7 (CLI Search Agent Orchestration) — ✅ COMPLETED
+Milestone: v1.2 Agentic Search CLI — ✅ COMPLETED
 GitHub expansion: OPEN (CONTROLLED SUSTAIN) — closed as a prior cycle; discovery remains paused by default unless new evidence regresses
-Next operator task: execute the Phase 7 planning flow from the approved CLI search agent spec, starting with toolization, compare/recommendation gates, and evaluation coverage
+Next operator task: close out and ship the completed v1.2 milestone, or define the next milestone if a new product surface is being opened
 
 ## Performance Metrics
 
@@ -74,8 +74,8 @@ Next operator task: execute the Phase 7 planning flow from the approved CLI sear
 
 ## Session Continuity
 
-Last session: 2026-04-16T10:30:00.000Z
-Stopped at: v1.2 Agentic Search CLI milestone kickoff approved; next focus is Phase 7 planning
+Last session: 2026-04-16T04:10:00.000Z
+Stopped at: Phase 7 plans 01-04 executed, verified, committed, and pushed; next focus is milestone closeout / ship routing
 
 ## Routing Update (2026-04-14 S1 Closure Reconciliation)
 
@@ -140,3 +140,25 @@ Stopped at: v1.2 Agentic Search CLI milestone kickoff approved; next focus is Ph
 - default planning route:
   - `Phase 7: CLI Search Agent Orchestration`
   - start with toolization and session state, then compare/recommendation gates, then free-form agent policy, then evaluation
+
+## Milestone Completion Update (2026-04-16 Agentic Search CLI)
+
+- completion summary: `.planning/phases/07-cli-search-agent-orchestration/SUMMARY.md`
+- completed plan batches:
+  - `01-PLAN`: tools and session state foundation
+  - `02-PLAN`: structured compare and confidence gates
+  - `03-PLAN`: bounded free-form CLI agent policy
+  - `04-PLAN`: acceptance + regression eval harness
+- verification status:
+  - worker typecheck: pass
+  - final worker validation: `9` files / `80` tests pass
+  - `agent-eval --json`: pass
+  - acceptance fixtures: `12 / 12`
+  - saved regression baselines: `Q4 watch-but-stable`, `Q6 pass`, `Q8 pass`
+- milestone judgment:
+  - `v1.2 Agentic Search CLI`: complete
+  - Phase 7 requirements `AGENT-01..06`: complete
+- default route after completion:
+  - do not invent a `05-PLAN` under Phase 7
+  - move to milestone closeout / ship routing
+  - if new work starts, define a new milestone or explicit post-v1.2 phase instead of extending Phase 7 ad hoc

@@ -300,10 +300,10 @@ Plans:
 **Plans**: 4 plans in 3 waves
 
 Plans:
-- [ ] 07-01-PLAN.md — Agent tools and session state foundation
-- [ ] 07-02-PLAN.md — Structured compare engine and confidence gates
-- [ ] 07-03-PLAN.md — Free-form CLI agent policy and interaction loop
-- [ ] 07-04-PLAN.md — Agent eval harness and acceptance validation
+- [x] 07-01-PLAN.md — Agent tools and session state foundation
+- [x] 07-02-PLAN.md — Structured compare engine and confidence gates
+- [x] 07-03-PLAN.md — Free-form CLI agent policy and interaction loop
+- [x] 07-04-PLAN.md — Agent eval harness and acceptance validation
 
 ## Progress
 
@@ -325,7 +325,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 05.1 → 05.5A �
 | 06.2. Architecture & Maintainability | 1/1 | ✅ Completed | 2026-04-03 |
 | 06.3. Intelligence & Performance | 5/5 | ✅ Completed | 2026-04-03 |
 | 6. Conversational & Compliance Polish | 5/5 | ✅ Completed | 2026-04-03 |
-| 7. CLI Search Agent Orchestration | 0/4 | 📝 Planned | — |
+| 7. CLI Search Agent Orchestration | 4/4 | ✅ Completed | 2026-04-16 |
 
 ---
 *Last updated: 2026-04-16 - Added milestone v1.2 Agentic Search CLI and planned Phase 7*

@@ -40,12 +40,12 @@ Seeku is a Chinese AI talent search engine designed for AI Builders, Founders, a
 - [ ] **UI-03**: Admin dashboard for sync status and eval results
 - [ ] **COMPLY-01**: Opt-out mechanism for profile removal requests
 - [ ] **COMPLY-02**: Profile claim mechanism for talent to verify ownership
-- [ ] **AGENT-01**: CLI search assistant autonomously chooses among clarify, search, refine, compare, and decide actions within the talent-search domain
-- [ ] **AGENT-02**: Agent session state persists user goal, current conditions, shortlist, compare set, confidence state, and open uncertainties across turns
-- [ ] **AGENT-03**: Agent produces a structured 2-3 person comparison on shared decision dimensions
-- [ ] **AGENT-04**: Final recommendation is gated by shortlist membership, evidence traceability, and explicit confidence classification
-- [ ] **AGENT-05**: Low-confidence cases return a conditional or refusal result instead of an unsupported recommendation
-- [ ] **AGENT-06**: Agent acceptance and regression evals verify that decision quality improves without regressing core search families such as Q4, Q6, and Q8
+- [x] **AGENT-01**: CLI search assistant autonomously chooses among clarify, search, refine, compare, and decide actions within the talent-search domain
+- [x] **AGENT-02**: Agent session state persists user goal, current conditions, shortlist, compare set, confidence state, and open uncertainties across turns
+- [x] **AGENT-03**: Agent produces a structured 2-3 person comparison on shared decision dimensions
+- [x] **AGENT-04**: Final recommendation is gated by shortlist membership, evidence traceability, and explicit confidence classification
+- [x] **AGENT-05**: Low-confidence cases return a conditional or refusal result instead of an unsupported recommendation
+- [x] **AGENT-06**: Agent acceptance and regression evals verify that decision quality improves without regressing core search families such as Q4, Q6, and Q8
 
 ### Out of Scope
 
