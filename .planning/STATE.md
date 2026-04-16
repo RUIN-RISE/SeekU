@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: visible-agent-copilot
 status: active milestone in execution
-stopped_at: 08-02 completed; next default move is execute 08-03 web copilot panel
-last_updated: "2026-04-17T00:34:28.000Z"
+stopped_at: 08-03 completed; next default move is execute 08-04 hardening and regression pass
+last_updated: "2026-04-17T00:58:00.000Z"
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 4
-  completed_plans: 2
+  completed_plans: 3
 ---
 
 # Project State
@@ -29,9 +29,9 @@ See:
 
 - Active milestone: `v1.3 Visible Agent Copilot`
 - Current phase: `08-cli-agent-panel`
-- Current plan: `03-PLAN`
-- Status: `02-PLAN` completed; ready to execute `03-PLAN`
-- Last activity: 2026-04-17 — completed local API bridge for session events and intervention routing
+- Current plan: `04-PLAN`
+- Status: `03-PLAN` completed; ready to execute `04-PLAN`
+- Last activity: 2026-04-17 — completed the web copilot panel route, hook, and bounded intervention UI
 
 ## Active Phase Snapshot
 
@@ -44,17 +44,16 @@ See:
 
 ## Latest Execution Snapshot
 
-- completed batch: `08-02-PLAN`
+- completed batch: `08-03-PLAN`
 - delivered:
-  - in-memory agent session bridge for registered CLI runtimes
-  - `GET /agent-panel/:sessionId/events` SSE route with initial snapshot and `once=1` test mode
-  - `POST /agent-panel/:sessionId/interventions` route for bounded intervention commands
-  - runtime-backed intervention application for compare, shortlist removal, evidence expansion, and predefined feedback tags
-  - API and worker tests for session bridge routing and failure cases
+  - new web route at `apps/web/src/app/agent-panel/[sessionId]/page.tsx`
+  - dual-column visible copilot surface with next-step bar, conversation rail, execution feed, session snapshot, shortlist, compare set, and recommendation panels
+  - event-driven `useAgentPanelSession` hook that hydrates from snapshot, consumes SSE deltas, reconnects after disconnects, and handles missing sessions
+  - bounded shortlist and feedback controls wired to `POST /agent-panel/:sessionId/interventions` without frontend-owned business-state mutation
+  - web tests for hook state updates, intervention rejection handling, component rendering, button availability, and missing-session rendering
 - verification:
-  - `pnpm exec vitest run apps/worker/src/cli/__tests__/agent-session-events.test.ts apps/worker/src/cli/__tests__/workflow-session-events.test.ts apps/worker/src/cli/__tests__/agent-session-bridge.test.ts apps/api/src/routes/__tests__/agent-panel.test.ts`
-  - `pnpm --filter @seeku/worker typecheck`
-  - `pnpm --filter @seeku/api typecheck` still fails on pre-existing issues in `apps/api/src/routes/search.ts` and `apps/api/src/routes/admin-claims.ts`, not from the new bridge code
+  - `pnpm exec vitest run apps/web/src/hooks/__tests__/useAgentPanelSession.test.ts apps/web/src/components/__tests__/AgentPanel.test.ts`
+  - `pnpm --filter @seeku/web typecheck` still fails on pre-existing issues in `apps/web/src/components/CandidateDetailModal.tsx` and `apps/web/src/components/ClaimForm.tsx`, not from the new agent panel code
 
 ## Carry-forward Quality Guardrails
 
@@ -81,4 +80,4 @@ See:
 ## Session Continuity
 
 Last session: 2026-04-17
-Stopped at: Phase 08 / `02-PLAN` complete; next route is implementation of `03-PLAN` web copilot panel.
+Stopped at: Phase 08 / `03-PLAN` complete; next route is `04-PLAN` hardening, disconnect polish, and broader regression coverage.
