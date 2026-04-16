@@ -2,6 +2,10 @@
 
 ## v1 Requirements
 
+v1.2 closure note:
+- `AGENT-01..06` were closed by Phase 7 on 2026-04-16.
+- Default workflow route is now milestone closeout / ship, not another Phase 7 plan.
+
 ### Data Layer
 
 - [ ] **DATA-01**: Worker fetches Bonjour profiles via `/profile/{link}` API and stores in `source_profiles` table
@@ -137,4 +141,4 @@
 | AGENT-06 | Phase 7 | Completed |
 
 ---
-*Last updated: 2026-04-16 for milestone v1.2 Agentic Search CLI kickoff*
+*Last updated: 2026-04-16 for milestone v1.2 Agentic Search CLI completion*

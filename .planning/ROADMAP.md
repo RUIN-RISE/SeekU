@@ -30,6 +30,11 @@ Current routing note as of 2026-04-15:
 - Bonjour coverage / cleanup docs are sidecar references unless the operator intentionally chooses that lane
 - `.planning/workstreams/*` is not the default routing source during this cleanup pass
 
+Milestone routing note as of 2026-04-16:
+- Phase `7` and milestone `v1.2 Agentic Search CLI` are complete
+- default next move is `$gsd-complete-milestone` or ship routing
+- do not create a Phase `7` `05-PLAN` or extend the milestone ad hoc; open a new milestone for new product work
+
 - [x] **Phase 1: Infrastructure & Bonjour Ingestion** - Foundation: project setup, Bonjour adapter, compliance opt-out
 - [x] **Phase 2: GitHub & Identity Merge** - Data integration: GitHub adapter, profile merging, evidence extraction
 - [x] **Phase 3: Search & Embeddings** - Retrieval: query parsing, hybrid search, reranking, embeddings
@@ -328,4 +333,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 05.1 → 05.5A �
 | 7. CLI Search Agent Orchestration | 4/4 | ✅ Completed | 2026-04-16 |
 
 ---
-*Last updated: 2026-04-16 - Added milestone v1.2 Agentic Search CLI and planned Phase 7*
+*Last updated: 2026-04-16 - Phase 7 completed; v1.2 routed to milestone closeout / ship*
