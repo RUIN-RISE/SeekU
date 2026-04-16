@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: visible-agent-copilot
-status: planning active milestone
-stopped_at: Phase 08 planned; next default move is execute 08-01 event runtime foundation
-last_updated: "2026-04-16T16:00:53.000Z"
+status: active milestone in execution
+stopped_at: 08-01 completed; next default move is execute 08-02 local API bridge
+last_updated: "2026-04-17T00:17:39.000Z"
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 4
-  completed_plans: 0
+  completed_plans: 1
 ---
 
 # Project State
@@ -29,9 +29,9 @@ See:
 
 - Active milestone: `v1.3 Visible Agent Copilot`
 - Current phase: `08-cli-agent-panel`
-- Current plan: `01-PLAN`
-- Status: Planned and ready to execute
-- Last activity: 2026-04-16 — milestone `v1.3` opened from the approved CLI agent panel design
+- Current plan: `02-PLAN`
+- Status: `01-PLAN` completed; ready to execute `02-PLAN`
+- Last activity: 2026-04-17 — completed event runtime and session snapshot foundation for the CLI agent
 
 ## Active Phase Snapshot
 
@@ -41,6 +41,18 @@ See:
   - `02-PLAN`: local API bridge for SSE streaming and intervention commands
   - `03-PLAN`: web copilot panel and bounded interaction surface
   - `04-PLAN`: integration hardening, disconnect behavior, and regression coverage
+
+## Latest Execution Snapshot
+
+- completed batch: `08-01-PLAN`
+- delivered:
+  - session-scoped event contract and snapshot serializer
+  - event-emitting CLI runtime foundation in `SearchWorkflow`
+  - intervention received / applied / rejected event hooks for the next bridge layer
+  - worker tests for snapshot completeness and compare-event ordering
+- verification:
+  - `pnpm exec vitest run apps/worker/src/cli/__tests__/agent-session-events.test.ts apps/worker/src/cli/__tests__/workflow-session-events.test.ts`
+  - `pnpm --filter @seeku/worker typecheck`
 
 ## Carry-forward Quality Guardrails
 
@@ -66,5 +78,5 @@ See:
 
 ## Session Continuity
 
-Last session: 2026-04-16
-Stopped at: milestone kickoff and phase planning complete; next route is implementation of Phase 08 / `01-PLAN`.
+Last session: 2026-04-17
+Stopped at: Phase 08 / `01-PLAN` complete; next route is implementation of `02-PLAN` local API bridge.

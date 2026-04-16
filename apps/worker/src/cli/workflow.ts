@@ -19,7 +19,7 @@ import {
 import type { LLMProvider } from "@seeku/llm";
 import { QueryPlanner, HybridRetriever, Reranker, type QueryIntent } from "@seeku/search";
 import { classifyMatchStrength } from "@seeku/shared";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import chalk from "chalk";
 import ora, { type Ora } from "ora";
 import {
@@ -53,6 +53,18 @@ import {
   type AgentInspectCandidateOutput,
   type SearchAgentTools
 } from "./agent-tools.js";
+import {
+  buildAgentSessionSnapshot,
+  createAgentSessionEvent,
+  serializeConfidenceStatus,
+  serializeRecommendation,
+  serializeSessionCandidate,
+  summarizeInterventionCommand,
+  type AgentInterventionCommand,
+  type AgentSessionEvent,
+  type AgentSessionSnapshot,
+  type AgentSessionStatus
+} from "./agent-session-events.js";
 import { ChatInterface } from "./chat.js";
 import { CLI_CONFIG } from "./config.js";
 import { ShortlistExporter } from "./exporter.js";
@@ -718,6 +730,12 @@ export class SearchWorkflow {
   private reranker: Reranker;
   private spinner: Ora;
   private sessionState: AgentSessionState;
+  private readonly sessionId = randomUUID();
+  private sessionStatus: AgentSessionStatus = "idle";
+  private sessionStatusSummary: string | null = "等待输入";
+  private sessionEventSequence = 0;
+  private readonly sessionEvents: AgentSessionEvent[] = [];
+  private readonly sessionEventListeners = new Set<(event: AgentSessionEvent) => void>();
   private tools: SearchAgentTools<
     HydratedCandidate,
     AgentInspectCandidateOutput<HydratedCandidate>,
@@ -783,6 +801,11 @@ export class SearchWorkflow {
         };
       }
     });
+    this.emitSessionEvent(
+      "session_started",
+      "CLI agent 会话已启动，等待输入。",
+      { snapshot: this.getSessionSnapshot() }
+    );
   }
 
   private get comparePool(): HydratedCandidate[] {
@@ -790,8 +813,8 @@ export class SearchWorkflow {
   }
 
   private set comparePool(candidates: HydratedCandidate[]) {
-    this.sessionState = clearCompareSet(this.sessionState);
-    this.sessionState = addCompareCandidates(this.sessionState, candidates);
+    const nextState = addCompareCandidates(clearCompareSet(this.sessionState), candidates);
+    this.applySessionState(nextState);
   }
 
   private get searchHistory(): SearchHistoryEntry[] {
@@ -799,7 +822,206 @@ export class SearchWorkflow {
   }
 
   private set searchHistory(entries: SearchHistoryEntry[]) {
-    this.sessionState = replaceSearchHistory(this.sessionState, entries);
+    this.applySessionState(replaceSearchHistory(this.sessionState, entries));
+  }
+
+  getSessionId(): string {
+    return this.sessionId;
+  }
+
+  getSessionSnapshot(): AgentSessionSnapshot {
+    return buildAgentSessionSnapshot({
+      sessionId: this.sessionId,
+      state: this.sessionState,
+      status: this.sessionStatus,
+      statusSummary: this.sessionStatusSummary
+    });
+  }
+
+  getSessionEvents(): AgentSessionEvent[] {
+    return this.sessionEvents.map((event) => ({
+      ...event,
+      data: { ...event.data }
+    }));
+  }
+
+  subscribeToSessionEvents(
+    listener: (event: AgentSessionEvent) => void
+  ): () => void {
+    this.sessionEventListeners.add(listener);
+    return () => {
+      this.sessionEventListeners.delete(listener);
+    };
+  }
+
+  recordInterventionReceived(command: AgentInterventionCommand): AgentSessionEvent {
+    return this.emitSessionEvent(
+      "intervention_received",
+      `${summarizeInterventionCommand(command)}（已接收）`,
+      { command }
+    );
+  }
+
+  recordInterventionApplied(
+    command: AgentInterventionCommand,
+    details: Record<string, unknown> = {}
+  ): AgentSessionEvent {
+    return this.emitSessionEvent(
+      "intervention_applied",
+      `${summarizeInterventionCommand(command)}（已应用）`,
+      { command, ...details }
+    );
+  }
+
+  recordInterventionRejected(
+    command: AgentInterventionCommand,
+    reason: string,
+    details: Record<string, unknown> = {}
+  ): AgentSessionEvent {
+    return this.emitSessionEvent(
+      "intervention_rejected",
+      `${summarizeInterventionCommand(command)}（已拒绝：${reason}）`,
+      { command, reason, details }
+    );
+  }
+
+  private emitSessionEvent<TData extends Record<string, unknown>>(
+    type: AgentSessionEvent["type"],
+    summary: string,
+    data: TData,
+    timestamp?: Date
+  ): AgentSessionEvent<TData> {
+    const event = createAgentSessionEvent({
+      sessionId: this.sessionId,
+      sequence: ++this.sessionEventSequence,
+      type,
+      status: this.sessionStatus,
+      summary,
+      data,
+      timestamp
+    });
+
+    this.sessionEvents.push(event);
+    for (const listener of this.sessionEventListeners) {
+      listener(event);
+    }
+
+    return event;
+  }
+
+  private setSessionStatus(status: AgentSessionStatus, summary?: string | null): void {
+    const normalizedSummary = summary?.trim() || null;
+    if (this.sessionStatus === status && this.sessionStatusSummary === normalizedSummary) {
+      return;
+    }
+
+    this.sessionStatus = status;
+    this.sessionStatusSummary = normalizedSummary;
+    this.emitSessionEvent("status_changed", normalizedSummary || `状态切换为 ${status}`, {
+      status,
+      statusSummary: normalizedSummary
+    });
+  }
+
+  private applySessionState(nextState: AgentSessionState): void {
+    const previousState = this.sessionState;
+    this.sessionState = nextState;
+    this.emitSessionStateDiff(previousState, nextState);
+  }
+
+  private emitSessionStateDiff(
+    previousState: AgentSessionState,
+    nextState: AgentSessionState
+  ): void {
+    if (previousState.userGoal !== nextState.userGoal) {
+      this.emitSessionEvent("goal_updated", nextState.userGoal
+        ? `搜索目标已更新：${truncateDisplayValue(nextState.userGoal, 48)}`
+        : "搜索目标已清空。", {
+        userGoal: nextState.userGoal
+      });
+    }
+
+    if (this.conditionsSignature(previousState.currentConditions) !== this.conditionsSignature(nextState.currentConditions)) {
+      this.emitSessionEvent("conditions_updated", "当前搜索条件已更新。", {
+        conditions: nextState.currentConditions
+      });
+    }
+
+    if (this.candidateListSignature(previousState.currentShortlist) !== this.candidateListSignature(nextState.currentShortlist)) {
+      this.emitSessionEvent(
+        "shortlist_updated",
+        `shortlist 已更新（当前 ${nextState.currentShortlist.length} 人）。`,
+        {
+          shortlist: nextState.currentShortlist.map(serializeSessionCandidate),
+          total: nextState.currentShortlist.length
+        }
+      );
+    }
+
+    if (this.candidateListSignature(previousState.activeCompareSet) !== this.candidateListSignature(nextState.activeCompareSet)) {
+      this.emitSessionEvent(
+        "compare_updated",
+        `compare 集合已更新（当前 ${nextState.activeCompareSet.length} 人）。`,
+        {
+          compareSet: nextState.activeCompareSet.map(serializeSessionCandidate),
+          total: nextState.activeCompareSet.length
+        }
+      );
+    }
+
+    if (this.confidenceSignature(previousState) !== this.confidenceSignature(nextState)) {
+      this.emitSessionEvent(
+        "confidence_updated",
+        `信心状态已更新为 ${nextState.confidenceStatus.level}。`,
+        {
+          confidenceStatus: serializeConfidenceStatus(nextState.confidenceStatus)
+        }
+      );
+    }
+
+    if (this.recommendationSignature(previousState) !== this.recommendationSignature(nextState)) {
+      this.emitSessionEvent(
+        "recommendation_updated",
+        nextState.recommendedCandidate
+          ? `推荐候选人已更新为 ${nextState.recommendedCandidate.candidate.name}。`
+          : "当前没有有效推荐。",
+        {
+          recommendedCandidate: serializeRecommendation(nextState.recommendedCandidate)
+        }
+      );
+    }
+
+    if (this.uncertaintySignature(previousState) !== this.uncertaintySignature(nextState)) {
+      this.emitSessionEvent(
+        "uncertainty_updated",
+        nextState.openUncertainties.length > 0
+          ? `当前有 ${nextState.openUncertainties.length} 条未决不确定性。`
+          : "当前没有未决不确定性。",
+        {
+          openUncertainties: [...nextState.openUncertainties]
+        }
+      );
+    }
+  }
+
+  private conditionsSignature(conditions: SearchConditions): string {
+    return JSON.stringify(conditions);
+  }
+
+  private candidateListSignature(candidates: ScoredCandidate[]): string {
+    return JSON.stringify(candidates.map(serializeSessionCandidate));
+  }
+
+  private confidenceSignature(state: AgentSessionState): string {
+    return JSON.stringify(serializeConfidenceStatus(state.confidenceStatus));
+  }
+
+  private recommendationSignature(state: AgentSessionState): string {
+    return JSON.stringify(serializeRecommendation(state.recommendedCandidate));
+  }
+
+  private uncertaintySignature(state: AgentSessionState): string {
+    return JSON.stringify(state.openUncertainties);
   }
 
   async execute(initialPrompt?: string): Promise<void> {
@@ -807,22 +1029,26 @@ export class SearchWorkflow {
     this.tui.displayWelcomeTips();
 
     let nextPrompt = initialPrompt?.trim();
+    this.setSessionStatus("waiting-input", "等待新的搜索需求。");
 
     while (true) {
       const initialInput = nextPrompt || (await this.chat.askInitial());
       nextPrompt = undefined;
 
       if (!initialInput) {
+        this.setSessionStatus("completed", "会话已结束。");
         return;
       }
 
       const clarifyOutcome = await this.runClarifyLoop(initialInput);
       if (!clarifyOutcome) {
+        this.setSessionStatus("completed", "会话已结束。");
         return;
       }
 
       const searchOutcome = await this.runSearchLoop(clarifyOutcome);
       if (searchOutcome.type === "quit") {
+        this.setSessionStatus("completed", "会话已结束。");
         return;
       }
 
@@ -839,9 +1065,15 @@ export class SearchWorkflow {
 
   private async runClarifyLoop(initialInput: string): Promise<SearchConditions | null> {
     let query = initialInput.trim();
+    this.setSessionStatus("clarifying", "正在理解你的搜索目标。");
     let conditions = await this.extractDraftFromQuery(query);
-    this.sessionState = setSessionUserGoal(this.sessionState, query);
-    this.sessionState = recordClarification(this.sessionState, query, conditions);
+    let nextState = setSessionUserGoal(this.sessionState, query);
+    nextState = recordClarification(nextState, query, conditions);
+    this.applySessionState(nextState);
+    this.emitSessionEvent("clarify_started", "开始解析并澄清搜索目标。", {
+      prompt: query,
+      clarificationCount: this.sessionState.clarificationHistory.length
+    });
 
     while (true) {
       this.tui.displayInitialSearch(query);
@@ -853,41 +1085,51 @@ export class SearchWorkflow {
       console.log(chalk.dim(`Agent 决策：${decision.rationale}`));
 
       if (decision.action === "search") {
+        this.setSessionStatus("searching", "澄清完成，准备开始搜索。");
         return conditions;
       }
 
+      this.setSessionStatus("waiting-input", decision.prompt || "等待补充搜索条件。");
       const instruction = await this.chat.askFreeform(
         decision.prompt || "再补一句你最看重的技能、角色或地点。"
       );
 
       if (!instruction) {
         console.log(chalk.dim("未继续补充，我先按当前条件搜索。"));
+        this.setSessionStatus("searching", "未收到更多补充，按当前条件开始搜索。");
         return conditions;
       }
 
+      this.setSessionStatus("clarifying", "正在补充搜索条件。");
       this.spinner.start("正在补充搜索条件...");
       conditions = this.normalizeConditions(
         await this.chat.reviseConditions(conditions, instruction, "edit")
       );
       this.spinner.stop();
-      this.sessionState = recordClarification(this.sessionState, instruction, conditions);
+      this.applySessionState(recordClarification(this.sessionState, instruction, conditions));
     }
   }
 
   private async runSearchLoop(initialConditions: SearchConditions): Promise<SearchLoopOutcome> {
     let conditions = this.normalizeConditions(initialConditions);
     let sortMode: SortMode = "overall";
-    this.sessionState = setSessionConditions(this.sessionState, conditions);
+    this.applySessionState(setSessionConditions(this.sessionState, conditions));
 
     while (true) {
       const effectiveQuery = this.buildEffectiveQuery(conditions);
       if (!effectiveQuery) {
         console.log(chalk.yellow("\n当前没有可搜索的条件，请重新描述需求。"));
+        this.setSessionStatus("blocked", "当前条件不足以形成有效搜索。");
         return { type: "restart" };
       }
 
       let candidates: HydratedCandidate[];
       try {
+        this.setSessionStatus("searching", "正在搜索匹配候选人。");
+        this.emitSessionEvent("search_started", `开始搜索：${truncateDisplayValue(effectiveQuery, 48)}`, {
+          query: effectiveQuery,
+          conditions
+        });
         this.spinner.start("正在搜索匹配候选人...");
         const searchResult = await this.tools.searchCandidates({
           query: effectiveQuery,
@@ -901,14 +1143,19 @@ export class SearchWorkflow {
       }
 
       if (candidates.length === 0) {
-        this.sessionState = setSessionShortlist(this.sessionState, []);
-        this.sessionState = setOpenUncertainties(
-          this.sessionState,
-          ["当前条件下没有检索到足够候选人。"]
-        );
+        let nextState = setSessionShortlist(this.sessionState, []);
+        nextState = setOpenUncertainties(nextState, ["当前条件下没有检索到足够候选人。"]);
+        this.applySessionState(nextState);
+        this.emitSessionEvent("search_completed", "搜索完成，但当前没有命中候选人。", {
+          query: effectiveQuery,
+          resultCount: 0
+        });
+        this.setSessionStatus("blocked", "当前条件下没有检索到足够候选人。");
         this.tui.displayNoResults(conditions);
+        this.setSessionStatus("waiting-input", "等待你调整搜索方向。");
         const prompt = await this.chat.askFreeform("想怎么调整这轮搜索？例如：去掉销售 / 更看重最近活跃 / 更偏 Bonjour");
         if (!prompt) {
+          this.setSessionStatus("blocked", "未收到新的 refine 指令。");
           return { type: "restart" };
         }
 
@@ -917,12 +1164,18 @@ export class SearchWorkflow {
         continue;
       }
 
-      this.sessionState = recordSearchExecution(this.sessionState, {
+      this.applySessionState(recordSearchExecution(this.sessionState, {
         conditions: { ...conditions },
         resultCount: candidates.length,
         shortlist: candidates,
         timestamp: new Date()
+      }));
+      this.emitSessionEvent("search_completed", `搜索完成，命中 ${candidates.length} 位候选人。`, {
+        query: effectiveQuery,
+        resultCount: candidates.length,
+        shortlistSize: this.sessionState.currentShortlist.length
       });
+      this.setSessionStatus("shortlist", `当前 shortlist 有 ${candidates.length} 位候选人。`);
 
       const preloadPromise = this.shouldPreloadProfiles()
         ? this.preloadProfiles(candidates, conditions)
@@ -1223,7 +1476,7 @@ export class SearchWorkflow {
     }
 
     if (command.type === "clear") {
-      this.sessionState = clearCompareSet(this.sessionState);
+      this.applySessionState(clearCompareSet(this.sessionState));
       return continueWith({
         statusMessage: {
           tone: "success",
@@ -1295,7 +1548,7 @@ export class SearchWorkflow {
       this.tui.resetShortlistViewport();
       this.tui.displayUndo(previousEntry.conditions);
 
-      this.sessionState = rewindSearchHistory(this.sessionState, 2);
+      this.applySessionState(rewindSearchHistory(this.sessionState, 2));
 
       return {
         type: "done",
@@ -1470,17 +1723,17 @@ export class SearchWorkflow {
 
   private addCandidatesToPool(targets: HydratedCandidate[]): number {
     const beforeCount = this.comparePool.length;
-    this.sessionState = addCompareCandidates(this.sessionState, targets);
+    this.applySessionState(addCompareCandidates(this.sessionState, targets));
     const addedCount = this.comparePool.length - beforeCount;
     return addedCount;
   }
 
   private removeCandidatesFromPool(targets: HydratedCandidate[]): number {
     const beforeCount = this.comparePool.length;
-    this.sessionState = removeCompareCandidatesFromState(
+    this.applySessionState(removeCompareCandidatesFromState(
       this.sessionState,
       targets.map((target) => target.personId)
-    );
+    ));
     return beforeCount - this.comparePool.length;
   }
 
@@ -1560,7 +1813,12 @@ export class SearchWorkflow {
       }
     }
 
-    this.sessionState = addCompareCandidates(this.sessionState, targets);
+    this.setSessionStatus("comparing", `正在比较 ${targets.length} 位候选人。`);
+    this.emitSessionEvent("compare_started", `开始 compare ${targets.length} 位候选人。`, {
+      candidateIds: targets.map((target) => target.personId),
+      total: targets.length
+    });
+    this.applySessionState(addCompareCandidates(this.sessionState, targets));
     await this.ensureProfiles(targets, conditions, options.loadingMessage);
     const prepared = await this.tools.prepareComparison({
       targets,
@@ -1577,13 +1835,13 @@ export class SearchWorkflow {
         largestUncertainty: "compare outcome 缺失。"
       }
     };
-    this.sessionState = setConfidenceStatus(
+    this.applySessionState(setConfidenceStatus(
       this.sessionState,
       comparisonResult.outcome.confidence
-    );
-    this.sessionState = setOpenUncertainties(this.sessionState, [
+    ));
+    this.applySessionState(setOpenUncertainties(this.sessionState, [
       comparisonResult.outcome.largestUncertainty
-    ]);
+    ]));
     if (
       comparisonResult.outcome.recommendedCandidateId
       && comparisonResult.outcome.recommendationMode !== "no-recommendation"
@@ -1595,10 +1853,11 @@ export class SearchWorkflow {
         const recommendation = setRecommendedCandidate(this.sessionState, targetRecommendation, {
           rationale: comparisonResult.outcome.rationale
         });
-        this.sessionState = recommendation.state;
+        this.applySessionState(recommendation.state);
       }
     }
     console.log(this.renderer.renderComparison(comparisonResult, conditions));
+    this.setSessionStatus("waiting-input", "compare 已完成，等待下一步操作。");
 
     while (true) {
       const action = await this.tui.promptCompareAction();
@@ -1607,7 +1866,7 @@ export class SearchWorkflow {
       }
 
       if (action === "clear") {
-        this.sessionState = clearCompareSet(this.sessionState);
+        this.applySessionState(clearCompareSet(this.sessionState));
         this.tui.displayPoolCleared();
         return "clear";
       }
@@ -2520,7 +2779,7 @@ export class SearchWorkflow {
       prompt,
       shortlist: candidates
     });
-    this.sessionState = recordClarification(this.sessionState, prompt, revised.conditions);
+    this.applySessionState(recordClarification(this.sessionState, prompt, revised.conditions));
     return revised.conditions;
   }
 
@@ -2586,13 +2845,13 @@ export class SearchWorkflow {
     if (sortMode === "overall") {
       const ordered = this.applySearchStateOrdering(candidates, conditions);
       candidates.splice(0, candidates.length, ...ordered);
-      this.sessionState = setSessionShortlist(this.sessionState, candidates);
+      this.applySessionState(setSessionShortlist(this.sessionState, candidates));
       return;
     }
 
     if (this.isRerankOnlySortMode(sortMode)) {
       candidates.sort((left, right) => this.compareRerankOnlyCandidates(left, right, sortMode));
-      this.sessionState = setSessionShortlist(this.sessionState, candidates);
+      this.applySessionState(setSessionShortlist(this.sessionState, candidates));
       return;
     }
 
@@ -2614,7 +2873,7 @@ export class SearchWorkflow {
     };
 
     candidates.sort((left, right) => scoreOf(right) - scoreOf(left));
-    this.sessionState = setSessionShortlist(this.sessionState, candidates);
+    this.applySessionState(setSessionShortlist(this.sessionState, candidates));
   }
 
   private isRerankOnlySortMode(

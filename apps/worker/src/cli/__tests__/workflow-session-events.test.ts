@@ -1,0 +1,225 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { MultiDimensionProfile, SearchConditions } from "../types.js";
+import { SearchWorkflow } from "../workflow.js";
+
+const BASE_CONDITIONS: SearchConditions = {
+  skills: ["python"],
+  locations: ["杭州"],
+  experience: undefined,
+  role: "backend",
+  sourceBias: "bonjour",
+  mustHave: [],
+  niceToHave: [],
+  exclude: [],
+  preferFresh: true,
+  candidateAnchor: undefined,
+  limit: 10
+};
+
+function createProfile(overrides: Partial<MultiDimensionProfile> = {}): MultiDimensionProfile {
+  return {
+    dimensions: {
+      techMatch: 88,
+      locationMatch: 96,
+      careerStability: 74,
+      projectDepth: 83,
+      academicImpact: 40,
+      communityReputation: 55
+    },
+    overallScore: 86,
+    highlights: ["主导过搜索平台重构"],
+    summary: "长期做搜索与自动化系统建设。",
+    ...overrides
+  };
+}
+
+function createCandidate(overrides: Record<string, unknown> = {}) {
+  return {
+    personId: "person-1",
+    name: "Ada",
+    headline: "Python Backend Engineer",
+    location: "杭州",
+    company: null,
+    experienceYears: null,
+    matchScore: 0.82,
+    profile: createProfile(),
+    matchStrength: "strong",
+    matchReason: "地点命中：杭州，技术命中：python",
+    queryReasons: ["地点命中：杭州", "技术命中：python"],
+    sources: ["Bonjour"],
+    bonjourUrl: "https://bonjour.bio/ada",
+    lastSyncedAt: new Date("2026-03-30T00:00:00.000Z"),
+    latestEvidenceAt: new Date("2026-03-29T00:00:00.000Z"),
+    _hydrated: {
+      person: {
+        id: "person-1",
+        primaryName: "Ada",
+        primaryHeadline: "Python Backend Engineer",
+        primaryLocation: "杭州",
+        updatedAt: new Date("2026-03-30T00:00:00.000Z")
+      },
+      document: {
+        personId: "person-1",
+        facetSource: ["bonjour"],
+        facetLocation: ["杭州"]
+      },
+      evidence: [
+        {
+          personId: "person-1",
+          evidenceType: "project",
+          title: "Built Hangzhou automation stack",
+          description: "Used python heavily",
+          source: "bonjour",
+          occurredAt: new Date("2026-03-29T00:00:00.000Z")
+        }
+      ]
+    },
+    ...overrides
+  } as any;
+}
+
+function createWorkflowHarness() {
+  const workflow = new SearchWorkflow({} as any, {} as any);
+  const mockTui = {
+    displayInitialSearch: vi.fn(),
+    displayClarifiedDraft: vi.fn(),
+    resetShortlistViewport: vi.fn(),
+    displayShortlist: vi.fn(),
+    promptShortlistAction: vi.fn(),
+    promptCompareAction: vi.fn(),
+    displayNoResults: vi.fn(),
+    displayPoolCleared: vi.fn()
+  };
+  const mockChat = {
+    askFreeform: vi.fn(),
+    extractConditions: vi.fn(),
+    reviseConditions: vi.fn(),
+    detectMissing: vi.fn(() => [])
+  };
+  const mockRenderer = {
+    renderComparison: vi.fn(() => "COMPARE VIEW")
+  };
+
+  (workflow as any).tui = mockTui;
+  (workflow as any).chat = mockChat;
+  (workflow as any).renderer = mockRenderer;
+  (workflow as any).refreshCandidateQueryExplanation = vi.fn();
+  (workflow as any).ensureProfiles = vi.fn(async () => undefined);
+  (workflow as any).sortCandidates = vi.fn(async () => undefined);
+
+  return {
+    workflow,
+    mockTui,
+    mockChat,
+    runClarifyLoop: (workflow as any).runClarifyLoop.bind(workflow) as (
+      initialInput: string
+    ) => Promise<SearchConditions | null>,
+    runSearchLoop: (workflow as any).runSearchLoop.bind(workflow) as (
+      initialConditions: SearchConditions
+    ) => Promise<any>,
+    presentComparison: (workflow as any).presentComparison.bind(workflow) as (
+      targets: any[],
+      allCandidates: any[],
+      conditions: SearchConditions,
+      options: { clearProfilesBeforeCompare: boolean; loadingMessage: string }
+    ) => Promise<any>
+  };
+}
+
+describe("SearchWorkflow session events", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-31T00:00:00.000Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("builds a snapshot that can reconstruct the current session state after search", async () => {
+    const { workflow, mockChat, runClarifyLoop, runSearchLoop } = createWorkflowHarness();
+    const first = createCandidate({ personId: "person-1", matchStrength: "weak" });
+    const second = createCandidate({ personId: "person-2", name: "Lin", matchStrength: "weak" });
+
+    mockChat.extractConditions.mockResolvedValue(BASE_CONDITIONS);
+    await runClarifyLoop("杭州 python backend");
+
+    (workflow as any).shouldPreloadProfiles = vi.fn(() => false);
+    (workflow as any).tools.searchCandidates = vi.fn(async () => ({
+      query: "杭州 python backend",
+      conditions: BASE_CONDITIONS,
+      candidates: [first, second]
+    }));
+    (workflow as any).runShortlistLoop = vi.fn(async () => ({ type: "quit" }));
+
+    await runSearchLoop(BASE_CONDITIONS);
+
+    const snapshot = workflow.getSessionSnapshot();
+    expect(snapshot.userGoal).toBe("杭州 python backend");
+    expect(snapshot.currentConditions).toMatchObject(BASE_CONDITIONS);
+    expect(snapshot.currentShortlist).toHaveLength(2);
+    expect(snapshot.currentShortlist[0]).toMatchObject({
+      personId: "person-1",
+      lastSyncedAt: "2026-03-30T00:00:00.000Z",
+      latestEvidenceAt: "2026-03-29T00:00:00.000Z"
+    });
+    expect(snapshot.searchHistory).toHaveLength(1);
+    expect(snapshot.status).toBe("shortlist");
+  });
+
+  it("emits compare and recommendation events in a stable order", async () => {
+    const { workflow, mockTui, presentComparison } = createWorkflowHarness();
+    const first = createCandidate({ personId: "person-1", matchStrength: "strong" });
+    const second = createCandidate({ personId: "person-2", name: "Lin", matchStrength: "medium" });
+
+    mockTui.promptCompareAction.mockResolvedValue("back");
+    (workflow as any).tools.prepareComparison = vi.fn(async () => ({
+      targets: [first, second],
+      entries: [],
+      result: {
+        entries: [],
+        outcome: {
+          confidence: "high-confidence",
+          recommendationMode: "clear-recommendation",
+          recommendedCandidateId: "person-1",
+          recommendation: "Ada 更适合当前目标。",
+          rationale: "证据更强且角色贴合度更高。",
+          largestUncertainty: "仍需补充最近 90 天活跃度。"
+        }
+      }
+    }));
+
+    await presentComparison(
+      [first, second],
+      [first, second],
+      BASE_CONDITIONS,
+      {
+        clearProfilesBeforeCompare: false,
+        loadingMessage: "正在准备候选人对比..."
+      }
+    );
+
+    const eventTypes = workflow.getSessionEvents().map((event) => event.type);
+    const compareStartedIndex = eventTypes.indexOf("compare_started");
+    const compareUpdatedIndex = eventTypes.indexOf("compare_updated");
+    const confidenceUpdatedIndex = eventTypes.indexOf("confidence_updated");
+    const uncertaintyUpdatedIndex = eventTypes.indexOf("uncertainty_updated");
+    const recommendationUpdatedIndex = eventTypes.indexOf("recommendation_updated");
+
+    expect(compareStartedIndex).toBeGreaterThanOrEqual(0);
+    expect(compareUpdatedIndex).toBeGreaterThan(compareStartedIndex);
+    expect(confidenceUpdatedIndex).toBeGreaterThan(compareUpdatedIndex);
+    expect(uncertaintyUpdatedIndex).toBeGreaterThan(confidenceUpdatedIndex);
+    expect(recommendationUpdatedIndex).toBeGreaterThan(uncertaintyUpdatedIndex);
+
+    const recommendationEvent = workflow.getSessionEvents().find((event) => event.type === "recommendation_updated");
+    expect(recommendationEvent?.data).toMatchObject({
+      recommendedCandidate: {
+        candidate: {
+          personId: "person-1"
+        }
+      }
+    });
+  });
+});
