@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
-milestone: none
-milestone_name: between-milestones
-status: between milestones
-stopped_at: v1.2 archived; next default move is $gsd-new-milestone or ship handoff from main
-last_updated: "2026-04-16T04:45:00.000Z"
+milestone: v1.3
+milestone_name: visible-agent-copilot
+status: planning active milestone
+stopped_at: Phase 08 planned; next default move is execute 08-01 event runtime foundation
+last_updated: "2026-04-16T16:00:53.000Z"
 progress:
-  total_phases: 14
-  completed_phases: 14
-  total_plans: 47
-  completed_plans: 47
+  total_phases: 1
+  completed_phases: 0
+  total_plans: 4
+  completed_plans: 0
 ---
 
 # Project State
@@ -19,29 +19,42 @@ progress:
 See:
 - `.planning/PROJECT.md`
 - `.planning/ROADMAP.md`
+- `.planning/REQUIREMENTS.md`
 - `.planning/MILESTONES.md`
 
 **Core value:** Find the right AI talent through what they've done, not what they claim. Evidence-based matching over profile text matching.
-**Current focus:** The repo is between milestones. `v1.2 Agentic Search CLI` has been archived and the next default move is `$gsd-new-milestone`.
+**Current focus:** `v1.3 Visible Agent Copilot` is active and the next step is Phase 08 execution.
 
 ## Current Position
 
-- Active milestone: none
-- Latest shipped milestone: `v1.2 Agentic Search CLI`
-- Latest archive files:
-  - `.planning/milestones/v1.2-ROADMAP.md`
-  - `.planning/milestones/v1.2-REQUIREMENTS.md`
-- GitHub expansion: current controlled-open cycle is closed; discovery remains paused by default unless new saved evidence regresses
-- Next operator task: open the next milestone or do ship / review handoff from `main`
+- Active milestone: `v1.3 Visible Agent Copilot`
+- Current phase: `08-cli-agent-panel`
+- Current plan: `01-PLAN`
+- Status: Planned and ready to execute
+- Last activity: 2026-04-16 — milestone `v1.3` opened from the approved CLI agent panel design
 
-## Latest Completion Snapshot
+## Active Phase Snapshot
+
+- phase context: `.planning/phases/08-cli-agent-panel/CONTEXT.md`
+- planned batches:
+  - `01-PLAN`: event-emitting CLI runtime and session snapshot foundation
+  - `02-PLAN`: local API bridge for SSE streaming and intervention commands
+  - `03-PLAN`: web copilot panel and bounded interaction surface
+  - `04-PLAN`: integration hardening, disconnect behavior, and regression coverage
+
+## Carry-forward Quality Guardrails
+
+- Preserve current search-quality posture:
+  - `Q4`: `watch-but-stable`
+  - `Q6`: `pass`
+  - `Q8`: `pass`
+- Do not reopen discovery or GitHub expansion by default.
+- Keep recommendation honesty, compare gating, and CLI runtime authority intact.
+
+## Latest Completed Milestone Snapshot
 
 - completion summary: `.planning/phases/07-cli-search-agent-orchestration/SUMMARY.md`
-- delivered plan batches:
-  - `01-PLAN`: tools and session state foundation
-  - `02-PLAN`: structured compare and confidence gates
-  - `03-PLAN`: bounded free-form CLI agent policy
-  - `04-PLAN`: acceptance + regression eval harness
+- latest shipped milestone: `v1.2 Agentic Search CLI`
 - verification:
   - worker validation: `9` files / `80` tests pass
   - `agent-eval --json`: pass
@@ -51,13 +64,7 @@ See:
     - `Q6`: `pass`
     - `Q8`: `pass`
 
-## Residual Watch Items
-
-- `Q4` remains the active residual search-quality watch item.
-- Discovery should not be restarted by default.
-- Some local `gsd-tools` helper outputs still have historical drift; use top-level anchors as the routing source of truth until the next milestone is opened.
-
 ## Session Continuity
 
 Last session: 2026-04-16
-Stopped at: v1.2 archived, top-level anchors rotated to between-milestones state, waiting for `$gsd-new-milestone` or ship routing.
+Stopped at: milestone kickoff and phase planning complete; next route is implementation of Phase 08 / `01-PLAN`.
