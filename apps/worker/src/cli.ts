@@ -31,6 +31,7 @@ import {
 
 import { runBonjourDiscoveryScan, runBonjourSyncJob } from "./index.js";
 import { runCoverageCli } from "./cli/coverage.js";
+import { runAgentEvalCli } from "./cli/agent-eval.js";
 import { runBuildBonjourAuthProbeSeedsCommand } from "./cli/build-bonjour-auth-probe-seeds.js";
 import { runDumpBonjourAuthHandlesCommand } from "./cli/dump-bonjour-auth-handles.js";
 import { runImportBonjourFriendLinksCommand } from "./cli/import-bonjour-friend-links.js";
@@ -248,6 +249,13 @@ function buildCommandRegistry(): Map<string, CommandRunner> {
     return runCoverageCli({ json: parsed.flags.has("json") });
   });
 
+  registry.set("agent-eval", async (parsed) => {
+    return runAgentEvalCli({
+      json: parsed.flags.has("json"),
+      snapshotDir: parsed.args.get("snapshot-dir")
+    });
+  });
+
   registry.set("version", async () => {
     console.log(chalk.bold("Seeku CLI v1.1.0"));
     console.log(chalk.dim("Search Assistant Edition"));
@@ -270,6 +278,7 @@ function buildCommandRegistry(): Map<string, CommandRunner> {
     console.log(chalk.yellow("\nMaintenance Commands:"));
     console.log(`  ${chalk.cyan("extract-zju-talent")}  🚀 运行 ZJU 人才全链路发现与深度提炼管道`);
     console.log(`  ${chalk.cyan("coverage")}            输出当前 active/indexed/embedded/multi-source 覆盖率`);
+    console.log(`  ${chalk.cyan("agent-eval")}          运行 CLI agent acceptance + Q4/Q6/Q8 regression harness`);
     console.log(`  ${chalk.cyan("rebuild-search")}      全量重建 search documents + embeddings`);
 
     console.log(chalk.yellow("\nOptions:"));
