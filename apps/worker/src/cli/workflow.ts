@@ -40,6 +40,10 @@ import {
   type AgentSessionState
 } from "./agent-state.js";
 import {
+  decideClarifyAction,
+  decidePostSearchAction
+} from "./agent-policy.js";
+import {
   buildRefineContextCandidates,
   createSearchAgentTools,
   inspectCandidateFromState,
@@ -842,48 +846,31 @@ export class SearchWorkflow {
     while (true) {
       this.tui.displayInitialSearch(query);
       this.tui.displayClarifiedDraft(this.createDraft(conditions));
+      const decision = decideClarifyAction({
+        conditions,
+        clarificationCount: this.getClarificationTurnCount()
+      });
+      console.log(chalk.dim(`Agent 决策：${decision.rationale}`));
 
-      const action = await this.tui.promptClarifyAction();
-      if (action === "search") {
+      if (decision.action === "search") {
         return conditions;
       }
 
-      if (action === "quit") {
-        return null;
+      const instruction = await this.chat.askFreeform(
+        decision.prompt || "再补一句你最看重的技能、角色或地点。"
+      );
+
+      if (!instruction) {
+        console.log(chalk.dim("未继续补充，我先按当前条件搜索。"));
+        return conditions;
       }
 
-      if (action === "restart") {
-        const restarted = await this.chat.askFreeform("重新描述一下你想找的人才");
-        if (!restarted) {
-          continue;
-        }
-        query = restarted;
-        conditions = await this.extractDraftFromQuery(query);
-        this.sessionState = setSessionUserGoal(this.sessionState, query);
-        this.sessionState = recordClarification(this.sessionState, query, conditions);
-        continue;
-      }
-
-      if (action === "add" || action === "relax") {
-        const instruction = await this.chat.askFreeform(
-          action === "add"
-            ? "补充想强调的条件，例如：更偏 vLLM / CUDA，最好做过 serving"
-            : "你想放宽哪一项？例如：地点放宽到上海/杭州，经验改成 2 年以上"
-        );
-
-        if (!instruction) {
-          continue;
-        }
-
-        this.spinner.start(action === "add" ? "正在补充搜索条件..." : "正在放宽搜索条件...");
-        conditions = await this.chat.reviseConditions(
-          conditions,
-          instruction,
-          action === "add" ? "tighten" : "relax"
-        );
-        this.spinner.stop();
-        this.sessionState = recordClarification(this.sessionState, instruction, conditions);
-      }
+      this.spinner.start("正在补充搜索条件...");
+      conditions = this.normalizeConditions(
+        await this.chat.reviseConditions(conditions, instruction, "edit")
+      );
+      this.spinner.stop();
+      this.sessionState = recordClarification(this.sessionState, instruction, conditions);
     }
   }
 
@@ -940,6 +927,23 @@ export class SearchWorkflow {
       const preloadPromise = this.shouldPreloadProfiles()
         ? this.preloadProfiles(candidates, conditions)
         : undefined;
+      const nextAction = decidePostSearchAction({ candidates });
+      console.log(chalk.dim(`Agent 决策：${nextAction.rationale}`));
+      if (nextAction.action === "compare") {
+        const compareOutcome = await this.presentComparison(
+          nextAction.targets,
+          candidates,
+          conditions,
+          {
+            clearProfilesBeforeCompare: false,
+            loadingMessage: "正在自动收敛到 compare..."
+          }
+        );
+        preloadPromise?.catch(() => {});
+        if (compareOutcome === "quit") {
+          return { type: "quit" };
+        }
+      }
       const result = await this.runShortlistLoop(candidates, conditions, sortMode);
       preloadPromise?.catch(() => {});
 
@@ -1318,78 +1322,15 @@ export class SearchWorkflow {
         });
       }
 
-      this.tui.resetShortlistViewport();
-      for (const target of targets) {
-        this.refreshCandidateQueryExplanation(target, conditions);
-      }
-
-      // For pool candidates: clear old profiles to force regeneration with current conditions
-      // This ensures profile matches the current search context, not the old one
-      if (usePool) {
-        for (const target of targets) {
-          delete target.profile;
-        }
-      }
-
-      this.sessionState = addCompareCandidates(this.sessionState, targets);
-      await this.ensureProfiles(targets, conditions, "正在准备候选人对比...");
-      const prepared = await this.tools.prepareComparison({
-        targets,
-        allCandidates: candidates
+      const compareOutcome = await this.presentComparison(targets, candidates, conditions, {
+        clearProfilesBeforeCompare: usePool,
+        loadingMessage: "正在准备候选人对比..."
       });
-      const comparisonEntries = prepared.entries;
-      const comparisonResult = prepared.result ?? {
-        entries: comparisonEntries,
-        outcome: {
-          confidence: "low-confidence" as const,
-          recommendationMode: "no-recommendation" as const,
-          recommendation: "我还没有足够证据推荐单一候选人。",
-          rationale: "当前 compare 结果缺少结构化 outcome。",
-          largestUncertainty: "compare outcome 缺失。"
-        }
-      };
-      this.sessionState = setConfidenceStatus(
-        this.sessionState,
-        comparisonResult.outcome.confidence
-      );
-      this.sessionState = setOpenUncertainties(this.sessionState, [
-        comparisonResult.outcome.largestUncertainty
-      ]);
-      if (
-        comparisonResult.outcome.recommendedCandidateId
-        && comparisonResult.outcome.recommendationMode !== "no-recommendation"
-      ) {
-        const targetRecommendation = targets.find(
-          (candidate) => candidate.personId === comparisonResult.outcome.recommendedCandidateId
-        );
-        if (targetRecommendation) {
-          const recommendation = setRecommendedCandidate(this.sessionState, targetRecommendation, {
-            rationale: comparisonResult.outcome.rationale
-          });
-          this.sessionState = recommendation.state;
-        }
-      }
-      console.log(
-        this.renderer.renderComparison(comparisonResult, conditions)
-      );
-
-      while (true) {
-        const action = await this.tui.promptCompareAction();
-        if (action === "back") {
-          return continueWith();
-        }
-
-        if (action === "clear") {
-          this.sessionState = clearCompareSet(this.sessionState);
-          this.tui.displayPoolCleared();
-          return continueWith();
-        }
-
-        if (action === "quit") {
-          return { type: "done", result: { type: "quit" } };
-        }
+      if (compareOutcome === "quit") {
+        return { type: "done", result: { type: "quit" } };
       }
 
+      return continueWith();
     }
 
     if (command.type === "view") {
@@ -1593,6 +1534,88 @@ export class SearchWorkflow {
     const extracted = await this.chat.extractConditions(query);
     this.spinner.stop();
     return this.normalizeConditions(extracted);
+  }
+
+  private getClarificationTurnCount(): number {
+    return Math.max(0, this.sessionState.clarificationHistory.length - 1);
+  }
+
+  private async presentComparison(
+    targets: HydratedCandidate[],
+    allCandidates: HydratedCandidate[],
+    conditions: SearchConditions,
+    options: {
+      clearProfilesBeforeCompare: boolean;
+      loadingMessage: string;
+    }
+  ): Promise<"back" | "clear" | "quit"> {
+    this.tui.resetShortlistViewport();
+    for (const target of targets) {
+      this.refreshCandidateQueryExplanation(target, conditions);
+    }
+
+    if (options.clearProfilesBeforeCompare) {
+      for (const target of targets) {
+        delete target.profile;
+      }
+    }
+
+    this.sessionState = addCompareCandidates(this.sessionState, targets);
+    await this.ensureProfiles(targets, conditions, options.loadingMessage);
+    const prepared = await this.tools.prepareComparison({
+      targets,
+      allCandidates
+    });
+    const comparisonEntries = prepared.entries;
+    const comparisonResult = prepared.result ?? {
+      entries: comparisonEntries,
+      outcome: {
+        confidence: "low-confidence" as const,
+        recommendationMode: "no-recommendation" as const,
+        recommendation: "我还没有足够证据推荐单一候选人。",
+        rationale: "当前 compare 结果缺少结构化 outcome。",
+        largestUncertainty: "compare outcome 缺失。"
+      }
+    };
+    this.sessionState = setConfidenceStatus(
+      this.sessionState,
+      comparisonResult.outcome.confidence
+    );
+    this.sessionState = setOpenUncertainties(this.sessionState, [
+      comparisonResult.outcome.largestUncertainty
+    ]);
+    if (
+      comparisonResult.outcome.recommendedCandidateId
+      && comparisonResult.outcome.recommendationMode !== "no-recommendation"
+    ) {
+      const targetRecommendation = targets.find(
+        (candidate) => candidate.personId === comparisonResult.outcome.recommendedCandidateId
+      );
+      if (targetRecommendation) {
+        const recommendation = setRecommendedCandidate(this.sessionState, targetRecommendation, {
+          rationale: comparisonResult.outcome.rationale
+        });
+        this.sessionState = recommendation.state;
+      }
+    }
+    console.log(this.renderer.renderComparison(comparisonResult, conditions));
+
+    while (true) {
+      const action = await this.tui.promptCompareAction();
+      if (action === "back") {
+        return "back";
+      }
+
+      if (action === "clear") {
+        this.sessionState = clearCompareSet(this.sessionState);
+        this.tui.displayPoolCleared();
+        return "clear";
+      }
+
+      if (action === "quit") {
+        return "quit";
+      }
+    }
   }
 
   private createDraft(conditions: SearchConditions): SearchDraft {

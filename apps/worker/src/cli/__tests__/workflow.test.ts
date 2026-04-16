@@ -88,6 +88,8 @@ function createCandidate(overrides: Record<string, unknown> = {}) {
 function createWorkflowHarness() {
   const workflow = new SearchWorkflow({} as any, {} as any);
   const mockTui = {
+    displayInitialSearch: vi.fn(),
+    displayClarifiedDraft: vi.fn(),
     resetShortlistViewport: vi.fn(),
     displayHelp: vi.fn(),
     displayPoolEmpty: vi.fn(),
@@ -102,7 +104,10 @@ function createWorkflowHarness() {
     promptDetailAction: vi.fn()
   };
   const mockChat = {
-    askFreeform: vi.fn()
+    askFreeform: vi.fn(),
+    extractConditions: vi.fn(),
+    reviseConditions: vi.fn(),
+    detectMissing: vi.fn(() => [])
   };
   const mockRenderer = {
     renderComparison: vi.fn(() => "COMPARE VIEW")
@@ -126,6 +131,12 @@ function createWorkflowHarness() {
     mockChat,
     mockRenderer,
     mockExporter,
+    runClarifyLoop: (workflow as any).runClarifyLoop.bind(workflow) as (
+      initialInput: string
+    ) => Promise<SearchConditions | null>,
+    runSearchLoop: (workflow as any).runSearchLoop.bind(workflow) as (
+      initialConditions: SearchConditions
+    ) => Promise<any>,
     handleShortlistCommand: (workflow as any).handleShortlistCommand.bind(workflow) as (
       command: any,
       candidates: any[],
@@ -134,6 +145,114 @@ function createWorkflowHarness() {
     ) => Promise<any>
   };
 }
+
+describe("SearchWorkflow agent policy integration", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-31T00:00:00.000Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("asks for one freeform clarification when the draft lacks search-ready signals", async () => {
+    const { workflow, mockChat, runClarifyLoop } = createWorkflowHarness();
+
+    mockChat.extractConditions.mockResolvedValue({
+      skills: [],
+      locations: ["杭州"],
+      experience: undefined,
+      role: undefined,
+      mustHave: [],
+      niceToHave: [],
+      exclude: [],
+      preferFresh: false,
+      limit: 10
+    });
+    mockChat.askFreeform.mockResolvedValue("更偏 Python 后端");
+    mockChat.reviseConditions.mockResolvedValue({
+      ...BASE_CONDITIONS,
+      skills: ["python"],
+      role: "backend"
+    });
+
+    const result = await runClarifyLoop("杭州");
+
+    expect(mockChat.askFreeform).toHaveBeenCalledTimes(1);
+    expect(mockChat.reviseConditions).toHaveBeenCalledWith(
+      expect.objectContaining({ locations: ["杭州"] }),
+      "更偏 Python 后端",
+      "edit"
+    );
+    expect(result).toMatchObject({
+      skills: ["python"],
+      role: "backend"
+    });
+  });
+
+  it("skips extra clarification and searches early when the draft already has role or skill signals", async () => {
+    const { mockChat, runClarifyLoop } = createWorkflowHarness();
+
+    mockChat.extractConditions.mockResolvedValue(BASE_CONDITIONS);
+
+    const result = await runClarifyLoop("杭州 python backend");
+
+    expect(mockChat.askFreeform).not.toHaveBeenCalled();
+    expect(result).toMatchObject(BASE_CONDITIONS);
+  });
+
+  it("auto-enters compare when shortlist already contains 2-3 comparable candidates", async () => {
+    const { workflow, runSearchLoop } = createWorkflowHarness();
+    const first = createCandidate({ personId: "person-1", matchStrength: "strong" });
+    const second = createCandidate({ personId: "person-2", name: "Lin", matchStrength: "medium" });
+    const third = createCandidate({ personId: "person-3", name: "Grace", matchStrength: "medium" });
+    const compareSpy = vi.spyOn(workflow as any, "presentComparison").mockResolvedValue("back");
+    (workflow as any).shouldPreloadProfiles = vi.fn(() => false);
+
+    (workflow as any).tools.searchCandidates = vi.fn(async () => ({
+      query: "杭州 python",
+      conditions: BASE_CONDITIONS,
+      candidates: [first, second, third]
+    }));
+    (workflow as any).runShortlistLoop = vi.fn(async () => ({ type: "quit" }));
+
+    const result = await runSearchLoop(BASE_CONDITIONS);
+
+    expect(compareSpy).toHaveBeenCalledWith(
+      [first, second, third],
+      [first, second, third],
+      BASE_CONDITIONS,
+      expect.objectContaining({
+        clearProfilesBeforeCompare: false
+      })
+    );
+    expect(result).toEqual({ type: "quit" });
+  });
+
+  it("stays in shortlist flow when results are too weak for compare", async () => {
+    const { workflow, runSearchLoop } = createWorkflowHarness();
+    const first = createCandidate({ personId: "person-1", matchStrength: "weak" });
+    const second = createCandidate({ personId: "person-2", name: "Lin", matchStrength: "weak" });
+    const compareSpy = vi.spyOn(workflow as any, "presentComparison").mockResolvedValue("back");
+    const shortlistSpy = vi.fn(async () => ({ type: "quit" }));
+    (workflow as any).shouldPreloadProfiles = vi.fn(() => false);
+
+    (workflow as any).tools.searchCandidates = vi.fn(async () => ({
+      query: "杭州 python",
+      conditions: BASE_CONDITIONS,
+      candidates: [first, second]
+    }));
+    (workflow as any).runShortlistLoop = shortlistSpy;
+
+    const result = await runSearchLoop(BASE_CONDITIONS);
+
+    expect(compareSpy).not.toHaveBeenCalled();
+    expect(shortlistSpy).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ type: "quit" });
+  });
+});
 
 describe("SearchWorkflow shortlist command handling", () => {
   beforeEach(() => {
