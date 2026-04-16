@@ -19,6 +19,28 @@ Seeku is an evidence-driven AI talent search engine for founders, engineering le
 - The CLI is the primary product surface today.
 - The main workflow is: search, shortlist, compare, refine, and export.
 - The web app and admin API are secondary surfaces for operations and inspection.
+- The repo is currently between milestones after the `v1.2 Agentic Search CLI` closeout.
+
+## Documentation Map
+
+### Current docs
+
+- Product status and next routing:
+  - `.planning/STATE.md`
+  - `.planning/PROJECT.md`
+  - `.planning/ROADMAP.md`
+  - `.planning/REQUIREMENTS.md`
+- Active product docs:
+  - `docs/product/CLI_AGENT_EVAL_HARNESS_2026-04-16.md`
+  - `docs/superpowers/specs/2026-04-16-cli-search-agent-design.md`
+
+### Historical docs
+
+- Archived milestone materials:
+  - `.planning/MILESTONES.md`
+  - `.planning/milestones/`
+- Archived one-off reports, old product notes, and review artifacts:
+  - `docs/archive/`
 
 ## Key Features
 

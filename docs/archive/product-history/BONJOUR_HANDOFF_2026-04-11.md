@@ -703,4 +703,4 @@ Practical conclusion:
 
 Closure document:
 
-- `docs/product/BONJOUR_CLOSURE_2026-04-13.md`
+- `docs/archive/product-history/BONJOUR_CLOSURE_2026-04-13.md`

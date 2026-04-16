@@ -98,9 +98,9 @@ When resuming an existing frontier, never rely on the default delta batch tag:
 Keep these artifacts as the final `bonjour` reference set:
 
 - handoff:
-  - `docs/product/BONJOUR_HANDOFF_2026-04-11.md`
+  - `docs/archive/product-history/BONJOUR_HANDOFF_2026-04-11.md`
 - closure:
-  - `docs/product/BONJOUR_CLOSURE_2026-04-13.md`
+  - `docs/archive/product-history/BONJOUR_CLOSURE_2026-04-13.md`
 - strongest late-stage frontier logs:
   - `output/bonjour-raw/2026-04-11/bonjour-batch-o2-post-like-frontier-runner.log`
   - `output/bonjour-raw/2026-04-11/bonjour-parallel-post-like-r3-residual-window-1-runner.log`

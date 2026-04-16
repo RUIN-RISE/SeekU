@@ -3,9 +3,22 @@
 
 **Seeku**
 
-Seeku is a Chinese AI talent search engine designed for AI Builders, Founders, and Engineers. It enables high-precision talent discovery through evidence-driven matching, replacing LinkedIn-style profile browsing with structured data from Bonjour.bio and GitHub. Users input natural language search queries and receive ranked candidate profiles with verifiable evidence (projects, contributions, publications).
+Seeku is an evidence-driven AI talent search engine. The currently shipped primary surface is a CLI-first search agent that can clarify a hiring goal, search candidates, narrow a shortlist, compare 2-3 people, and only recommend when evidence and confidence are strong enough.
 
 **Core Value:** **Find the right AI talent through what they've done, not what they claim.** Evidence-based matching over profile text matching.
+
+### Current Status
+
+- Latest shipped milestone: `v1.2 Agentic Search CLI`
+- Repo state: between milestones
+- Primary planning anchors:
+  - `.planning/STATE.md`
+  - `.planning/PROJECT.md`
+  - `.planning/ROADMAP.md`
+  - `.planning/REQUIREMENTS.md`
+- Active product docs:
+  - `docs/product/CLI_AGENT_EVAL_HARNESS_2026-04-16.md`
+  - `docs/superpowers/specs/2026-04-16-cli-search-agent-design.md`
 
 ### Constraints
 
@@ -49,9 +62,10 @@ Architecture not yet mapped. Follow existing patterns found in the codebase.
 Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
 
 Use these entry points:
-- `/gsd:quick` for small fixes, doc updates, and ad-hoc tasks
-- `/gsd:debug` for investigation and bug fixing
-- `/gsd:execute-phase` for planned phase work
+- `$gsd-quick` for small fixes, doc updates, and ad-hoc tasks
+- `$gsd-debug` for investigation and bug fixing
+- `$gsd-execute-phase` for planned phase work
+- `$gsd-new-milestone` when the repo is between milestones and new product work is about to start
 
 Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
 <!-- GSD:workflow-end -->
