@@ -10,14 +10,29 @@ Seeku is an evidence-driven AI talent search engine. Its current primary operato
 
 ## Current State
 
-- Active milestone: `v1.3 Visible Agent Copilot`
+- Latest shipped milestone: `v1.3 Visible Agent Copilot`
 - Previous shipped milestone: `v1.2 Agentic Search CLI`
-- Milestone archive: `.planning/milestones/v1.2-ROADMAP.md`
-- Requirements archive: `.planning/milestones/v1.2-REQUIREMENTS.md`
-- Current status: planning Phase 08
-- Current focus: make the CLI agent observable and lightly steerable through a local web panel without weakening the shipped search-agent quality bar
+- Milestone archives:
+  - `.planning/milestones/v1.3-ROADMAP.md`
+  - `.planning/milestones/v1.2-ROADMAP.md`
+- Requirements archives:
+  - `.planning/milestones/v1.3-REQUIREMENTS.md`
+  - `.planning/milestones/v1.2-REQUIREMENTS.md`
+- Current status: no active milestone; repo is ready for next milestone definition
+- Current focus: preserve the shipped visible-copilot runtime while deciding the next operator/product milestone
 
-## Shipped In v1.2
+## Shipped In v1.3
+
+- Structured session snapshot and delta events for the CLI search agent
+- Local SSE + POST bridge for visible agent session streaming and bounded interventions
+- Dual-column browser copilot panel for execution feed, session state, shortlist, compare, and recommendation posture
+- Disconnect / reconnect / missing-session handling that keeps runtime state authoritative
+- Regression coverage preserving:
+  - `Q4`: `watch-but-stable`
+  - `Q6`: `pass`
+  - `Q8`: `pass`
+
+## Previously Shipped In v1.2
 
 - Free-form CLI agent loop for clarify/search/narrow/compare/decide
 - Explicit tool contracts and session state for agent decision flow
@@ -33,19 +48,19 @@ Seeku is an evidence-driven AI talent search engine. Its current primary operato
 - GitHub expansion discovery remains paused by default.
 - `Q4` is still a watch item even though the sustain gate is clear.
 - The CLI runtime must remain the single source of truth for shortlist, compare, recommendation, and uncertainty state.
-- The first visible panel is a local copilot surface, not a full operator console and not a second runtime.
+- The shipped visible panel is a local copilot surface, not a full operator console and not a second runtime.
+- Existing web typecheck debt remains outside the shipped v1.3 milestone scope.
 
 ## Next Milestone Goals
 
-`v1.3 Visible Agent Copilot` is the next operator-surface milestone.
+The next milestone is not defined yet.
 
-It should deliver:
+The default next move is to open a fresh milestone and decide whether the next batch should prioritize:
 
-- a structured event model for the live CLI agent session
-- a local API bridge for session streaming and light intervention commands
-- a web panel that visualizes execution progress and current candidate state
-- bounded intervention actions that can influence compare membership and evidence exploration without bypassing CLI authority
-- regression coverage that preserves the shipped `v1.2` quality posture
+- visible-copilot productization and session discovery
+- old `apps/web` typecheck debt cleanup
+- broader operator workflow polish above the shipped CLI + panel baseline
+- a new product capability outside the current operator-surface work
 
 ## Key Decisions
 
@@ -53,6 +68,7 @@ It should deliver:
 - Use a dual-column copilot panel rather than a pure timeline or dashboard-only surface.
 - Prefer SSE plus POST for the first local bridge instead of introducing WebSocket orchestration immediately.
 - Keep first-version interventions narrow and structured.
+- Keep milestone boundaries tight: ship the visible copilot before deciding whether to broaden it into a richer operator console.
 
 ## Evolution
 
@@ -70,4 +86,4 @@ This document evolves at phase transitions and milestone boundaries.
 3. Archive requirements and roadmap before opening the next milestone.
 
 ---
-*Last updated: 2026-04-16 for milestone v1.3 kickoff*
+*Last updated: 2026-04-17 after v1.3 milestone closeout*

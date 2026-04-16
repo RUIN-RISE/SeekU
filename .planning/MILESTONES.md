@@ -2,6 +2,22 @@
 
 Earlier milestone history before explicit archival discipline remains in git and the phase summaries under `.planning/phases/`.
 
+## v1.3 Visible Agent Copilot (Shipped: 2026-04-17)
+
+**Phases completed:** 1 phase, 4 plans, 4 delivered batches
+
+**Key accomplishments:**
+- Seeku now exposes the CLI agent as a visible local copilot with structured session events, a browser-facing bridge, and a dual-column panel for execution progress and candidate-state visibility.
+- Added bounded intervention support for compare membership, shortlist removal, evidence expansion, and predefined corrective feedback without giving the web UI business-state ownership.
+- Hardened disconnect, reconnect, missing-session, and rejected-intervention flows so the panel degrades safely and stays aligned to authoritative runtime state.
+- Preserved the shipped Phase 7 quality bar with passing acceptance coverage plus saved `Q4/Q6/Q8` regression posture.
+
+**Archives:**
+- `.planning/milestones/v1.3-ROADMAP.md`
+- `.planning/milestones/v1.3-REQUIREMENTS.md`
+
+---
+
 ## v1.2 Agentic Search CLI (Shipped: 2026-04-16)
 
 **Phases completed:** 1 phase, 4 plans, 4 delivered batches
