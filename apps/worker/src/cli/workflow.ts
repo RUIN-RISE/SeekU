@@ -31,6 +31,7 @@ import {
   removeCompareCandidates as removeCompareCandidatesFromState,
   replaceSearchHistory,
   rewindSearchHistory,
+  setCurrentShortlist,
   setConfidenceStatus,
   setOpenUncertainties,
   setRecommendedCandidate,
@@ -54,6 +55,7 @@ import {
   type SearchAgentTools
 } from "./agent-tools.js";
 import {
+  type AgentInterventionResult,
   buildAgentSessionSnapshot,
   createAgentSessionEvent,
   serializeConfidenceStatus,
@@ -885,6 +887,89 @@ export class SearchWorkflow {
     );
   }
 
+  async applyIntervention(
+    command: AgentInterventionCommand
+  ): Promise<AgentInterventionResult> {
+    this.recordInterventionReceived(command);
+
+    if (command.type === "add_to_compare") {
+      const candidate = command.candidateId
+        ? this.findCandidateInSession(command.candidateId)
+        : undefined;
+      if (!candidate) {
+        return this.rejectIntervention(command, "candidate_not_found");
+      }
+
+      const beforeCount = this.comparePool.length;
+      this.addCandidatesToPool([candidate]);
+      const added = this.comparePool.length > beforeCount;
+      return this.acceptIntervention(
+        command,
+        added ? `已将 ${candidate.name} 加入 compare。` : `${candidate.name} 已在 compare 中。`,
+        {
+          candidate: serializeSessionCandidate(candidate),
+          added
+        }
+      );
+    }
+
+    if (command.type === "remove_from_shortlist") {
+      const candidate = command.candidateId
+        ? this.findCandidateInSession(command.candidateId)
+        : undefined;
+      if (!candidate) {
+        return this.rejectIntervention(command, "candidate_not_found");
+      }
+
+      const nextShortlist = this.sessionState.currentShortlist.filter(
+        (entry) => entry.personId !== candidate.personId
+      );
+      this.applySessionState(setCurrentShortlist(this.sessionState, nextShortlist));
+      return this.acceptIntervention(command, `已将 ${candidate.name} 移出 shortlist。`, {
+        candidateId: candidate.personId,
+        shortlistSize: this.sessionState.currentShortlist.length
+      });
+    }
+
+    if (command.type === "expand_evidence") {
+      const candidate = command.candidateId
+        ? this.findCandidateInSession(command.candidateId)
+        : undefined;
+      if (!candidate) {
+        return this.rejectIntervention(command, "candidate_not_found");
+      }
+
+      this.emitSessionEvent("evidence_expanded", `已展开 ${candidate.name} 的证据视图。`, {
+        candidate: serializeSessionCandidate(candidate)
+      });
+      return this.acceptIntervention(command, `已展开 ${candidate.name} 的证据。`, {
+        candidate: serializeSessionCandidate(candidate)
+      });
+    }
+
+    if (command.type === "apply_feedback") {
+      const normalized = command.tag?.trim().toLowerCase();
+      if (!normalized) {
+        return this.rejectIntervention(command, "feedback_tag_required");
+      }
+
+      const nextConditions = this.applyFeedbackTag(this.sessionState.currentConditions, normalized);
+      if (!nextConditions) {
+        return this.rejectIntervention(command, "invalid_feedback_tag", {
+          tag: normalized
+        });
+      }
+
+      this.applySessionState(setSessionConditions(this.sessionState, nextConditions));
+      return this.acceptIntervention(command, `已应用反馈：${normalized}。`, {
+        tag: normalized,
+        conditions: nextConditions
+      });
+    }
+
+    return this.rejectIntervention(command, "unsupported_intervention");
+  }
+
   private emitSessionEvent<TData extends Record<string, unknown>>(
     type: AgentSessionEvent["type"],
     summary: string,
@@ -1022,6 +1107,81 @@ export class SearchWorkflow {
 
   private uncertaintySignature(state: AgentSessionState): string {
     return JSON.stringify(state.openUncertainties);
+  }
+
+  private acceptIntervention(
+    command: AgentInterventionCommand,
+    summary: string,
+    details: Record<string, unknown> = {}
+  ): AgentInterventionResult {
+    this.recordInterventionApplied(command, details);
+    return {
+      ok: true,
+      command,
+      summary,
+      details,
+      snapshot: this.getSessionSnapshot()
+    };
+  }
+
+  private rejectIntervention(
+    command: AgentInterventionCommand,
+    reason: string,
+    details: Record<string, unknown> = {}
+  ): AgentInterventionResult {
+    this.recordInterventionRejected(command, reason, details);
+    return {
+      ok: false,
+      command,
+      reason,
+      summary: `${summarizeInterventionCommand(command)} 被拒绝：${reason}`,
+      details,
+      snapshot: this.getSessionSnapshot()
+    };
+  }
+
+  private findCandidateInSession(candidateId: string): HydratedCandidate | undefined {
+    return this.sessionState.currentShortlist.find(
+      (candidate) => candidate.personId === candidateId
+    ) as HydratedCandidate | undefined
+      ?? this.sessionState.activeCompareSet.find(
+        (candidate) => candidate.personId === candidateId
+      ) as HydratedCandidate | undefined;
+  }
+
+  private applyFeedbackTag(
+    conditions: SearchConditions,
+    tag: string
+  ): SearchConditions | null {
+    if (tag === "more_engineering_manager") {
+      return this.normalizeConditions({
+        ...conditions,
+        role: "engineering manager"
+      });
+    }
+
+    if (tag === "less_academic") {
+      return this.normalizeConditions({
+        ...conditions,
+        exclude: [...conditions.exclude, "academic"]
+      });
+    }
+
+    if (tag === "more_hands_on_builder") {
+      return this.normalizeConditions({
+        ...conditions,
+        mustHave: [...conditions.mustHave, "builder"]
+      });
+    }
+
+    if (tag === "prefer_recent_execution") {
+      return this.normalizeConditions({
+        ...conditions,
+        preferFresh: true
+      });
+    }
+
+    return null;
   }
 
   async execute(initialPrompt?: string): Promise<void> {

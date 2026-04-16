@@ -19,7 +19,7 @@ The milestone deliberately keeps the CLI runtime as the single source of truth. 
 
 **Plans:**
 - [x] `08-01-PLAN.md` — Event-emitting CLI runtime and session snapshot foundation
-- [ ] `08-02-PLAN.md` — Local API bridge for SSE event streaming and intervention commands
+- [x] `08-02-PLAN.md` — Local API bridge for SSE event streaming and intervention commands
 - [ ] `08-03-PLAN.md` — Web copilot panel with execution feed, shortlist, compare, and recommendation views
 - [ ] `08-04-PLAN.md` — Integration hardening, disconnect handling, and regression coverage
 

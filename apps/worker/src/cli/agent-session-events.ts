@@ -71,6 +71,7 @@ export type AgentSessionEventType =
   | "search_completed"
   | "shortlist_updated"
   | "compare_updated"
+  | "evidence_expanded"
   | "confidence_updated"
   | "recommendation_updated"
   | "uncertainty_updated"
@@ -102,6 +103,15 @@ export interface CreateAgentSessionEventOptions<TData> {
 export interface InterventionRejectedEventData {
   command: AgentInterventionCommand;
   reason: RecommendationGateFailureReason | string;
+  details?: Record<string, unknown>;
+}
+
+export interface AgentInterventionResult {
+  ok: boolean;
+  command: AgentInterventionCommand;
+  summary: string;
+  snapshot: AgentSessionSnapshot;
+  reason?: string;
   details?: Record<string, unknown>;
 }
 

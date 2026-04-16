@@ -15,6 +15,10 @@ import {
 } from "@seeku/adapters";
 import { BonjourScanner as WorkerScanner } from "@seeku/workers";
 
+export { SearchWorkflow } from "./cli/workflow.js";
+export * from "./cli/agent-session-events.js";
+export * from "./cli/agent-session-bridge.js";
+
 export interface BonjourScanJobOptions {
   query: string[];
   limit?: number;

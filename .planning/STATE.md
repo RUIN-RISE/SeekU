@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: visible-agent-copilot
 status: active milestone in execution
-stopped_at: 08-01 completed; next default move is execute 08-02 local API bridge
-last_updated: "2026-04-17T00:17:39.000Z"
+stopped_at: 08-02 completed; next default move is execute 08-03 web copilot panel
+last_updated: "2026-04-17T00:34:28.000Z"
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 4
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # Project State
@@ -29,9 +29,9 @@ See:
 
 - Active milestone: `v1.3 Visible Agent Copilot`
 - Current phase: `08-cli-agent-panel`
-- Current plan: `02-PLAN`
-- Status: `01-PLAN` completed; ready to execute `02-PLAN`
-- Last activity: 2026-04-17 — completed event runtime and session snapshot foundation for the CLI agent
+- Current plan: `03-PLAN`
+- Status: `02-PLAN` completed; ready to execute `03-PLAN`
+- Last activity: 2026-04-17 — completed local API bridge for session events and intervention routing
 
 ## Active Phase Snapshot
 
@@ -44,15 +44,17 @@ See:
 
 ## Latest Execution Snapshot
 
-- completed batch: `08-01-PLAN`
+- completed batch: `08-02-PLAN`
 - delivered:
-  - session-scoped event contract and snapshot serializer
-  - event-emitting CLI runtime foundation in `SearchWorkflow`
-  - intervention received / applied / rejected event hooks for the next bridge layer
-  - worker tests for snapshot completeness and compare-event ordering
+  - in-memory agent session bridge for registered CLI runtimes
+  - `GET /agent-panel/:sessionId/events` SSE route with initial snapshot and `once=1` test mode
+  - `POST /agent-panel/:sessionId/interventions` route for bounded intervention commands
+  - runtime-backed intervention application for compare, shortlist removal, evidence expansion, and predefined feedback tags
+  - API and worker tests for session bridge routing and failure cases
 - verification:
-  - `pnpm exec vitest run apps/worker/src/cli/__tests__/agent-session-events.test.ts apps/worker/src/cli/__tests__/workflow-session-events.test.ts`
+  - `pnpm exec vitest run apps/worker/src/cli/__tests__/agent-session-events.test.ts apps/worker/src/cli/__tests__/workflow-session-events.test.ts apps/worker/src/cli/__tests__/agent-session-bridge.test.ts apps/api/src/routes/__tests__/agent-panel.test.ts`
   - `pnpm --filter @seeku/worker typecheck`
+  - `pnpm --filter @seeku/api typecheck` still fails on pre-existing issues in `apps/api/src/routes/search.ts` and `apps/api/src/routes/admin-claims.ts`, not from the new bridge code
 
 ## Carry-forward Quality Guardrails
 
@@ -79,4 +81,4 @@ See:
 ## Session Continuity
 
 Last session: 2026-04-17
-Stopped at: Phase 08 / `01-PLAN` complete; next route is implementation of `02-PLAN` local API bridge.
+Stopped at: Phase 08 / `02-PLAN` complete; next route is implementation of `03-PLAN` web copilot panel.
