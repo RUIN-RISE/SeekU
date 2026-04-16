@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAgentPanelSession } from "../useAgentPanelSession.js";
 import type {
   AgentPanelInterventionCommand,
@@ -75,6 +75,13 @@ function formatSnapshotResponse(snapshot: AgentPanelSessionSnapshot): string {
   return `event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`;
 }
 
+async function flushAsyncWork() {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
 const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
 
@@ -119,8 +126,13 @@ vi.stubGlobal("EventSource", MockEventSource as unknown as typeof EventSource);
 
 describe("useAgentPanelSession", () => {
   beforeEach(() => {
+    vi.useRealTimers();
     vi.clearAllMocks();
     MockEventSource.reset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("hydrates from snapshot and applies incoming events", async () => {
@@ -167,6 +179,11 @@ describe("useAgentPanelSession", () => {
   });
 
   it("submits bounded interventions and surfaces rejection notices", async () => {
+    const authoritativeSnapshot: AgentPanelSessionSnapshot = {
+      ...SNAPSHOT,
+      currentShortlist: []
+    };
+
     fetchMock
       .mockResolvedValueOnce({
         ok: true,
@@ -179,7 +196,7 @@ describe("useAgentPanelSession", () => {
         json: async () => ({
           error: "intervention_rejected",
           summary: "加入 compare 被拒绝：candidate_not_found",
-          snapshot: SNAPSHOT
+          snapshot: authoritativeSnapshot
         })
       });
 
@@ -198,5 +215,102 @@ describe("useAgentPanelSession", () => {
 
     expect(result.current.latestNotice?.kind).toBe("error");
     expect(result.current.latestNotice?.message).toContain("被拒绝");
+    expect(result.current.snapshot?.currentShortlist).toEqual([]);
+  });
+
+  it("marks the stream disconnected, then reconnects and goes live again", async () => {
+    vi.useFakeTimers();
+
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => formatSnapshotResponse(SNAPSHOT)
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => formatSnapshotResponse({
+          ...SNAPSHOT,
+          statusSummary: "重连后的快照"
+        })
+      });
+
+    const { result } = renderHook(() => useAgentPanelSession("session-1"));
+
+    await flushAsyncWork();
+
+    expect(result.current.snapshot?.sessionId).toBe("session-1");
+
+    act(() => {
+      MockEventSource.instances[0].emit("snapshot", SNAPSHOT);
+    });
+    await flushAsyncWork();
+
+    expect(result.current.connectionStatus).toBe("live");
+
+    act(() => {
+      MockEventSource.instances[0].onerror?.();
+    });
+
+    expect(result.current.connectionStatus).toBe("disconnected");
+    expect(result.current.snapshot?.statusSummary).toBe("等待输入");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    await flushAsyncWork();
+
+    expect(result.current.connectionStatus).toBe("reconnecting");
+    expect(MockEventSource.instances).toHaveLength(2);
+
+    act(() => {
+      MockEventSource.instances[1].emit("snapshot", {
+        ...SNAPSHOT,
+        statusSummary: "重连后的快照"
+      });
+    });
+    await flushAsyncWork();
+
+    expect(result.current.connectionStatus).toBe("live");
+    expect(result.current.snapshot?.statusSummary).toBe("重连后的快照");
+  });
+
+  it("falls back to missing when reconnect snapshot lookup returns 404", async () => {
+    vi.useFakeTimers();
+
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => formatSnapshotResponse(SNAPSHOT)
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        text: async () => ""
+      });
+
+    const { result } = renderHook(() => useAgentPanelSession("session-1"));
+
+    await flushAsyncWork();
+
+    expect(result.current.snapshot?.sessionId).toBe("session-1");
+
+    act(() => {
+      MockEventSource.instances[0].emit("snapshot", SNAPSHOT);
+      MockEventSource.instances[0].onerror?.();
+    });
+
+    expect(result.current.connectionStatus).toBe("disconnected");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    await flushAsyncWork();
+
+    expect(result.current.connectionStatus).toBe("missing");
+    expect(result.current.snapshot?.sessionId).toBe("session-1");
+    expect(result.current.errorMessage).toContain("session");
   });
 });

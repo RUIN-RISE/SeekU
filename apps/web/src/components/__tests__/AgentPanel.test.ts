@@ -161,4 +161,24 @@ describe("AgentPanelView", () => {
     expect(screen.getByText("当前没有可展示的 session")).toBeTruthy();
     expect(retryConnection).toHaveBeenCalledTimes(1);
   });
+
+  it("keeps the last snapshot visible while reconnecting", () => {
+    render(React.createElement(AgentPanelView, {
+      sessionId: "session-1",
+      snapshot: SNAPSHOT,
+      events: [],
+      connectionStatus: "reconnecting",
+      expandedCandidate: null,
+      latestNotice: null,
+      errorMessage: "实时事件流已断开，正在尝试重连。",
+      pendingCommandKey: null,
+      sendIntervention: vi.fn(async () => undefined),
+      retryConnection: vi.fn(),
+      isCommandPending: () => false
+    }));
+
+    expect(screen.getByText("正在恢复实时事件流")).toBeTruthy();
+    expect(screen.getByText("Session Snapshot")).toBeTruthy();
+    expect(screen.getByText("正在重连")).toBeTruthy();
+  });
 });

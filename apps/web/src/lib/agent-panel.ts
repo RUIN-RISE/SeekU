@@ -22,6 +22,7 @@ export type AgentPanelEventType = typeof AGENT_PANEL_EVENT_TYPES[number];
 
 export type AgentPanelConnectionStatus =
   | "connecting"
+  | "reconnecting"
   | "live"
   | "disconnected"
   | "missing"

@@ -99,7 +99,7 @@ export function useAgentPanelSession(sessionId: string): UseAgentPanelSessionRes
 
       setState((previousState) => ({
         ...previousState,
-        connectionStatus: "connecting",
+        connectionStatus: previousState.snapshot ? "reconnecting" : "connecting",
         errorMessage: null
       }));
 
@@ -132,7 +132,7 @@ export function useAgentPanelSession(sessionId: string): UseAgentPanelSessionRes
 
         setState((previousState) =>
           applyAgentPanelSnapshot(previousState, snapshot, {
-            connectionStatus: "connecting",
+            connectionStatus: previousState.snapshot ? "reconnecting" : "connecting",
             errorMessage: null
           })
         );

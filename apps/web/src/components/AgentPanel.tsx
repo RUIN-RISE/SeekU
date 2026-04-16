@@ -55,6 +55,7 @@ const statusLabelMap: Record<string, string> = {
 const connectionToneMap: Record<AgentPanelConnectionStatus, string> = {
   live: "bg-emerald-500/15 text-emerald-200 ring-emerald-400/30",
   connecting: "bg-sky-500/15 text-sky-100 ring-sky-400/30",
+  reconnecting: "bg-cyan-500/15 text-cyan-100 ring-cyan-400/30",
   disconnected: "bg-amber-500/15 text-amber-100 ring-amber-400/30",
   missing: "bg-rose-500/15 text-rose-100 ring-rose-400/30",
   error: "bg-rose-500/15 text-rose-100 ring-rose-400/30"
@@ -63,6 +64,7 @@ const connectionToneMap: Record<AgentPanelConnectionStatus, string> = {
 const connectionLabelMap: Record<AgentPanelConnectionStatus, string> = {
   live: "实时连接中",
   connecting: "正在连接",
+  reconnecting: "正在重连",
   disconnected: "事件流断开",
   missing: "会话不存在",
   error: "连接失败"
@@ -207,6 +209,14 @@ function deriveNextStep(
       title: "保持页面开启，等待 bridge 重连",
       detail: "面板保留最近一次快照，但新事件暂时进不来。",
       tone: "from-amber-500/30 to-yellow-500/20 border-amber-300/20"
+    };
+  }
+
+  if (connectionStatus === "reconnecting") {
+    return {
+      title: "正在恢复实时事件流",
+      detail: "当前快照仍然可读，但页面正在重新订阅这条 session 的增量事件。",
+      tone: "from-cyan-500/30 to-sky-500/20 border-cyan-300/20"
     };
   }
 
@@ -500,8 +510,12 @@ export function AgentPanelView({
                   connectionToneMap[connectionStatus]
                 )}
               >
-                {connectionStatus === "connecting" && <Loader2 className="h-4 w-4 animate-spin" />}
-                {connectionStatus !== "connecting" && <Network className="h-4 w-4" />}
+                {(connectionStatus === "connecting" || connectionStatus === "reconnecting") && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+                {connectionStatus !== "connecting" && connectionStatus !== "reconnecting" && (
+                  <Network className="h-4 w-4" />
+                )}
                 {connectionLabelMap[connectionStatus]}
               </div>
               <button
