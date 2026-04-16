@@ -90,6 +90,26 @@ export interface ComparisonEvidenceSummary {
   freshnessLabel?: string;
 }
 
+export type ComparisonDimensionVerdict = "strong" | "mixed" | "weak";
+export type ComparisonUncertaintyLevel = "low" | "medium" | "high";
+export type ComparisonConfidenceLevel = "high-confidence" | "medium-confidence" | "low-confidence";
+export type RecommendationMode =
+  | "clear-recommendation"
+  | "conditional-recommendation"
+  | "no-recommendation";
+
+export interface ComparisonDimensionAssessment {
+  score: number;
+  verdict: ComparisonDimensionVerdict;
+  summary: string;
+  evidenceTrace: string[];
+}
+
+export interface ComparisonUncertainty {
+  level: ComparisonUncertaintyLevel;
+  summary: string;
+}
+
 export interface ComparisonEntry {
   shortlistIndex?: number;
   candidate: ScoredCandidate;
@@ -97,8 +117,31 @@ export interface ComparisonEntry {
   topEvidence: ComparisonEvidenceSummary[];
   decisionTag: "优先深看" | "继续比较" | "补充候选";
   decisionScore: number;
-  recommendation: string;
+  goalFit: ComparisonDimensionAssessment;
+  evidenceStrength: ComparisonDimensionAssessment;
+  technicalRelevance: ComparisonDimensionAssessment;
+  sourceQualityRecency: ComparisonDimensionAssessment;
+  uncertainty: ComparisonUncertainty;
+  whySelected: string;
+  whyNotSelected: string;
+  evidenceTrace: string[];
+  recommendation?: string;
   nextStep: string;
+}
+
+export interface ComparisonOutcome {
+  confidence: ComparisonConfidenceLevel;
+  recommendationMode: RecommendationMode;
+  recommendedCandidateId?: string;
+  recommendation: string;
+  rationale: string;
+  largestUncertainty: string;
+  suggestedRefinement?: string;
+}
+
+export interface ComparisonResult {
+  entries: ComparisonEntry[];
+  outcome: ComparisonOutcome;
 }
 
 export type ExportFormat = "md" | "csv" | "json";

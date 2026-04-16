@@ -2,6 +2,7 @@ import { Person, EvidenceItem, SearchDocument } from "@seeku/db";
 import {
   CandidatePrimaryLink,
   ComparisonEntry,
+  ComparisonResult,
   ConditionAuditItem,
   MatchStrength,
   MultiDimensionProfile,
@@ -10,6 +11,27 @@ import {
 } from "./types.js";
 import chalk from "chalk";
 import boxen from "boxen";
+
+type CompareOutcomeLabel = "明确推荐" | "条件式推荐" | "暂不推荐";
+type CompareConfidenceLabel = "高信心" | "中信心" | "低信心";
+
+interface ComparisonEntryPresentation {
+  goalFit: string;
+  evidenceStrength: string;
+  technicalRelevance: string;
+  sourceQualityRecency: string;
+  uncertainty: string;
+}
+
+interface ComparisonDecisionPresentation {
+  outcome: CompareOutcomeLabel;
+  confidence: CompareConfidenceLabel;
+  recommendedEntry?: ComparisonEntry;
+  summary: string;
+  nonSelectionReasons: string[];
+  largestUncertainty: string;
+  nextStep: string;
+}
 
 export class TerminalRenderer {
   renderProfile(
@@ -171,15 +193,29 @@ ${chalk.dim("下一步：back 返回 | o 打开 Bonjour | why 评分依据 | ref
     );
   }
 
-  renderComparison(entries: ComparisonEntry[], conditions?: SearchConditions): string {
-    const recommended = [...entries].sort((left, right) => right.decisionScore - left.decisionScore)[0];
+  renderComparison(
+    comparison: ComparisonEntry[] | ComparisonResult,
+    conditions?: SearchConditions
+  ): string {
+    const comparisonResult = Array.isArray(comparison) ? undefined : comparison;
+    const entries = Array.isArray(comparison) ? comparison : comparison.entries;
+    const rankedEntries = [...entries].sort(
+      (left, right) => right.decisionScore - left.decisionScore
+    );
+    const presentation = this.buildComparisonDecisionPresentation(
+      rankedEntries,
+      conditions,
+      comparisonResult
+    );
     const contextLine = conditions
       ? chalk.dim(`当前判断环境：${this.formatConditionsSummary(conditions)}`)
       : chalk.dim("当前判断环境：未提供");
 
-    const content = entries
+    const decisionSummary = this.renderComparisonDecisionSummary(presentation);
+    const content = rankedEntries
       .map((entry) => {
         const { candidate, profile, topEvidence } = entry;
+        const structuredView = this.buildComparisonEntryPresentation(entry, conditions);
         const titlePrefix = entry.shortlistIndex ? `#${entry.shortlistIndex} ` : "";
         const sourceBadge = this.formatSourceBadge(candidate.sources);
         const freshness = this.formatFreshness(candidate.latestEvidenceAt, candidate.lastSyncedAt);
@@ -190,7 +226,7 @@ ${chalk.dim("下一步：back 返回 | o 打开 Bonjour | why 评分依据 | ref
         const evidenceLines =
           topEvidence.length > 0
             ? topEvidence
-                .map((item, index) => {
+                .map((item: ComparisonEntry["topEvidence"][number], index: number) => {
                   const freshnessLabel = item.freshnessLabel
                     ? chalk.dim(` · ${item.freshnessLabel}`)
                     : "";
@@ -216,25 +252,23 @@ ${chalk.dim("下一步：back 返回 | o 打开 Bonjour | why 评分依据 | ref
         return [
           `${chalk.bold.blueBright(`${titlePrefix}${candidate.name}`)} ${chalk.dim("|")} ${candidate.headline || "暂无标题"}`,
           `${decisionTagStyled} ${chalk.dim("·")} 综合匹配度 ${chalk.green(candidate.matchScore.toFixed(1))} ${chalk.dim("·")} ${sourceBadge} ${freshness}`,
+          `${chalk.bold("结构化判断")}：`,
+          `  目标贴合：${structuredView.goalFit}`,
+          `  证据强度：${structuredView.evidenceStrength}`,
+          `  技术相关性：${structuredView.technicalRelevance}`,
+          `  来源/时效：${structuredView.sourceQualityRecency}`,
+          `  关键不确定性：${structuredView.uncertainty}`,
           `${chalk.bold("能力概览")}：${radarLine}`,
           `${chalk.bold("本次命中")}：${candidate.matchReason || "与本轮条件相关"}`,
           bonjourLine,
           `${chalk.bold("核心证据")}\n${evidenceLines}`,
-          `${chalk.bold("AI 建议")}：${chalk.italic(entry.recommendation)}`,
+          `${chalk.bold("AI 建议")}：${chalk.italic(entry.whySelected)}`,
           `${chalk.bold("建议动作")}：${chalk.dim(entry.nextStep)}`
         ].join("\n");
       })
       .join(`\n${chalk.dim("─".repeat(72))}\n`);
 
-    const recommendationBlock = recommended
-      ? [
-          `${chalk.bold.green("💡 决策优先")}：${chalk.blueBright(recommended.candidate.name)}`,
-          `${chalk.bold("执行理由")}：${recommended.recommendation}`,
-          `${chalk.bold("即刻动作")}：${chalk.cyan(recommended.nextStep)}`
-        ].join("\n")
-      : `${chalk.bold("决策优先")}：暂无`;
-
-    return boxen([contextLine, "", content, "", recommendationBlock].join("\n"), {
+    return boxen([contextLine, "", decisionSummary, "", content].join("\n"), {
       padding: 1,
       margin: 1,
       borderStyle: "double",
@@ -536,5 +570,367 @@ ${chalk.dim("下一步：back 返回 | o 打开 Bonjour | why 评分依据 | ref
     ].filter(Boolean);
 
     return parts.join(" | ") || "未设置明确条件";
+  }
+
+  private buildComparisonEntryPresentation(
+    entry: ComparisonEntry,
+    conditions?: SearchConditions
+  ): ComparisonEntryPresentation {
+    const evidenceCount = entry.topEvidence.length;
+    const sourceCount = this.countKnownSources(entry.candidate.sources);
+    const freshnessText = this.formatFreshnessText(
+      entry.candidate.latestEvidenceAt,
+      entry.candidate.lastSyncedAt
+    );
+
+    return {
+      goalFit: `${this.formatVerdict(entry.goalFit.verdict)} · ${entry.goalFit.summary || entry.candidate.matchReason || "与当前目标条件相关"}`,
+      evidenceStrength: `${this.formatVerdict(entry.evidenceStrength.verdict)} · ${entry.evidenceStrength.summary || `${evidenceCount} 条核心证据`}${sourceCount > 0 ? ` / ${sourceCount} 个来源` : ""}`,
+      technicalRelevance: `${this.formatVerdict(entry.technicalRelevance.verdict)} · ${entry.technicalRelevance.summary || `技术 ${this.normalizePercent(entry.profile.dimensions.techMatch).toFixed(0)}% / 项目 ${this.normalizePercent(entry.profile.dimensions.projectDepth).toFixed(0)}%`}`,
+      sourceQualityRecency: [
+        entry.sourceQualityRecency.summary || (sourceCount > 0 ? `${sourceCount} 个来源` : "来源未知"),
+        freshnessText
+      ].join(" · "),
+      uncertainty: this.buildEntryUncertainty(entry, conditions)
+    };
+  }
+
+  private buildComparisonDecisionPresentation(
+    entries: ComparisonEntry[],
+    conditions?: SearchConditions,
+    comparisonResult?: ComparisonResult
+  ): ComparisonDecisionPresentation {
+    const recommendedEntry = entries[0];
+    if (!recommendedEntry) {
+      return {
+        outcome: "暂不推荐",
+        confidence: "低信心",
+        summary: "当前 compare 结果为空，我还没有足够证据推荐其中一位。",
+        nonSelectionReasons: [],
+        largestUncertainty: "当前还没有形成 2-3 位候选人的有效对照。",
+        nextStep: "先补足候选人，再进入 compare。"
+      };
+    }
+
+    const runnerUp = entries[1];
+    const fallbackConfidence = this.deriveComparisonConfidence(recommendedEntry, runnerUp);
+    const confidence = comparisonResult
+      ? this.mapConfidence(comparisonResult.outcome.confidence)
+      : fallbackConfidence;
+    const outcome = comparisonResult
+      ? this.mapRecommendationMode(comparisonResult.outcome.recommendationMode)
+      : confidence === "高信心"
+        ? "明确推荐"
+        : confidence === "中信心"
+          ? "条件式推荐"
+          : "暂不推荐";
+
+    const summary = comparisonResult?.outcome.recommendation
+      || (confidence === "高信心"
+        ? `推荐 ${recommendedEntry.candidate.name}，当前领先优势清晰且证据可追溯。`
+        : confidence === "中信心"
+          ? `当前更偏向 ${recommendedEntry.candidate.name}，但需要带着 caveat 使用这个结论。`
+          : "我还没有足够证据推荐其中一位，当前结论应停在 compare 层。");
+
+    const nextStep = confidence === "低信心"
+      ? comparisonResult?.outcome.suggestedRefinement || "建议先 refine 条件，或继续查看详情补证据后再做推荐。"
+      : confidence === "中信心"
+        ? `${recommendedEntry.nextStep}；如果岗位偏好不同，再回看第二位候选人。`
+        : recommendedEntry.nextStep;
+
+    return {
+      outcome,
+      confidence,
+      recommendedEntry: confidence === "低信心" ? undefined : recommendedEntry,
+      summary,
+      nonSelectionReasons: entries.slice(1).map((entry) =>
+        this.buildNonSelectionReason(recommendedEntry, entry, conditions)
+      ),
+      largestUncertainty: comparisonResult?.outcome.largestUncertainty || this.buildLargestUncertainty(
+        recommendedEntry,
+        runnerUp,
+        conditions,
+        confidence
+      ),
+      nextStep
+    };
+  }
+
+  private renderComparisonDecisionSummary(
+    presentation: ComparisonDecisionPresentation
+  ): string {
+    const recommendedLabel = presentation.recommendedEntry
+      ? chalk.blueBright(presentation.recommendedEntry.candidate.name)
+      : chalk.dim("暂无");
+    const nonSelectionLines = presentation.nonSelectionReasons.length > 0
+      ? presentation.nonSelectionReasons.map((reason) => `  - ${reason}`).join("\n")
+      : chalk.dim("  - 暂无其他候选人可对照");
+
+    return [
+      `${chalk.bold("推荐结果")}：${this.formatOutcomeBadge(presentation.outcome)} ${recommendedLabel}`,
+      `${chalk.bold("信心等级")}：${this.formatConfidenceBadge(presentation.confidence)}`,
+      `${chalk.bold("结论摘要")}：${presentation.summary}`,
+      `${chalk.bold("为什么更强")}：${presentation.recommendedEntry?.whySelected || "当前没有形成足够稳的推荐理由。"}`,
+      `${chalk.bold("为什么没选其他人")}：`,
+      nonSelectionLines,
+      `${chalk.bold("最大不确定性")}：${presentation.largestUncertainty}`,
+      `${chalk.bold("建议动作")}：${chalk.cyan(presentation.nextStep)}`
+    ].join("\n");
+  }
+
+  private buildEntryUncertainty(entry: ComparisonEntry, conditions?: SearchConditions) {
+    if (entry.uncertainty.summary) {
+      return `${this.formatUncertaintyLevel(entry.uncertainty.level)} · ${entry.uncertainty.summary}`;
+    }
+
+    const sourceCount = this.countKnownSources(entry.candidate.sources);
+    const freshestAge = this.getAgeInDays(entry.candidate.latestEvidenceAt ?? entry.candidate.lastSyncedAt);
+
+    if (entry.topEvidence.length === 0) {
+      return "缺少可追溯的核心证据";
+    }
+
+    if (sourceCount < 2) {
+      return "主要依赖单一来源，仍需交叉验证";
+    }
+
+    if (freshestAge !== undefined && freshestAge > 90) {
+      return "近期信号偏旧，时效性不足";
+    }
+
+    if (conditions?.locations.length && this.normalizePercent(entry.profile.dimensions.locationMatch) < 75) {
+      return "地点贴合度不是压倒性优势";
+    }
+
+    if (this.normalizePercent(entry.profile.dimensions.techMatch) < 70) {
+      return "技术相关性仍需通过详情页确认";
+    }
+
+    return "仍建议结合详情页核对近况与上下文";
+  }
+
+  private buildLargestUncertainty(
+    lead: ComparisonEntry,
+    runnerUp: ComparisonEntry | undefined,
+    conditions: SearchConditions | undefined,
+    confidence: CompareConfidenceLabel
+  ) {
+    if (lead.uncertainty.summary) {
+      return lead.uncertainty.summary;
+    }
+
+    if (!runnerUp) {
+      return "当前 compare 还不到 2-3 位候选人，无法形成稳定对照。";
+    }
+
+    if (lead.topEvidence.length === 0) {
+      return "领先候选人缺少可追溯的核心证据。";
+    }
+
+    if (this.countKnownSources(lead.candidate.sources) < 2) {
+      return "领先判断主要依赖单一来源，仍需补一层交叉验证。";
+    }
+
+    const freshestAge = this.getAgeInDays(lead.candidate.latestEvidenceAt ?? lead.candidate.lastSyncedAt);
+    if (freshestAge !== undefined && freshestAge > 90) {
+      return "当前可用证据偏旧，无法确认近况是否仍成立。";
+    }
+
+    if (lead.decisionScore - runnerUp.decisionScore < 8) {
+      return "第一名与第二名差距有限，如果你更重视其他维度，结论可能变化。";
+    }
+
+    if (confidence === "中信心" && conditions?.skills.length) {
+      return "当前判断仍主要依赖技能命中，是否足够贴合真实岗位场景还需要详情页确认。";
+    }
+
+    return "仍建议打开详情页确认最新背景，避免把 compare 结果当成最终事实。";
+  }
+
+  private buildNonSelectionReason(
+    lead: ComparisonEntry,
+    entry: ComparisonEntry,
+    conditions?: SearchConditions
+  ) {
+    if (entry.whyNotSelected) {
+      return `${entry.candidate.name}：${entry.whyNotSelected}`;
+    }
+
+    const reasons: string[] = [];
+
+    if (this.normalizePercent(lead.profile.dimensions.techMatch) - this.normalizePercent(entry.profile.dimensions.techMatch) >= 8) {
+      reasons.push("技术相关性更弱");
+    }
+
+    if (this.normalizePercent(lead.profile.dimensions.projectDepth) - this.normalizePercent(entry.profile.dimensions.projectDepth) >= 8) {
+      reasons.push("项目支撑更薄");
+    }
+
+    if (lead.topEvidence.length - entry.topEvidence.length >= 1) {
+      reasons.push("核心证据更少");
+    }
+
+    if (this.countKnownSources(lead.candidate.sources) > this.countKnownSources(entry.candidate.sources)) {
+      reasons.push("来源交叉验证更少");
+    }
+
+    const leadAge = this.getAgeInDays(lead.candidate.latestEvidenceAt ?? lead.candidate.lastSyncedAt);
+    const entryAge = this.getAgeInDays(entry.candidate.latestEvidenceAt ?? entry.candidate.lastSyncedAt);
+    if (leadAge !== undefined && entryAge !== undefined && entryAge - leadAge >= 30) {
+      reasons.push("近期信号更旧");
+    }
+
+    if (
+      reasons.length === 0 &&
+      conditions?.locations.length &&
+      this.normalizePercent(entry.profile.dimensions.locationMatch) <
+        this.normalizePercent(lead.profile.dimensions.locationMatch)
+    ) {
+      reasons.push("地点贴合度稍弱");
+    }
+
+    const suffix = reasons.length > 0
+      ? reasons.slice(0, 2).join("，")
+      : "与推荐人选差距不大，但优势还不够稳定";
+
+    return `${entry.candidate.name}：${suffix}`;
+  }
+
+  private formatOutcomeBadge(outcome: CompareOutcomeLabel) {
+    if (outcome === "明确推荐") {
+      return chalk.bgGreen.black(` ${outcome} `);
+    }
+
+    if (outcome === "条件式推荐") {
+      return chalk.bgYellow.black(` ${outcome} `);
+    }
+
+    return chalk.bgRed.white(` ${outcome} `);
+  }
+
+  private formatConfidenceBadge(confidence: CompareConfidenceLabel) {
+    if (confidence === "高信心") {
+      return chalk.greenBright(confidence);
+    }
+
+    if (confidence === "中信心") {
+      return chalk.yellow(confidence);
+    }
+
+    return chalk.red(confidence);
+  }
+
+  private formatVerdict(verdict: "strong" | "mixed" | "weak") {
+    if (verdict === "strong") {
+      return "强";
+    }
+
+    if (verdict === "mixed") {
+      return "中";
+    }
+
+    return "弱";
+  }
+
+  private formatUncertaintyLevel(level: "low" | "medium" | "high") {
+    if (level === "low") {
+      return "低风险";
+    }
+
+    if (level === "medium") {
+      return "中风险";
+    }
+
+    return "高风险";
+  }
+
+  private deriveComparisonConfidence(
+    recommendedEntry: ComparisonEntry,
+    runnerUp?: ComparisonEntry
+  ): CompareConfidenceLabel {
+    if (recommendedEntry.uncertainty.level === "high" || recommendedEntry.evidenceStrength.verdict === "weak") {
+      return "低信心";
+    }
+
+    if (!runnerUp) {
+      return recommendedEntry.uncertainty.level === "low" ? "中信心" : "低信心";
+    }
+
+    if (
+      recommendedEntry.uncertainty.level === "low" &&
+      recommendedEntry.goalFit.verdict === "strong" &&
+      recommendedEntry.evidenceStrength.verdict === "strong" &&
+      recommendedEntry.decisionScore - runnerUp.decisionScore >= 8
+    ) {
+      return "高信心";
+    }
+
+    return "中信心";
+  }
+
+  private mapConfidence(confidence: ComparisonResult["outcome"]["confidence"]): CompareConfidenceLabel {
+    if (confidence === "high-confidence") {
+      return "高信心";
+    }
+
+    if (confidence === "medium-confidence") {
+      return "中信心";
+    }
+
+    return "低信心";
+  }
+
+  private mapRecommendationMode(mode: ComparisonResult["outcome"]["recommendationMode"]): CompareOutcomeLabel {
+    if (mode === "clear-recommendation") {
+      return "明确推荐";
+    }
+
+    if (mode === "conditional-recommendation") {
+      return "条件式推荐";
+    }
+
+    return "暂不推荐";
+  }
+
+  private countKnownSources(sources: string[]) {
+    return new Set((sources || []).filter((source) => source && source !== "Unknown")).size;
+  }
+
+  private normalizePercent(score: number) {
+    return score <= 1 ? score * 100 : score;
+  }
+
+  private getAgeInDays(date?: Date) {
+    if (!date) {
+      return undefined;
+    }
+
+    return Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24));
+  }
+
+  private formatFreshnessText(latestEvidence?: Date, lastSynced?: Date) {
+    const referenceDate = latestEvidence || lastSynced;
+    if (!referenceDate) {
+      return "时效未知";
+    }
+
+    const age = this.getAgeInDays(referenceDate);
+    if (age === undefined) {
+      return "时效未知";
+    }
+
+    if (age <= 7) {
+      return `${age} 天内有更新`;
+    }
+
+    if (age <= 30) {
+      return `${age} 天内有信号`;
+    }
+
+    if (age <= 90) {
+      return `${age} 天前有信号`;
+    }
+
+    return `${age} 天前更新`;
   }
 }

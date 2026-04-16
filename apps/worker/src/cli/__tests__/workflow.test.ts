@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MultiDimensionProfile, SearchConditions } from "../types.js";
+import { setConfidenceStatus, setRecommendedCandidate } from "../agent-state.js";
 import {
   SearchWorkflow,
   buildConditionAudit,
@@ -298,10 +299,25 @@ describe("SearchWorkflow shortlist command handling", () => {
         nextStep: "返回 shortlist 后执行 v 2 补充判断"
       }
     ];
+    const comparisonResult = {
+      entries: comparisonEntries,
+      outcome: {
+        confidence: "low-confidence" as const,
+        recommendationMode: "no-recommendation" as const,
+        recommendation: "当前还不足以形成有效对比，先补齐 2-3 位候选人再判断。",
+        rationale: "候选集不足，compare 还不具备决策意义。",
+        largestUncertainty: "当前 compare set 不完整。",
+        suggestedRefinement: "先补一位更接近目标的候选人进入 compare。"
+      }
+    };
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     (workflow as any).comparePool = [first, second];
-    (workflow as any).buildComparisonEntries = vi.fn(() => comparisonEntries);
+    (workflow as any).tools.prepareComparison = vi.fn(async () => ({
+      targets: [first, second],
+      entries: comparisonEntries,
+      result: comparisonResult
+    }));
     mockTui.promptCompareAction.mockResolvedValue("back");
 
     const result = await handleShortlistCommand(
@@ -316,13 +332,113 @@ describe("SearchWorkflow shortlist command handling", () => {
       BASE_CONDITIONS,
       "正在准备候选人对比..."
     );
-    expect(mockRenderer.renderComparison).toHaveBeenCalledWith(comparisonEntries, BASE_CONDITIONS);
+    expect((workflow as any).tools.prepareComparison).toHaveBeenCalledWith({
+      targets: [first, second],
+      allCandidates: [first, second]
+    });
+    expect(mockRenderer.renderComparison).toHaveBeenCalledWith(comparisonResult, BASE_CONDITIONS);
     expect(mockTui.promptCompareAction).toHaveBeenCalledTimes(1);
     expect(logSpy).toHaveBeenCalledWith("COMPARE VIEW");
     expect((workflow as any).sessionState.confidenceStatus.level).toBe("low");
     expect((workflow as any).sessionState.recommendedCandidate).toBeNull();
     expect((workflow as any).sessionState.openUncertainties).toEqual([
-      "对比已生成，但尚未完成证据置信度评估。"
+      "当前 compare set 不完整。"
+    ]);
+    expect(result.type).toBe("continue");
+  });
+
+  it("clears any stale recommendation and stays in low-confidence compare mode until evidence is assessed", async () => {
+    const { workflow, handleShortlistCommand, mockRenderer, mockTui } = createWorkflowHarness();
+    const first = createCandidate();
+    const second = createCandidate({
+      personId: "person-2",
+      name: "Grace",
+      bonjourUrl: undefined,
+      sources: ["GitHub"]
+    });
+    const comparisonEntries = [
+      {
+        shortlistIndex: 1,
+        candidate: first,
+        profile: first.profile,
+        topEvidence: [
+          {
+            evidenceType: "project",
+            title: "Built Hangzhou automation stack",
+            sourceLabel: "Bonjour",
+            freshnessLabel: "2天前"
+          }
+        ],
+        decisionTag: "优先深看",
+        decisionScore: 93,
+        recommendation: "建议优先打开：地点完全匹配，项目证据更扎实",
+        nextStep: "返回 shortlist 后先执行 v 1，再用 o 1 打开 Bonjour"
+      },
+      {
+        shortlistIndex: 2,
+        candidate: second,
+        profile: second.profile,
+        topEvidence: [
+          {
+            evidenceType: "repository",
+            title: "graph-rag",
+            sourceLabel: "GitHub",
+            freshnessLabel: "3天前"
+          }
+        ],
+        decisionTag: "继续比较",
+        decisionScore: 84,
+        recommendation: "建议继续对照：还需要更多证据判断",
+        nextStep: "返回 shortlist 后执行 v 2 补充判断"
+      }
+    ];
+    const comparisonResult = {
+      entries: comparisonEntries,
+      outcome: {
+        confidence: "low-confidence" as const,
+        recommendationMode: "no-recommendation" as const,
+        recommendation: "我还没有足够证据推荐单一候选人。",
+        rationale: "当前 compare 结果缺少结构化 outcome。",
+        largestUncertainty: "compare outcome 缺失。"
+      }
+    };
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    (workflow as any).comparePool = [first, second];
+    (workflow as any).sessionState = setConfidenceStatus((workflow as any).sessionState, {
+      level: "medium",
+      rationale: "previous review claimed enough evidence",
+      updatedAt: new Date("2026-03-30T12:00:00.000Z")
+    });
+    (workflow as any).sessionState = setRecommendedCandidate((workflow as any).sessionState, first, {
+      rationale: "stale recommendation before recomparing"
+    }).state;
+    expect((workflow as any).sessionState.recommendedCandidate?.candidate.personId).toBe("person-1");
+
+    (workflow as any).tools.prepareComparison = vi.fn(async () => ({
+      targets: [first, second],
+      entries: comparisonEntries,
+      result: comparisonResult
+    }));
+    mockTui.promptCompareAction.mockResolvedValue("back");
+
+    const result = await handleShortlistCommand(
+      { type: "compare" },
+      [first, second],
+      BASE_CONDITIONS,
+      { sortMode: "overall", visibleCount: 2, selectedIndex: 0 }
+    );
+
+    expect((workflow as any).tools.prepareComparison).toHaveBeenCalledWith({
+      targets: [first, second],
+      allCandidates: [first, second]
+    });
+    expect(mockRenderer.renderComparison).toHaveBeenCalledWith(comparisonResult, BASE_CONDITIONS);
+    expect(logSpy).toHaveBeenCalledWith("COMPARE VIEW");
+    expect((workflow as any).sessionState.confidenceStatus.level).toBe("low");
+    expect((workflow as any).sessionState.recommendedCandidate).toBeNull();
+    expect((workflow as any).sessionState.openUncertainties).toEqual([
+      "compare outcome 缺失。"
     ]);
     expect(result.type).toBe("continue");
   });
@@ -418,7 +534,10 @@ describe("SearchWorkflow shortlist command handling", () => {
     };
 
     (workflow as any).comparePool = [first, second];
-    (workflow as any).buildComparisonEntries = vi.fn(() => comparisonEntries);
+    (workflow as any).tools.prepareComparison = vi.fn(async () => ({
+      targets: [first, second],
+      entries: comparisonEntries
+    }));
     mockExporter.export.mockResolvedValue(artifact);
 
     const result = await handleShortlistCommand(
@@ -438,6 +557,10 @@ describe("SearchWorkflow shortlist command handling", () => {
       format: "md",
       querySummary: "杭州 python"
     }));
+    expect((workflow as any).tools.prepareComparison).toHaveBeenCalledWith({
+      targets: [first, second],
+      allCandidates: [first, second]
+    });
     const exportRequest = mockExporter.export.mock.calls[0]?.[0];
     expect(exportRequest.records[0]).toMatchObject({
       shortlistIndex: 1,
@@ -447,6 +570,14 @@ describe("SearchWorkflow shortlist command handling", () => {
       recommendation: "建议优先打开：地点完全匹配，资料也较新",
       nextStep: "返回 shortlist 后先执行 v 1，再用 o 1 打开 Bonjour"
     });
+    expect(exportRequest.records[0].topEvidence).toEqual([
+      {
+        evidenceType: "project",
+        title: "Built Hangzhou automation stack",
+        sourceLabel: "Bonjour",
+        freshnessLabel: "2天前"
+      }
+    ]);
     expect(mockTui.displayExportSuccess).toHaveBeenCalledWith(artifact);
     expect(result.type).toBe("continue");
   });

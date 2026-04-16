@@ -225,10 +225,46 @@ describe("agent-tools", () => {
         ]
       }
     });
+    const third = createCandidate({
+      personId: "person-3",
+      name: "Linus",
+      matchScore: 0.51,
+      queryReasons: [],
+      sources: ["Web"],
+      bonjourUrl: undefined,
+      lastSyncedAt: undefined,
+      latestEvidenceAt: undefined,
+      profile: createProfile({
+        overallScore: 54,
+        dimensions: {
+          techMatch: 52,
+          locationMatch: 40,
+          careerStability: 58,
+          projectDepth: 44,
+          academicImpact: 18,
+          communityReputation: 30
+        }
+      }),
+      _hydrated: {
+        evidence: [
+          {
+            evidenceType: "social",
+            title: "Forum profile",
+            description: "Sparse public profile",
+            source: "web",
+            occurredAt: new Date("2026-01-01T00:00:00.000Z")
+          }
+        ]
+      }
+    });
 
-    const entries = prepareComparisonEntries([first, second], [first, second], BASE_CONDITIONS);
+    const entries = prepareComparisonEntries(
+      [first, second, third],
+      [first, second, third],
+      BASE_CONDITIONS
+    );
 
-    expect(entries).toHaveLength(2);
+    expect(entries).toHaveLength(3);
     expect(entries[0]).toMatchObject({
       shortlistIndex: 1,
       decisionTag: "优先深看",
@@ -246,5 +282,85 @@ describe("agent-tools", () => {
       recommendation: expect.stringContaining("建议继续对照"),
       nextStep: "返回 shortlist 后执行 v 2 补充判断"
     });
+    expect(entries[2]).toMatchObject({
+      shortlistIndex: 3,
+      decisionTag: "补充候选",
+      recommendation: expect.stringContaining("建议作为备选"),
+      nextStep: "保留在 pool 中，必要时再查看 #3"
+    });
+  });
+
+  it("keeps compare evidence traceable, ordered, and capped to top three supported items", async () => {
+    const { prepareComparisonEntries } = await import("../agent-tools.js");
+
+    const candidate = createCandidate({
+      _hydrated: {
+        evidence: [
+          {
+            evidenceType: "social",
+            title: "Community thread",
+            description: "Discussed backend tooling",
+            source: "web",
+            occurredAt: new Date("2026-03-27T00:00:00.000Z")
+          },
+          {
+            evidenceType: "repository",
+            title: "ranking-service",
+            description: "GitHub repo",
+            source: "github",
+            occurredAt: new Date("2026-03-28T00:00:00.000Z")
+          },
+          {
+            evidenceType: "project",
+            title: "Agentic search workspace",
+            description: "Built python-heavy workflows",
+            source: "bonjour",
+            occurredAt: new Date("2026-03-29T00:00:00.000Z")
+          },
+          {
+            evidenceType: "experience",
+            title: "Search infra lead",
+            description: "Owned retrieval stack",
+            source: "bonjour",
+            occurredAt: new Date("2026-03-26T00:00:00.000Z")
+          },
+          {
+            evidenceType: "project",
+            title: "   ",
+            description: "   ",
+            source: "bonjour",
+            occurredAt: new Date("2026-03-30T00:00:00.000Z")
+          }
+        ]
+      }
+    });
+    const support = createCandidate({
+      personId: "person-2",
+      name: "Grace",
+      matchScore: 0.78
+    });
+
+    const [entry] = prepareComparisonEntries([candidate], [candidate, support], BASE_CONDITIONS);
+
+    expect(entry.topEvidence).toEqual([
+      {
+        evidenceType: "project",
+        title: "Agentic search workspace",
+        sourceLabel: "Bonjour",
+        freshnessLabel: "29天前"
+      },
+      {
+        evidenceType: "repository",
+        title: "ranking-service",
+        sourceLabel: "GitHub",
+        freshnessLabel: "30天前"
+      },
+      {
+        evidenceType: "experience",
+        title: "Search infra lead",
+        sourceLabel: "Bonjour",
+        freshnessLabel: "32天前"
+      }
+    ]);
   });
 });

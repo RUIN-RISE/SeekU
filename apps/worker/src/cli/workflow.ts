@@ -33,6 +33,7 @@ import {
   rewindSearchHistory,
   setConfidenceStatus,
   setOpenUncertainties,
+  setRecommendedCandidate,
   setSessionConditions,
   setSessionShortlist,
   setSessionUserGoal,
@@ -42,7 +43,8 @@ import {
   buildRefineContextCandidates,
   createSearchAgentTools,
   inspectCandidateFromState,
-  prepareComparisonCandidates,
+  prepareComparisonEntries,
+  prepareComparisonResult,
   resolveCandidateAnchorWithContext,
   type AgentInspectCandidateOutput,
   type SearchAgentTools
@@ -59,6 +61,7 @@ import {
   CandidatePrimaryLink,
   ComparisonEntry,
   ComparisonEvidenceSummary,
+  ComparisonResult,
   ConditionAuditItem,
   ConditionAuditStatus,
   ExportCandidateRecord,
@@ -764,10 +767,15 @@ export class SearchWorkflow {
         };
       },
       prepareComparison: async ({ targets, allCandidates }) => {
-        const comparisonEntries = this.buildComparisonEntries(targets, allCandidates, this.sessionState.currentConditions);
+        const comparisonResult = this.buildComparisonResult(
+          targets,
+          allCandidates,
+          this.sessionState.currentConditions
+        );
         return {
           targets,
-          entries: comparisonEntries
+          entries: comparisonResult.entries,
+          result: comparisonResult
         };
       }
     });
@@ -1325,23 +1333,44 @@ export class SearchWorkflow {
 
       this.sessionState = addCompareCandidates(this.sessionState, targets);
       await this.ensureProfiles(targets, conditions, "正在准备候选人对比...");
-      const { entries: comparisonEntries } = await this.tools.prepareComparison({
+      const prepared = await this.tools.prepareComparison({
         targets,
         allCandidates: candidates
       });
+      const comparisonEntries = prepared.entries;
+      const comparisonResult = prepared.result ?? {
+        entries: comparisonEntries,
+        outcome: {
+          confidence: "low-confidence" as const,
+          recommendationMode: "no-recommendation" as const,
+          recommendation: "我还没有足够证据推荐单一候选人。",
+          rationale: "当前 compare 结果缺少结构化 outcome。",
+          largestUncertainty: "compare outcome 缺失。"
+        }
+      };
       this.sessionState = setConfidenceStatus(
         this.sessionState,
-        {
-          level: "low",
-          rationale: "comparison-prepared-without-evidence-assessment",
-          updatedAt: new Date()
-        }
+        comparisonResult.outcome.confidence
       );
       this.sessionState = setOpenUncertainties(this.sessionState, [
-        "对比已生成，但尚未完成证据置信度评估。"
+        comparisonResult.outcome.largestUncertainty
       ]);
+      if (
+        comparisonResult.outcome.recommendedCandidateId
+        && comparisonResult.outcome.recommendationMode !== "no-recommendation"
+      ) {
+        const targetRecommendation = targets.find(
+          (candidate) => candidate.personId === comparisonResult.outcome.recommendedCandidateId
+        );
+        if (targetRecommendation) {
+          const recommendation = setRecommendedCandidate(this.sessionState, targetRecommendation, {
+            rationale: comparisonResult.outcome.rationale
+          });
+          this.sessionState = recommendation.state;
+        }
+      }
       console.log(
-        this.renderer.renderComparison(comparisonEntries, conditions)
+        this.renderer.renderComparison(comparisonResult, conditions)
       );
 
       while (true) {
@@ -2231,30 +2260,29 @@ export class SearchWorkflow {
       (candidate): candidate is HydratedCandidate & { profile: MultiDimensionProfile } =>
         Boolean(candidate.profile)
     );
+    const hydratedAllCandidates = allCandidates.filter(
+      (candidate): candidate is HydratedCandidate & { profile: MultiDimensionProfile } =>
+        Boolean(candidate.profile)
+    );
 
-    return prepareComparisonCandidates(
-      {
-        targets: hydratedTargets,
-        allCandidates
-      },
-      {
-        score: (candidate) =>
-          this.computeComparisonDecisionScore(candidate, candidate.profile as MultiDimensionProfile),
-        recommendation: (candidate, decisionTag) =>
-          this.buildComparisonRecommendation(
-            candidate,
-            candidate.profile as MultiDimensionProfile,
-            decisionTag,
-            conditions
-          ),
-        nextStep: (candidate, shortlistIndex, decisionTag) =>
-          this.buildComparisonNextStep(candidate, shortlistIndex, decisionTag)
-      }
-    ).map((entry) => ({
-      ...entry,
-      profile: entry.candidate.profile as MultiDimensionProfile,
-      topEvidence: this.buildComparisonEvidence(entry.candidate._hydrated.evidence)
-    }));
+    return prepareComparisonEntries(hydratedTargets, hydratedAllCandidates, conditions);
+  }
+
+  private buildComparisonResult(
+    targets: HydratedCandidate[],
+    allCandidates: HydratedCandidate[],
+    conditions?: SearchConditions
+  ): ComparisonResult {
+    const hydratedTargets = targets.filter(
+      (candidate): candidate is HydratedCandidate & { profile: MultiDimensionProfile } =>
+        Boolean(candidate.profile)
+    );
+    const hydratedAllCandidates = allCandidates.filter(
+      (candidate): candidate is HydratedCandidate & { profile: MultiDimensionProfile } =>
+        Boolean(candidate.profile)
+    );
+
+    return prepareComparisonResult(hydratedTargets, hydratedAllCandidates, conditions);
   }
 
   private buildExportRecords(

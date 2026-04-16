@@ -68,6 +68,7 @@ export class ShortlistExporter {
 
   private renderMarkdown(artifact: ExportArtifact): string {
     const targetLabel = artifact.target === "pool" ? "Compare Pool" : "Shortlist";
+    const compareSummary = this.buildPresentationSummary(artifact.records);
     const header = [
       `# Seeku ${targetLabel} Export`,
       "",
@@ -75,10 +76,15 @@ export class ShortlistExporter {
       `- 导出对象：${artifact.target === "pool" ? "当前对比池" : "当前 shortlist"}`,
       `- 查询摘要：${artifact.querySummary}`,
       `- 候选人数：${artifact.count}`,
+      `- 推荐结果：${compareSummary.outcome}`,
+      `- 信心等级：${compareSummary.confidence}`,
+      `- 推荐对象：${compareSummary.recommendedName || "暂无"}`,
+      `- 最大不确定性：${compareSummary.largestUncertainty}`,
       ""
     ];
 
     const sections = artifact.records.map((record, index) => {
+      const entryView = this.buildRecordPresentation(record);
       const lines = [
         `## ${index + 1}. ${record.name}`,
         "",
@@ -89,7 +95,13 @@ export class ShortlistExporter {
         `- Source: ${record.source}`,
         `- Freshness: ${record.freshness}`,
         `- Bonjour: ${record.bonjourUrl || "无"}`,
-        `- Why Matched: ${record.whyMatched}`
+        `- Why Matched: ${record.whyMatched}`,
+        `- Goal Fit: ${entryView.goalFit}`,
+        `- Evidence Strength: ${entryView.evidenceStrength}`,
+        `- Source Quality / Recency: ${entryView.sourceQualityRecency}`,
+        `- Key Uncertainty: ${entryView.uncertainty}`,
+        `- Recommendation Outcome: ${entryView.outcome}`,
+        `- Confidence: ${entryView.confidence}`
       ];
 
       if (record.decisionTag) {
@@ -131,33 +143,48 @@ export class ShortlistExporter {
       "freshness",
       "bonjourUrl",
       "whyMatched",
+      "goalFit",
+      "evidenceStrength",
+      "sourceQualityRecency",
+      "uncertainty",
+      "recommendationOutcome",
+      "confidence",
       "decisionTag",
       "recommendation",
       "nextStep",
       "topEvidence"
     ];
 
-    const rows = artifact.records.map((record) => [
-      record.shortlistIndex ?? "",
-      record.name,
-      record.headline || "",
-      record.location || "",
-      record.company || "",
-      record.matchScore.toFixed(1),
-      record.source,
-      record.freshness,
-      record.bonjourUrl || "",
-      record.whyMatched,
-      record.decisionTag || "",
-      record.recommendation || "",
-      record.nextStep || "",
-      record.topEvidence
-        .map((item) => {
-          const freshness = item.freshnessLabel ? ` (${item.freshnessLabel})` : "";
-          return `[${item.sourceLabel}/${item.evidenceType}] ${item.title}${freshness}`;
-        })
-        .join(" | ")
-    ]);
+    const rows = artifact.records.map((record) => {
+      const entryView = this.buildRecordPresentation(record);
+      return [
+        record.shortlistIndex ?? "",
+        record.name,
+        record.headline || "",
+        record.location || "",
+        record.company || "",
+        record.matchScore.toFixed(1),
+        record.source,
+        record.freshness,
+        record.bonjourUrl || "",
+        record.whyMatched,
+        entryView.goalFit,
+        entryView.evidenceStrength,
+        entryView.sourceQualityRecency,
+        entryView.uncertainty,
+        entryView.outcome,
+        entryView.confidence,
+        record.decisionTag || "",
+        record.recommendation || "",
+        record.nextStep || "",
+        record.topEvidence
+          .map((item) => {
+            const freshness = item.freshnessLabel ? ` (${item.freshnessLabel})` : "";
+            return `[${item.sourceLabel}/${item.evidenceType}] ${item.title}${freshness}`;
+          })
+          .join(" | ")
+      ];
+    });
 
     return [headers, ...rows]
       .map((row) => row.map((value) => this.escapeCsv(String(value))).join(","))
@@ -196,5 +223,135 @@ export class ShortlistExporter {
 
   private pad(value: number): string {
     return String(value).padStart(2, "0");
+  }
+
+  private buildPresentationSummary(records: ExportCandidateRecord[]) {
+    const ranked = [...records].sort((left, right) => right.matchScore - left.matchScore);
+    const lead = ranked[0];
+    const runnerUp = ranked[1];
+    const outcome = !lead
+      ? "暂不推荐"
+      : this.classifyConfidence(lead, runnerUp).outcome;
+    const confidence = !lead
+      ? "低信心"
+      : this.classifyConfidence(lead, runnerUp).confidence;
+
+    return {
+      outcome,
+      confidence,
+      recommendedName: outcome === "暂不推荐" ? undefined : lead?.name,
+      largestUncertainty: this.buildLargestUncertainty(lead, runnerUp)
+    };
+  }
+
+  private buildRecordPresentation(record: ExportCandidateRecord) {
+    const { outcome, confidence } = this.classifyConfidence(record);
+    return {
+      goalFit: `${this.describeLevel(this.normalizePercent(record.matchScore), { high: 80, medium: 65 })} · ${record.whyMatched}`,
+      evidenceStrength: `${this.describeEvidenceStrength(record)} · ${record.topEvidence.length} 条核心证据`,
+      sourceQualityRecency: `${record.source || "来源未知"} · ${record.freshness}`,
+      uncertainty: this.buildRecordUncertainty(record),
+      outcome,
+      confidence
+    };
+  }
+
+  private classifyConfidence(
+    lead: ExportCandidateRecord,
+    runnerUp?: ExportCandidateRecord
+  ) {
+    const gap = runnerUp ? this.normalizePercent(lead.matchScore) - this.normalizePercent(runnerUp.matchScore) : 0;
+    const evidenceCount = lead.topEvidence.length;
+    const sourceCount = lead.source.split(",").map((item) => item.trim()).filter(Boolean).length;
+    const freshEnough = !/(未知|月前|年前)/.test(lead.freshness);
+
+    const confidence = runnerUp &&
+      gap >= 8 &&
+      evidenceCount >= 2 &&
+      sourceCount >= 2 &&
+      freshEnough
+      ? "高信心"
+      : runnerUp &&
+          evidenceCount >= 1 &&
+          (gap >= 4 || sourceCount >= 2 || freshEnough)
+        ? "中信心"
+        : "低信心";
+
+    return {
+      confidence,
+      outcome: confidence === "高信心"
+        ? "明确推荐"
+        : confidence === "中信心"
+          ? "条件式推荐"
+          : "暂不推荐"
+    };
+  }
+
+  private buildLargestUncertainty(
+    lead?: ExportCandidateRecord,
+    runnerUp?: ExportCandidateRecord
+  ) {
+    if (!lead || !runnerUp) {
+      return "当前导出里缺少足够的 compare 对照。";
+    }
+
+    if (lead.topEvidence.length === 0) {
+      return "领先候选人缺少核心证据。";
+    }
+
+    if (lead.source.split(",").map((item) => item.trim()).filter(Boolean).length < 2) {
+      return "领先判断主要依赖单一来源，仍需交叉验证。";
+    }
+
+    if (this.normalizePercent(lead.matchScore) - this.normalizePercent(runnerUp.matchScore) < 8) {
+      return "第一名与第二名差距有限，岗位偏好变化可能改变结论。";
+    }
+
+    return "仍建议结合详情页确认最新背景，避免把导出结论当成最终事实。";
+  }
+
+  private buildRecordUncertainty(record: ExportCandidateRecord) {
+    if (record.topEvidence.length === 0) {
+      return "缺少可追溯的核心证据";
+    }
+
+    if (record.source.split(",").map((item) => item.trim()).filter(Boolean).length < 2) {
+      return "主要依赖单一来源";
+    }
+
+    if (/(月前|年前|未知)/.test(record.freshness)) {
+      return "近期信号偏旧或时效未知";
+    }
+
+    return "仍建议查看详情页确认上下文";
+  }
+
+  private describeEvidenceStrength(record: ExportCandidateRecord) {
+    const sourceCount = record.source.split(",").map((item) => item.trim()).filter(Boolean).length;
+    if (record.topEvidence.length >= 2 && sourceCount >= 2 && !/(月前|年前|未知)/.test(record.freshness)) {
+      return "强";
+    }
+
+    if (record.topEvidence.length >= 1) {
+      return "中";
+    }
+
+    return "弱";
+  }
+
+  private describeLevel(score: number, thresholds: { high: number; medium: number }) {
+    if (score >= thresholds.high) {
+      return "强";
+    }
+
+    if (score >= thresholds.medium) {
+      return "中";
+    }
+
+    return "弱";
+  }
+
+  private normalizePercent(score: number) {
+    return score <= 1 ? score * 100 : score;
   }
 }
