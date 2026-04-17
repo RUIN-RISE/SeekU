@@ -139,4 +139,22 @@ describe("index-builder facetRole extraction", () => {
 
     expect(document.facetTags ?? []).toContain("zju_manual_seed");
   });
+
+  it("adds namespaced direction tags to facetTags for deal flow reuse", () => {
+    const person = makePerson({
+      primaryHeadline: "Building AI agent developer tools",
+      summary: "Open source workflow tooling for enterprise AI teams"
+    });
+
+    const document = buildSearchDocument({ person, evidence: [] });
+
+    expect(document.facetTags ?? []).toEqual(
+      expect.arrayContaining([
+        "direction:ai_agents",
+        "direction:developer_tools",
+        "direction:enterprise_ai",
+        "direction:open_source"
+      ])
+    );
+  });
 });

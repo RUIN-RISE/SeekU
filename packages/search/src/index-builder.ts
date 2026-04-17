@@ -2,6 +2,7 @@ import type { Person, EvidenceItem, NewSearchDocument, RankFeatures } from "@see
 
 import { collectDocumentAliasTerms } from "./search-normalization.js";
 import { isKnownZjuAlumniSeed, type SearchSourceHint, ZJU_MANUAL_SEED_TAG } from "./zju-alumni-seeds.js";
+import { buildCandidateDirectionProfile, toDirectionFacetTags } from "./daily-deal-flow.js";
 
 export interface SearchDocumentInput {
   person: Person;
@@ -328,6 +329,7 @@ const TECH_KEYWORDS = [
 
 function extractTags(person: Person, evidence: EvidenceItem[], sourceHints: SearchSourceHint[] = []): string[] {
   const tags: Set<string> = new Set();
+  const directionProfile = buildCandidateDirectionProfile(person, evidence);
 
   const allText = [
     person.primaryHeadline,
@@ -349,6 +351,10 @@ function extractTags(person: Person, evidence: EvidenceItem[], sourceHints: Sear
 
   if (isKnownZjuAlumniSeed(sourceHints)) {
     tags.add(ZJU_MANUAL_SEED_TAG);
+  }
+
+  for (const directionTag of toDirectionFacetTags(directionProfile.directionTags)) {
+    tags.add(directionTag);
   }
 
   return Array.from(tags);

@@ -25,7 +25,7 @@ The milestone stays intentionally narrow:
 **Goal:** Add a proactive daily cofounder deal flow that ranks existing Seeku candidates by goal-direction match, explains why each person is worth contacting, and learns from explicit and implicit feedback.
 
 **Plans:**
-- [ ] `09-01-PLAN.md` — Goal model and candidate direction foundation
+- [x] `09-01-PLAN.md` — Goal model and candidate direction foundation
 - [ ] `09-02-PLAN.md` — Opportunity scoring and daily curation pipeline
 - [ ] `09-03-PLAN.md` — Deal flow surface and feedback capture
 - [ ] `09-04-PLAN.md` — Drift logic, learning loop, and acceptance
