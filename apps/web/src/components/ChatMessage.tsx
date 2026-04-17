@@ -1,24 +1,21 @@
 "use client";
 
 import { clsx } from "clsx";
-import type { ChatMessage } from "@/hooks/useChatSession";
+import type { ChatMessage as CopilotChatMessage, CopilotMission } from "@/hooks/useChatSession";
 
 interface ChatMessageProps {
-  message: ChatMessage;
+  message: CopilotChatMessage;
+  mission: CopilotMission | null;
 }
 
-/**
- * Individual chat message component
- * Renders user, assistant, or tool (search results) messages
- */
-export function ChatMessage({ message }: ChatMessageProps) {
+export function ChatMessage({ message, mission }: ChatMessageProps) {
   const { role, content, toolResult } = message;
 
   if (role === "user") {
     return (
-      <div className="flex justify-end mb-4">
-        <div className="max-w-[80%] bg-blue-600 text-white rounded-2xl rounded-br-md px-4 py-3 shadow-sm">
-          <p className="text-sm whitespace-pre-wrap">{content}</p>
+      <div className="mb-4 flex justify-end">
+        <div className="max-w-[80%] rounded-2xl rounded-br-md bg-blue-600 px-4 py-3 text-white shadow-sm">
+          <p className="whitespace-pre-wrap text-sm">{content}</p>
         </div>
       </div>
     );
@@ -26,25 +23,27 @@ export function ChatMessage({ message }: ChatMessageProps) {
 
   if (role === "assistant") {
     return (
-      <div className="flex justify-start mb-4">
-        <div className="max-w-[85%] bg-white border border-slate-200 rounded-2xl rounded-bl-md px-4 py-3 shadow-sm">
-          {/* Assistant label */}
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Seeku</span>
+      <div className="mb-4 flex justify-start">
+        <div className="max-w-[85%] rounded-2xl rounded-bl-md border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <div className="mb-2 flex items-center gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Seeku</span>
+            {mission && (
+              <span className="rounded-full bg-cyan-50 px-2 py-0.5 text-[11px] font-semibold text-cyan-700">
+                mission {mission.phase}
+              </span>
+            )}
           </div>
 
-          {/* Content */}
-          <p className="text-sm text-slate-700 whitespace-pre-wrap">{content}</p>
+          <p className="whitespace-pre-wrap text-sm text-slate-700">{content}</p>
 
-          {/* Embedded search results */}
           {toolResult && toolResult.results.length > 0 && (
             <div className="mt-3 space-y-2">
-              {toolResult.results.slice(0, 3).map((result) => (
+              {toolResult.results.slice(0, 5).map((result) => (
                 <ResultCard key={result.personId} result={result} />
               ))}
-              {toolResult.total > 3 && (
-                <p className="text-xs text-slate-500 text-center mt-2">
-                  共 {toolResult.total} 位候选人，显示前 3 位
+              {toolResult.total > 5 && (
+                <p className="mt-2 text-center text-xs text-slate-500">
+                  共 {toolResult.total} 位候选人，显示前 5 位
                 </p>
               )}
             </div>
@@ -54,17 +53,18 @@ export function ChatMessage({ message }: ChatMessageProps) {
     );
   }
 
-  // Tool role (legacy, not typically used)
   return (
-    <div className="flex justify-start mb-4">
-      <div className="max-w-[85%] bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3">
+    <div className="mb-4 flex justify-start">
+      <div className="max-w-[85%] rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
         <p className="text-xs text-slate-500">{content}</p>
       </div>
     </div>
   );
 }
 
-interface ResultCardProps {
+function ResultCard({
+  result
+}: {
   result: {
     personId: string;
     name: string;
@@ -73,34 +73,27 @@ interface ResultCardProps {
     matchScore: number;
     matchReasons: string[];
   };
-}
-
-/**
- * Mini result card embedded in assistant messages
- */
-function ResultCard({ result }: ResultCardProps) {
+}) {
   const scorePercent = Math.round(result.matchScore * 100);
   const scoreColor = scorePercent >= 80 ? "text-green-600" : scorePercent >= 60 ? "text-blue-600" : "text-amber-600";
 
   return (
-    <div className="bg-slate-50 rounded-lg p-3 border border-slate-100 hover:border-blue-200 transition-colors cursor-pointer">
+    <div className="cursor-pointer rounded-lg border border-slate-100 bg-slate-50 p-3 transition-colors hover:border-blue-200">
       <div className="flex items-center justify-between">
-        <div className="flex-1 min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h4 className="font-medium text-sm text-slate-900 truncate">{result.name}</h4>
+            <h4 className="truncate text-sm font-medium text-slate-900">{result.name}</h4>
             {result.headline && (
-              <span className="text-xs text-slate-500 truncate">{result.headline}</span>
+              <span className="truncate text-xs text-slate-500">{result.headline}</span>
             )}
           </div>
           {result.disambiguation && (
-            <p className="mt-1 text-xs text-amber-700 line-clamp-2">{result.disambiguation}</p>
+            <p className="mt-1 line-clamp-2 text-xs text-amber-700">{result.disambiguation}</p>
           )}
-
-          {/* Match reasons */}
           {result.matchReasons.length > 0 && (
-            <div className="flex gap-1 mt-1">
+            <div className="mt-1 flex gap-1">
               {result.matchReasons.slice(0, 2).map((reason) => (
-                <span key={reason} className="px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded text-xs truncate">
+                <span key={reason} className="truncate rounded bg-blue-50 px-1.5 py-0.5 text-xs text-blue-600">
                   {reason}
                 </span>
               ))}
@@ -108,12 +101,11 @@ function ResultCard({ result }: ResultCardProps) {
           )}
         </div>
 
-        {/* Score */}
-        <div className="text-right ml-3">
-          <span className={clsx("font-semibold text-sm", scoreColor)}>
+        <div className="ml-3 text-right">
+          <span className={clsx("text-sm font-semibold", scoreColor)}>
             {scorePercent}
           </span>
-          <span className="text-xs text-slate-400 ml-0.5">%</span>
+          <span className="ml-0.5 text-xs text-slate-400">%</span>
         </div>
       </div>
     </div>

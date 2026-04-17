@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ChatCopilotWorkboardView } from "../ChatCopilotWorkboard.js";
 import type { DealFlowResponse } from "@/lib/api";
 import type { AgentPanelSessionEvent, AgentPanelSessionSnapshot } from "@/lib/agent-panel";
+import type { CopilotMission } from "@/hooks/useChatSession";
 
 const SNAPSHOT: AgentPanelSessionSnapshot = {
   sessionId: "session-1",
@@ -72,6 +73,17 @@ const EVENTS: AgentPanelSessionEvent[] = [
     }
   }
 ];
+
+const MISSION: CopilotMission = {
+  missionId: "mission-1",
+  goal: "找多智能体工程负责人",
+  status: "running",
+  phase: "running_search",
+  roundCount: 1,
+  startedAt: "2026-04-17T02:00:00.000Z",
+  latestSummary: "正在执行第 1 轮大范围候选搜索。",
+  corrections: []
+};
 
 const DEAL_FLOW: DealFlowResponse = {
   artifact: {
@@ -171,12 +183,9 @@ describe("ChatCopilotWorkboardView", () => {
   it("renders narrated workboard sections for a live session", () => {
     render(
       React.createElement(ChatCopilotWorkboardView, {
-        sessionId: "session-1",
         snapshot: SNAPSHOT,
         events: EVENTS,
-        connectionStatus: "live",
-        errorMessage: null,
-        retryConnection: vi.fn(),
+        mission: MISSION,
         dealFlowData: DEAL_FLOW,
         dealFlowError: null,
         isDealFlowLoading: false
@@ -184,6 +193,7 @@ describe("ChatCopilotWorkboardView", () => {
     );
 
     expect(screen.getByText("Narrated Workboard")).toBeTruthy();
+    expect(screen.getByText("Mission Banner")).toBeTruthy();
     expect(screen.getByText("Now")).toBeTruthy();
     expect(screen.getByText("Why")).toBeTruthy();
     expect(screen.getByText("Movement")).toBeTruthy();
@@ -194,10 +204,9 @@ describe("ChatCopilotWorkboardView", () => {
     expect(screen.getByText("Today #1")).toBeTruthy();
     expect(screen.getByText(/最近公开输出明显增多/)).toBeTruthy();
     expect(screen.getByText("Lead Evidence")).toBeTruthy();
-    expect(screen.getByText("More Opportunities")).toBeTruthy();
-    expect(screen.getByText("Rui")).toBeTruthy();
+    expect(screen.getByText("Mina")).toBeTruthy();
+    expect(screen.getByText("Ada")).toBeTruthy();
     expect(screen.getByRole("link", { name: "在 Deal Flow 中查看并反馈" }).getAttribute("href")).toBe("/deal-flow?personId=deal-1");
-    expect(screen.getByRole("link", { name: "打开完整 Deal Flow 深入查看" }).getAttribute("href")).toBe("/deal-flow");
   });
 
   it("shows idle guidance when no session is attached", () => {
@@ -205,18 +214,16 @@ describe("ChatCopilotWorkboardView", () => {
       React.createElement(ChatCopilotWorkboardView, {
         snapshot: null,
         events: [],
-        connectionStatus: "connecting",
-        errorMessage: null,
-        retryConnection: vi.fn(),
+        mission: null,
         dealFlowData: DEAL_FLOW,
         dealFlowError: null,
         isDealFlowLoading: false
       })
     );
 
-    expect(screen.getByText("等待绑定可见 session")).toBeTruthy();
-    expect(screen.getByText("Session not attached")).toBeTruthy();
-    expect(screen.getByText("未绑定")).toBeTruthy();
+    expect(screen.getByText("等待启动 mission")).toBeTruthy();
+    expect(screen.getByText(/系统会启动一个 bounded mission/i)).toBeTruthy();
+    expect(screen.getByText("未启动")).toBeTruthy();
     expect(screen.getByText("Mina")).toBeTruthy();
     expect(screen.getByText("Lead Evidence")).toBeTruthy();
   });
@@ -224,20 +231,17 @@ describe("ChatCopilotWorkboardView", () => {
   it("shows missing-session state without fabricating output", () => {
     render(
       React.createElement(ChatCopilotWorkboardView, {
-        sessionId: "missing-session",
         snapshot: null,
         events: [],
-        connectionStatus: "missing",
-        errorMessage: "当前 session 不存在。",
-        retryConnection: vi.fn(),
+        mission: null,
         dealFlowData: null,
-        dealFlowError: null,
+        dealFlowError: "deal flow 暂时不可用",
         isDealFlowLoading: false
       })
     );
 
-    expect(screen.getByText("当前没有活跃 session")).toBeTruthy();
-    expect(screen.getByText("当前 session 不存在。")).toBeTruthy();
-    expect(screen.getByText("Session not attached")).toBeTruthy();
+    expect(screen.getByText("等待启动 mission")).toBeTruthy();
+    expect(screen.getByText(/deal flow 暂时不可用/i)).toBeTruthy();
+    expect(screen.getByText(/当前还没有 mission 结果/i)).toBeTruthy();
   });
 });
