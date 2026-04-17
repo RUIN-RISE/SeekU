@@ -26,7 +26,7 @@ The milestone stays intentionally narrow:
 
 **Plans:**
 - [x] `09-01-PLAN.md` — Goal model and candidate direction foundation
-- [ ] `09-02-PLAN.md` — Opportunity scoring and daily curation pipeline
+- [x] `09-02-PLAN.md` — Opportunity scoring and daily curation pipeline
 - [ ] `09-03-PLAN.md` — Deal flow surface and feedback capture
 - [ ] `09-04-PLAN.md` — Drift logic, learning loop, and acceptance
 
