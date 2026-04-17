@@ -209,6 +209,67 @@ describe("ChatCopilotWorkboardView", () => {
     expect(screen.getByRole("link", { name: "在 Deal Flow 中查看并反馈" }).getAttribute("href")).toBe("/deal-flow?personId=deal-1");
   });
 
+  it("prefers compare framing over recommendation framing when no mission recommendation exists", () => {
+    render(
+      React.createElement(ChatCopilotWorkboardView, {
+        snapshot: {
+          ...SNAPSHOT,
+          status: "waiting-input",
+          statusSummary: "我先停下来给你当前 compare 集合。",
+          activeCompareSet: SNAPSHOT.currentShortlist,
+          recommendedCandidate: null,
+          openUncertainties: ["当前 compare 已可看，但默认先不直接推荐第一名。"]
+        },
+        events: EVENTS,
+        mission: {
+          ...MISSION,
+          phase: "stopped",
+          status: "stopped",
+          roundCount: 3,
+          latestSummary: "我先停下来给你当前 compare 集合。",
+          stopReason: "enough_compare"
+        },
+        dealFlowData: null,
+        dealFlowError: null,
+        isDealFlowLoading: false
+      })
+    );
+
+    expect(screen.getByText("Compare set")).toBeTruthy();
+    expect(screen.getByText(/先不默认推荐第一名/)).toBeTruthy();
+  });
+
+  it("shows clarification copy when the mission stops for tighter direction", () => {
+    render(
+      React.createElement(ChatCopilotWorkboardView, {
+        snapshot: {
+          ...SNAPSHOT,
+          status: "waiting-input",
+          statusSummary: "方向仍然太散，我先停下来等你补一句更紧的方向。",
+          currentShortlist: SNAPSHOT.currentShortlist.slice(0, 2),
+          activeCompareSet: [],
+          recommendedCandidate: null,
+          openUncertainties: ["结果还不够稳定。请再补一句更紧的方向。"]
+        },
+        events: EVENTS,
+        mission: {
+          ...MISSION,
+          phase: "stopped",
+          status: "stopped",
+          roundCount: 4,
+          latestSummary: "方向仍然太散，我先停下来等你补一句更紧的方向。",
+          stopReason: "needs_user_clarification"
+        },
+        dealFlowData: null,
+        dealFlowError: null,
+        isDealFlowLoading: false
+      })
+    );
+
+    expect(screen.getByText("Mission stopped")).toBeTruthy();
+    expect(screen.getByText(/请再补一句更紧的方向/)).toBeTruthy();
+  });
+
   it("shows idle guidance when no session is attached", () => {
     render(
       React.createElement(ChatCopilotWorkboardView, {

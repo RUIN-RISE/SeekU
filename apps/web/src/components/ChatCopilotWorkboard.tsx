@@ -206,7 +206,7 @@ function deriveFocus(snapshot: AgentPanelSessionSnapshot | null): FocusSection {
   if (snapshot.activeCompareSet.length > 0 || snapshot.status === "comparing") {
     return {
       title: "Compare set",
-      subtitle: "mission 已经进入 compare 判断阶段。",
+      subtitle: "当前 compare 已可汇报，但先不默认推荐第一名。",
       mode: "compare"
     };
   }
@@ -214,8 +214,7 @@ function deriveFocus(snapshot: AgentPanelSessionSnapshot | null): FocusSection {
   if (snapshot.currentShortlist.length > 0) {
     return {
       title: "Top picks right now",
-      subtitle: "当前 mission 的 shortlist 已经形成。"
-      ,
+      subtitle: "当前 shortlist 已经可看，但先不默认推荐第一名。",
       mode: "shortlist"
     };
   }

@@ -13,13 +13,15 @@ import type {
   AgentPanelCandidateSnapshot,
   AgentPanelSearchConditions,
   AgentPanelSessionEvent,
-  AgentPanelSessionSnapshot,
-  AgentPanelSessionStatus
+  AgentPanelSessionSnapshot
 } from "@/lib/agent-panel";
+import {
+  evaluateMissionStopPolicy,
+  type MissionStopReason
+} from "./mission-stop-policy";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
 const MISSION_PAGE_SIZE = 10;
-const MAX_MISSION_ROUNDS = 3;
 
 export type MissionPhase =
   | "running_search"
@@ -30,16 +32,12 @@ export type MissionPhase =
 
 export type MissionStatus = "running" | "converging" | "stopped";
 
-export type MissionStopReason =
-  | "enough_shortlist"
-  | "enough_compare"
-  | "low_marginal_gain"
-  | "needs_user_clarification";
-
 export type MissionCorrectionType =
   | "tighten"
   | "retarget"
   | "stop_or_pause_intent";
+
+export type { MissionStopReason } from "./mission-stop-policy";
 
 interface SearchResultCard {
   personId: string;
@@ -247,20 +245,24 @@ export function useChatSession(): UseChatSessionReturn {
     const topIds = shortlist.slice(0, 3).map((candidate) => candidate.personId);
     const newTop = topIds.filter((id) => !runtime.lastTopIds.includes(id)).length;
     runtime.lastTopIds = topIds;
+    const stopDecision = evaluateMissionStopPolicy({
+      round,
+      shortlist,
+      compareSet,
+      newTop
+    });
 
     shortlistRef.current = shortlist;
     compareSetRef.current = compareSet;
-    recommendedCandidateRef.current = compareSet.length >= 2
+    recommendedCandidateRef.current = stopDecision.shouldRecommend && compareSet.length > 0
       ? {
           candidate: compareSet[0],
-          rationale: "当前 compare 集合已经收敛到可汇报的前几位候选人。",
+          rationale: "当前 compare 集合已经强到可以给出默认推进顺位。",
           createdAt: new Date().toISOString(),
           confidenceLevel: compareSet.length >= 3 ? "high" : "medium"
         }
       : null;
-    uncertaintyRef.current = compareSet.length >= 2
-      ? []
-      : ["候选池还在扩张，compare 还没完全稳定。"];
+    uncertaintyRef.current = stopDecision.uncertainties;
     searchHistoryRef.current = [
       ...searchHistoryRef.current,
       {
@@ -273,12 +275,10 @@ export function useChatSession(): UseChatSessionReturn {
     updateMission((current) => current ? { ...current, roundCount: round } : current);
     syncSnapshot({
       status: compareSet.length >= 2 ? "comparing" : "shortlist",
-      statusSummary: compareSet.length >= 2
-        ? `第 ${round} 轮后 compare 已具备条件。`
-        : `第 ${round} 轮后 shortlist 已更新为 ${shortlist.length} 位候选人。`,
+      statusSummary: stopDecision.statusSummary,
       confidenceStatus: {
-        level: compareSet.length >= 2 ? "medium" : "low",
-        rationale: compareSet.length >= 2 ? "已经有可比较的候选集合。" : "还需要继续扩和收敛。",
+        level: stopDecision.confidenceLevel,
+        rationale: stopDecision.confidenceRationale,
         updatedAt: new Date().toISOString()
       }
     });
@@ -307,14 +307,8 @@ export function useChatSession(): UseChatSessionReturn {
       });
     }
 
-    const stopReason = pickStopReason({
-      round,
-      shortlist,
-      compareSet,
-      newTop
-    });
-
-    if (stopReason) {
+    if (stopDecision.stopReason) {
+      const stopReason = stopDecision.stopReason;
       const stopSummary = summarizeStopReason(stopReason, shortlist, compareSet);
       setMissionPhase("summarizing", stopSummary);
       updateMission((current) => current ? {
@@ -336,8 +330,8 @@ export function useChatSession(): UseChatSessionReturn {
         status: "waiting-input",
         statusSummary: stopSummary,
         confidenceStatus: {
-          level: compareSet.length >= 2 ? "medium" : "low",
-          rationale: stopReason,
+          level: stopDecision.confidenceLevel,
+          rationale: stopDecision.confidenceRationale,
           updatedAt: new Date().toISOString()
         }
       });
@@ -345,7 +339,7 @@ export function useChatSession(): UseChatSessionReturn {
     }
 
     setMissionPhase(compareSet.length >= 2 ? "comparing" : "narrowing", compareSet.length >= 2
-      ? `第 ${round} 轮后进入 compare 判断。`
+      ? `第 ${round} 轮后 compare 已可看，但系统会继续确认，避免过早停止。`
       : `第 ${round} 轮后继续收敛 shortlist。`);
 
     window.setTimeout(() => {
@@ -727,24 +721,6 @@ function mergeResults(current: SearchResultCard[], next: SearchResultCard[]): Se
   return [...byId.values()].sort((left, right) => right.matchScore - left.matchScore);
 }
 
-function pickStopReason(input: {
-  round: number;
-  shortlist: AgentPanelCandidateSnapshot[];
-  compareSet: AgentPanelCandidateSnapshot[];
-  newTop: number;
-}): MissionStopReason | null {
-  if (input.compareSet.length >= 2 && input.round >= 2) {
-    return "enough_compare";
-  }
-  if (input.shortlist.length >= 5 && input.round >= 2) {
-    return "enough_shortlist";
-  }
-  if (input.round >= MAX_MISSION_ROUNDS || (input.round >= 2 && input.newTop === 0)) {
-    return "low_marginal_gain";
-  }
-  return null;
-}
-
 function summarizeStopReason(
   stopReason: MissionStopReason,
   shortlist: AgentPanelCandidateSnapshot[],
@@ -752,13 +728,13 @@ function summarizeStopReason(
 ): string {
   switch (stopReason) {
     case "enough_compare":
-      return `我先停在这里：compare 已经收敛到 ${compareSet.length} 位强候选，可以开始判断了。`;
+      return `我先停在这里，给你当前 compare 集合：已经形成 ${compareSet.length} 位可继续看的强候选，但还不建议直接定第一名。`;
     case "enough_shortlist":
-      return `我先停在这里：已经形成 ${shortlist.length} 位可信 shortlist，继续扩搜的边际收益不高。`;
+      return `我先停在这里，给你一版 shortlist：已经形成 ${shortlist.length} 位可继续看的候选，先不要急着定第一名。`;
     case "needs_user_clarification":
-      return "我先停在这里：方向还不够稳定，继续搜只会放大噪声。你可以再收紧一句方向。";
+      return "我先停在这里：方向还不够稳定，继续自动搜索只会放大噪声。你可以再收紧一句方向。";
     default:
-      return "我先停在这里：继续扩搜没有明显带来更强的新候选，当前 shortlist 已经是更好的汇报点。";
+      return "我先停在这里：继续自动搜索的边际收益已经不高，先看当前 shortlist。";
   }
 }
 

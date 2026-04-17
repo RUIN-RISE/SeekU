@@ -1,5 +1,6 @@
 import { renderHook, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { AgentPanelCandidateSnapshot } from "@/lib/agent-panel";
 
 const localStorageMock = (() => {
   let store: Record<string, string> = {};
@@ -40,6 +41,21 @@ vi.mock("@seeku/llm", () => ({
 }));
 
 import { useChatSession } from "../useChatSession.js";
+import { evaluateMissionStopPolicy } from "../mission-stop-policy.js";
+
+function createCandidateSnapshot(personId: string, name: string, matchScore: number): AgentPanelCandidateSnapshot {
+  return {
+    personId,
+    name,
+    headline: null,
+    location: null,
+    company: null,
+    experienceYears: null,
+    matchScore,
+    queryReasons: [],
+    sources: ["search"]
+  };
+}
 
 function createSearchResponse(results: Array<{
   personId: string;
@@ -90,6 +106,58 @@ describe("useChatSession", () => {
     expect(result.current.messages).toEqual([]);
     expect(result.current.mission).toBeNull();
     expect(result.current.snapshot.status).toBe("idle");
+  });
+
+  it("blocks enough_compare before the exploration floor is met", () => {
+    const decision = evaluateMissionStopPolicy({
+      round: 2,
+      shortlist: [
+        createCandidateSnapshot("p1", "Ada", 0.92),
+        createCandidateSnapshot("p2", "Lin", 0.88)
+      ],
+      compareSet: [
+        createCandidateSnapshot("p1", "Ada", 0.92),
+        createCandidateSnapshot("p2", "Lin", 0.88)
+      ],
+      newTop: 1
+    });
+
+    expect(decision.stopReason).toBeNull();
+    expect(decision.assessment).toBe("exploration_floor_not_met");
+  });
+
+  it("stops for enough_compare once the exploration floor is met", () => {
+    const decision = evaluateMissionStopPolicy({
+      round: 3,
+      shortlist: [
+        createCandidateSnapshot("p1", "Ada", 0.92),
+        createCandidateSnapshot("p2", "Lin", 0.88),
+        createCandidateSnapshot("p3", "Mina", 0.84)
+      ],
+      compareSet: [
+        createCandidateSnapshot("p1", "Ada", 0.92),
+        createCandidateSnapshot("p2", "Lin", 0.88)
+      ],
+      newTop: 1
+    });
+
+    expect(decision.stopReason).toBe("enough_compare");
+    expect(decision.shouldRecommend).toBe(false);
+  });
+
+  it("routes scattered late results to clarification instead of a weak wrap-up", () => {
+    const decision = evaluateMissionStopPolicy({
+      round: 4,
+      shortlist: [
+        createCandidateSnapshot("p1", "Ada", 0.79),
+        createCandidateSnapshot("p2", "Lin", 0.74)
+      ],
+      compareSet: [],
+      newTop: 2
+    });
+
+    expect(decision.stopReason).toBe("needs_user_clarification");
+    expect(decision.assessment).toBe("clarification_blocked");
   });
 
   it("starts a bounded search mission from the first user message", async () => {
@@ -163,8 +231,11 @@ describe("useChatSession", () => {
     });
 
     expect(result.current.mission?.phase).toBe("stopped");
-    expect(result.current.mission?.stopReason).toBeDefined();
+    expect(result.current.mission?.stopReason).toBe("enough_compare");
     expect(result.current.snapshot.status).toBe("waiting-input");
+    expect(result.current.snapshot.recommendedCandidate).toBeNull();
+    expect(result.current.snapshot.activeCompareSet.length).toBeGreaterThanOrEqual(2);
+    expect(result.current.messages[result.current.messages.length - 1]?.content).toContain("还不建议直接定第一名");
     expect(result.current.messages[result.current.messages.length - 1]?.toolResult?.results.length).toBeGreaterThan(0);
   }, 15000);
 
