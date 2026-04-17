@@ -2,6 +2,22 @@
 
 Earlier milestone history before explicit archival discipline remains in git and the phase summaries under `.planning/phases/`.
 
+## v1.4 Daily Deal Flow (Shipped: 2026-04-17)
+
+**Phases completed:** 1 phase, 4 plans, 4 delivered batches
+
+**Key accomplishments:**
+- Seeku now ships a proactive in-product daily deal flow that turns the existing evidence corpus into a ranked list of people worth contacting today instead of waiting for a reactive search.
+- Added shared goal-direction modeling, candidate public-expression direction profiling, and a direction-first opportunity scorer above the existing search/runtime foundation.
+- Added a dedicated `/deal-flow` surface with actionable candidate cards that explain `why this person`, `why now`, `how to approach`, and how confident the system is.
+- Added explicit feedback and implicit interaction capture that measurably change later deal-flow output, including drift-note handling when recent behavior diverges from the explicit long-term goal.
+
+**Archives:**
+- `.planning/milestones/v1.4-ROADMAP.md`
+- `.planning/milestones/v1.4-REQUIREMENTS.md`
+
+---
+
 ## v1.3 Visible Agent Copilot (Shipped: 2026-04-17)
 
 **Phases completed:** 1 phase, 4 plans, 4 delivered batches

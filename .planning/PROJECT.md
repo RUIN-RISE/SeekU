@@ -10,28 +10,34 @@ Seeku is an evidence-driven AI talent search engine. Its current primary operato
 
 ## Current State
 
-- Current milestone: `v1.4 Daily Deal Flow`
-- Latest shipped milestone: `v1.3 Visible Agent Copilot`
-- Previous shipped milestone: `v1.2 Agentic Search CLI`
+- Current milestone: none active
+- Latest shipped milestone: `v1.4 Daily Deal Flow`
+- Previous shipped milestone: `v1.3 Visible Agent Copilot`
 - Milestone archives:
+  - `.planning/milestones/v1.4-ROADMAP.md`
+  - `.planning/milestones/v1.4-REQUIREMENTS.md`
   - `.planning/milestones/v1.3-ROADMAP.md`
   - `.planning/milestones/v1.2-ROADMAP.md`
 - Requirements archives:
+  - `.planning/milestones/v1.4-REQUIREMENTS.md`
   - `.planning/milestones/v1.3-REQUIREMENTS.md`
   - `.planning/milestones/v1.2-REQUIREMENTS.md`
-- Current status: `v1.4` planned and ready to execute
-- Current focus: validate a proactive daily cofounder deal flow above the shipped search-agent and visible-copilot baseline
+- Current status: `v1.4` shipped and archived
+- Current focus: choose the next milestone now that the first proactive deal-flow loop is live
 
-## Current Milestone: v1.4 Daily Deal Flow
+## Shipped In v1.4
 
-**Goal:** Turn Seeku into a proactive daily cofounder opportunity product that understands the user's goal direction and assembles a daily list of people worth contacting.
-
-**Target features:**
-- daily in-product deal flow generated from the existing Seeku corpus
-- goal-direction scoring and candidate public-expression profiling
-- actionable candidate cards with `why this person`, `why now`, `how to approach`, and confidence
-- explicit and implicit feedback loops that affect subsequent lists
-- short drift-note handling when recent behavior diverges from explicit long-term goals
+- Shared direction taxonomy, candidate direction profiling, and user goal modeling in the search domain layer
+- Interpretable opportunity scoring and daily curation with direction-first ranking semantics
+- Dedicated `/deal-flow` page with:
+  - top-three daily priorities
+  - more-opportunities queue
+  - `why this person`
+  - `why now`
+  - `how to approach`
+  - confidence and uncertainty cues
+- Explicit and implicit feedback capture that changes later deal-flow output
+- Drift-note handling when recent behavior diverges from the explicit long-term goal
 
 ## Shipped In v1.3
 
@@ -61,18 +67,19 @@ Seeku is an evidence-driven AI talent search engine. Its current primary operato
 - `Q4` is still a watch item even though the sustain gate is clear.
 - The CLI runtime must remain the single source of truth for shortlist, compare, recommendation, and uncertainty state.
 - The shipped visible panel is a local copilot surface, not a full operator console and not a second runtime.
-- `v1.4` should validate the proactive opportunity loop before adding external delivery, CRM, or corpus expansion.
+- The shipped daily deal flow is still process-local in its learning loop and does not yet persist user-state durably.
+- External delivery, CRM, and corpus expansion are still out of scope until the next milestone explicitly pulls them in.
 
 ## Next Milestone Goals
 
-`v1.4 Daily Deal Flow` is now the active milestone.
+No active milestone is open yet.
 
-The milestone should prove:
+The next milestone should decide whether Seeku goes deeper on:
 
-- proactive daily opportunity generation from the existing corpus
-- direction-first cofounder matching
-- feedback-driven next-day list evolution
-- honest uncertainty handling for low-confidence opportunities
+- durable learning and persistence for the proactive loop
+- external delivery or outreach assistance
+- richer operator workflow beyond the current in-product list
+- broader sourcing beyond the current corpus
 
 ## Key Decisions
 
@@ -100,4 +107,4 @@ This document evolves at phase transitions and milestone boundaries.
 3. Archive requirements and roadmap before opening the next milestone.
 
 ---
-*Last updated: 2026-04-17 after starting milestone v1.4 Daily Deal Flow*
+*Last updated: 2026-04-17 after archiving milestone v1.4 Daily Deal Flow*

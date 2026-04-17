@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.4
-milestone_name: Daily Deal Flow
-status: phase complete; v1.4 daily deal flow ready for milestone wrap-up
-stopped_at: 09-04 complete; next move is milestone wrap-up or next milestone planning
-last_updated: "2026-04-17T18:40:00.000Z"
+milestone: none
+milestone_name: none active
+status: no active milestone; v1.4 archived and project ready for next milestone planning
+stopped_at: milestone v1.4 archived; next move is define the next milestone
+last_updated: "2026-04-17T18:55:00.000Z"
 progress:
-  total_phases: 1
-  completed_phases: 1
-  total_plans: 4
-  completed_plans: 4
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
@@ -22,35 +22,36 @@ See:
 - `.planning/MILESTONES.md`
 
 **Core value:** Find the right AI talent through what they've done, not what they claim. Evidence-based matching over profile text matching.
-**Current focus:** `v1.4 Daily Deal Flow` is implemented; the next step is milestone wrap-up, archive, or routing into the next milestone.
+**Current focus:** `v1.4 Daily Deal Flow` is archived; the next step is opening the next milestone from a clean planning surface.
 
 ## Current Position
 
-- Active milestone: `v1.4 Daily Deal Flow`
-- Current phase: `09 Daily Deal Flow` complete
+- Active milestone: none
+- Current phase: none
 - Current plan: none; phase execution finished
-- Status: `09-04` complete; milestone is ready for wrap-up
-- Last activity: 2026-04-17 — completed `09-04` drift logic, learning loop, and acceptance
+- Status: `v1.4 Daily Deal Flow` archived; project is ready for the next milestone
+- Last activity: 2026-04-17 — archived milestone `v1.4 Daily Deal Flow`
 
 ## Latest Shipped Milestone
 
-- milestone: `v1.3 Visible Agent Copilot`
-- roadmap archive: `.planning/milestones/v1.3-ROADMAP.md`
-- requirements archive: `.planning/milestones/v1.3-REQUIREMENTS.md`
-- phase summary: `.planning/phases/08-cli-agent-panel/SUMMARY.md`
+- milestone: `v1.4 Daily Deal Flow`
+- roadmap archive: `.planning/milestones/v1.4-ROADMAP.md`
+- requirements archive: `.planning/milestones/v1.4-REQUIREMENTS.md`
+- phase summary: `.planning/phases/09-daily-deal-flow/04-SUMMARY.md`
 
 ## Latest Archive Snapshot
 
 - archived on: 2026-04-17
 - delivered:
-  - CLI runtime session events and local bridge for visible copilot flows
-  - dual-column agent panel with bounded interventions
-  - hardening for reconnect, rejection, and missing-session paths
-  - archived milestone roadmap and requirements for `v1.3`
+  - proactive daily deal flow generation on top of the existing Seeku corpus
+  - direction-first opportunity scoring and candidate direction profiling
+  - dedicated `/deal-flow` surface with explanations, feedback actions, and evidence expansion
+  - drift handling plus feedback-driven learning-loop behavior
 - verification:
-  - `pnpm exec tsx apps/worker/src/cli.ts agent-eval --json`
-  - `pnpm --filter @seeku/worker typecheck`
-  - `pnpm --filter @seeku/web typecheck` still fails on pre-existing issues in `apps/web/src/components/CandidateDetailModal.tsx` and `apps/web/src/components/ClaimForm.tsx`
+  - `pnpm --filter @seeku/search build`
+  - `pnpm exec vitest run packages/search/src/__tests__/daily-deal-flow.test.ts packages/search/src/__tests__/daily-deal-flow-ranking.test.ts apps/api/src/routes/__tests__/deal-flow.test.ts apps/web/src/components/__tests__/DealFlowBoard.test.ts`
+  - `pnpm exec tsc -p packages/search/tsconfig.json --noEmit`
+  - `pnpm exec tsc -p apps/web/tsconfig.json --noEmit`
 
 ## Carry-forward Quality Guardrails
 
@@ -64,12 +65,11 @@ See:
 
 ## Previous Shipped Milestone Snapshot
 
-- completion summary: `.planning/phases/07-cli-search-agent-orchestration/SUMMARY.md`
-- previous shipped milestone: `v1.2 Agentic Search CLI`
+- completion summary: `.planning/phases/08-cli-agent-panel/SUMMARY.md`
+- previous shipped milestone: `v1.3 Visible Agent Copilot`
 - verification:
-  - worker validation: `9` files / `80` tests pass
-  - `agent-eval --json`: pass
-  - acceptance fixtures: `12 / 12`
+  - local bridge and panel tests: pass
+  - worker regression and policy tests: pass
   - saved regression baselines:
     - `Q4`: `watch-but-stable`
     - `Q6`: `pass`
@@ -78,4 +78,4 @@ See:
 ## Session Continuity
 
 Last session: 2026-04-17
-Stopped at: `09-04` complete; next route is milestone wrap-up or next milestone planning.
+Stopped at: milestone `v1.4` archived; next route is next milestone planning.
