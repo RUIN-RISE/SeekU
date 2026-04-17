@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.5
-milestone_name: Chat-First Copilot
-status: active milestone; requirements and roadmap defined for v1.5
-stopped_at: phase 10 planning ready; next move is create or execute detailed phase plans
-last_updated: "2026-04-17T20:30:00.000Z"
+milestone: null
+milestone_name: null
+status: no active milestone; v1.5 archived as shipped
+stopped_at: milestone v1.5 completed and archived; next move is open the next milestone
+last_updated: "2026-04-18T00:50:18.000Z"
 progress:
-  total_phases: 1
-  completed_phases: 0
-  total_plans: 4
-  completed_plans: 0
+  total_phases: 2
+  completed_phases: 2
+  total_plans: 8
+  completed_plans: 8
 ---
 
 # Project State
@@ -22,36 +22,37 @@ See:
 - `.planning/MILESTONES.md`
 
 **Core value:** Find the right AI talent through what they've done, not what they claim. Evidence-based matching over profile text matching.
-**Current focus:** `v1.5 Chat-First Copilot` is open; the next step is planning and executing Phase 10.
+**Current focus:** `v1.5 Chat-First Copilot` is shipped and archived; the next step is defining the next milestone.
 
 ## Current Position
 
-- Active milestone: `v1.5 Chat-First Copilot`
-- Current phase: `Phase 10: Chat-First Copilot`
-- Current plan: planning not started; roadmap and requirements defined
-- Status: milestone opened; phase context ready for detailed plan creation
-- Last activity: 2026-04-17 — opened milestone `v1.5 Chat-First Copilot`
+- Active milestone: none
+- Current phase: none
+- Current plan: none
+- Status: `v1.5 Chat-First Copilot` completed and archived
+- Last activity: 2026-04-18 — archived milestone `v1.5 Chat-First Copilot`
 
 ## Latest Shipped Milestone
 
-- milestone: `v1.4 Daily Deal Flow`
-- roadmap archive: `.planning/milestones/v1.4-ROADMAP.md`
-- requirements archive: `.planning/milestones/v1.4-REQUIREMENTS.md`
-- phase summary: `.planning/phases/09-daily-deal-flow/04-SUMMARY.md`
+- milestone: `v1.5 Chat-First Copilot`
+- roadmap archive: `.planning/milestones/v1.5-ROADMAP.md`
+- requirements archive: `.planning/milestones/v1.5-REQUIREMENTS.md`
+- phase summaries:
+  - `.planning/phases/10-chat-first-copilot/SUMMARY.md`
+  - `.planning/phases/11-bounded-mission-runner/SUMMARY.md`
 
 ## Latest Archive Snapshot
 
-- archived on: 2026-04-17
+- archived on: 2026-04-18
 - delivered:
-  - proactive daily deal flow generation on top of the existing Seeku corpus
-  - direction-first opportunity scoring and candidate direction profiling
-  - dedicated `/deal-flow` surface with explanations, feedback actions, and evidence expansion
-  - drift handling plus feedback-driven learning-loop behavior
+  - `/chat` promoted to the default primary operator surface
+  - read-only narrated session workboard with `Now / Why / Movement / Focus`
+  - session-scoped integration of shortlist, compare posture, recommendation posture, and proactive top picks
+  - bounded foreground mission runner for large-scope candidate search with explicit stop reasons and natural-language correction
 - verification:
-  - `pnpm --filter @seeku/search build`
-  - `pnpm exec vitest run packages/search/src/__tests__/daily-deal-flow.test.ts packages/search/src/__tests__/daily-deal-flow-ranking.test.ts apps/api/src/routes/__tests__/deal-flow.test.ts apps/web/src/components/__tests__/DealFlowBoard.test.ts`
-  - `pnpm exec tsc -p packages/search/tsconfig.json --noEmit`
-  - `pnpm exec tsc -p apps/web/tsconfig.json --noEmit`
+  - `pnpm exec vitest run apps/web/src/hooks/__tests__/useChatSession.test.ts`
+  - `pnpm exec vitest run apps/web/src/lib/__tests__/chat-session.test.ts apps/web/src/hooks/__tests__/useChatSession.test.ts apps/web/src/hooks/__tests__/useAgentPanelSession.test.ts apps/web/src/components/__tests__/AgentPanel.test.ts apps/web/src/components/__tests__/ChatCopilotWorkboard.test.ts apps/web/src/components/__tests__/DealFlowBoard.test.ts apps/web/src/components/__tests__/Header.test.ts`
+  - targeted web regression posture: `7 / 7` files, `43 / 43` tests pass
 
 ## Carry-forward Quality Guardrails
 
@@ -61,22 +62,19 @@ See:
   - `Q8`: `pass`
 - Do not reopen discovery or GitHub expansion by default.
 - Keep recommendation honesty, compare gating, and CLI runtime authority intact.
-- Validate the proactive deal flow on top of the existing corpus before adding external delivery or corpus expansion.
+- Validate future mission-quality replay on top of the shipped chat-first shell before expanding mission scope or delivery workflow.
 - Keep the new right rail read-only and avoid introducing a second browser-owned business state model.
 
 ## Previous Shipped Milestone Snapshot
 
-- completion summary: `.planning/phases/08-cli-agent-panel/SUMMARY.md`
-- previous shipped milestone: `v1.3 Visible Agent Copilot`
+- completion summary: `.planning/phases/09-daily-deal-flow/04-SUMMARY.md`
+- previous shipped milestone: `v1.4 Daily Deal Flow`
 - verification:
-  - local bridge and panel tests: pass
-  - worker regression and policy tests: pass
-  - saved regression baselines:
-    - `Q4`: `watch-but-stable`
-    - `Q6`: `pass`
-    - `Q8`: `pass`
+  - search build: pass
+  - proactive-layer regression tests: pass
+  - `apps/web` typecheck: pass
 
 ## Session Continuity
 
-Last session: 2026-04-17
-Stopped at: milestone `v1.5` opened with active requirements, roadmap, and Phase 10 context; next route is detailed phase planning.
+Last session: 2026-04-18
+Stopped at: milestone `v1.5` archived after Phase 10/11 closeout, mission-quality acceptance, and roadmap/requirements archival; next route is opening the next milestone.

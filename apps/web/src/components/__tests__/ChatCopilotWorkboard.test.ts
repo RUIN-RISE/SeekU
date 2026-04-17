@@ -270,6 +270,109 @@ describe("ChatCopilotWorkboardView", () => {
     expect(screen.getByText(/请再补一句更紧的方向/)).toBeTruthy();
   });
 
+  it("keeps shortlist framing when the mission stops with a reportable shortlist", () => {
+    render(
+      React.createElement(ChatCopilotWorkboardView, {
+        snapshot: {
+          ...SNAPSHOT,
+          status: "waiting-input",
+          statusSummary: "我先停下来给你一版 shortlist。",
+          currentShortlist: [
+            ...SNAPSHOT.currentShortlist,
+            {
+              personId: "person-3",
+              name: "Mina",
+              headline: "Applied AI Lead",
+              location: "北京",
+              company: "Agent Lab",
+              experienceYears: 9,
+              matchScore: 0.84,
+              queryReasons: ["带过 agent 团队"],
+              sources: ["GitHub"]
+            },
+            {
+              personId: "person-4",
+              name: "Rui",
+              headline: "AI Platform Manager",
+              location: "深圳",
+              company: "Infra Works",
+              experienceYears: 11,
+              matchScore: 0.81,
+              queryReasons: ["平台经验完整"],
+              sources: ["GitHub"]
+            }
+          ],
+          activeCompareSet: [SNAPSHOT.currentShortlist[0]],
+          recommendedCandidate: null,
+          openUncertainties: ["当前 shortlist 已经可看，但默认先不直接推荐第一名。"]
+        },
+        events: EVENTS,
+        mission: {
+          ...MISSION,
+          phase: "stopped",
+          status: "stopped",
+          roundCount: 3,
+          latestSummary: "我先停下来给你一版 shortlist。",
+          stopReason: "enough_shortlist"
+        },
+        dealFlowData: null,
+        dealFlowError: null,
+        isDealFlowLoading: false
+      })
+    );
+
+    expect(screen.getByText("Mission stopped")).toBeTruthy();
+    expect(screen.getByText("Top picks right now")).toBeTruthy();
+    expect(screen.getAllByText(/当前 shortlist 已经可看/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText("Compare set")).toBeNull();
+  });
+
+  it("keeps shortlist framing when the mission stops on low marginal gain", () => {
+    render(
+      React.createElement(ChatCopilotWorkboardView, {
+        snapshot: {
+          ...SNAPSHOT,
+          status: "waiting-input",
+          statusSummary: "我先停下来给你当前 shortlist。",
+          currentShortlist: [
+            ...SNAPSHOT.currentShortlist,
+            {
+              personId: "person-3",
+              name: "Tao",
+              headline: "Runtime Engineer",
+              location: "上海",
+              company: "Builder Lab",
+              experienceYears: 7,
+              matchScore: 0.79,
+              queryReasons: ["runtime 方向贴合"],
+              sources: ["GitHub"]
+            }
+          ],
+          activeCompareSet: [],
+          recommendedCandidate: null,
+          openUncertainties: ["当前 shortlist 可以先看，但证据还不够强，不建议直接定第一名。"]
+        },
+        events: EVENTS,
+        mission: {
+          ...MISSION,
+          phase: "stopped",
+          status: "stopped",
+          roundCount: 3,
+          latestSummary: "我先停下来给你当前 shortlist。",
+          stopReason: "low_marginal_gain"
+        },
+        dealFlowData: null,
+        dealFlowError: null,
+        isDealFlowLoading: false
+      })
+    );
+
+    expect(screen.getByText("Mission stopped")).toBeTruthy();
+    expect(screen.getByText("Top picks right now")).toBeTruthy();
+    expect(screen.getByText(/不建议直接定第一名/)).toBeTruthy();
+    expect(screen.queryByText("Compare set")).toBeNull();
+  });
+
   it("shows idle guidance when no session is attached", () => {
     render(
       React.createElement(ChatCopilotWorkboardView, {

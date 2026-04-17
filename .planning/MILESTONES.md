@@ -2,6 +2,22 @@
 
 Earlier milestone history before explicit archival discipline remains in git and the phase summaries under `.planning/phases/`.
 
+## v1.5 Chat-First Copilot (Shipped: 2026-04-18)
+
+**Phases completed:** 2 phases, 8 plans, 8 delivered batches
+
+**Key accomplishments:**
+- Seeku now uses `/chat` as the default primary operator surface instead of splitting the product across chat, panel, and deal-flow first-class entry points.
+- Added a narrated, read-only session workboard that folds runtime posture, shortlist/compare state, recommendation posture, and proactive top picks into one session-centric right rail.
+- Added a bounded foreground mission runner for large-scope candidate search with explicit phases, stop reasons, and natural-language course correction.
+- Hardened mission stop behavior so the product defaults to shortlist-first or compare-first reporting rather than premature top1 recommendation, and routes noisy missions to clarification.
+
+**Archives:**
+- `.planning/milestones/v1.5-ROADMAP.md`
+- `.planning/milestones/v1.5-REQUIREMENTS.md`
+
+---
+
 ## v1.4 Daily Deal Flow (Shipped: 2026-04-17)
 
 **Phases completed:** 1 phase, 4 plans, 4 delivered batches

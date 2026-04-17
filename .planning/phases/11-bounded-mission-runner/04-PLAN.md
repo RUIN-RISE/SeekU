@@ -30,6 +30,7 @@ Verify that the bounded mission runner improves task horizon without weakening c
 - stop-reason acceptance coverage
 - preserved saved posture for `Q4`, `Q6`, and `Q8`
 - milestone acceptance checklist pass
+- overnight execution package: `11-04-MISSION-QUALITY-LONG-TASK-2026-04-18.md`
 
 ## Exit Criteria
 

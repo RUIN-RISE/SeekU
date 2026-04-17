@@ -10,20 +10,44 @@ Seeku is an evidence-driven AI talent search engine. Its current primary operato
 
 ## Current State
 
-- Current milestone: `v1.5 Chat-First Copilot`
-- Latest shipped milestone: `v1.4 Daily Deal Flow`
+- Current milestone: none active
+- Latest shipped milestone: `v1.5 Chat-First Copilot`
 - Previous shipped milestone: `v1.3 Visible Agent Copilot`
 - Milestone archives:
+  - `.planning/milestones/v1.5-ROADMAP.md`
+  - `.planning/milestones/v1.5-REQUIREMENTS.md`
   - `.planning/milestones/v1.4-ROADMAP.md`
   - `.planning/milestones/v1.4-REQUIREMENTS.md`
   - `.planning/milestones/v1.3-ROADMAP.md`
   - `.planning/milestones/v1.2-ROADMAP.md`
 - Requirements archives:
+  - `.planning/milestones/v1.5-REQUIREMENTS.md`
   - `.planning/milestones/v1.4-REQUIREMENTS.md`
   - `.planning/milestones/v1.3-REQUIREMENTS.md`
   - `.planning/milestones/v1.2-REQUIREMENTS.md`
-- Current status: `v1.5` opened for planning
-- Current focus: unify chat, visible copilot, and deal flow into one chat-first session product
+- Current status: `v1.5` archived as shipped
+- Current focus: define the next milestone on top of the shipped chat-first copilot and bounded mission runner foundation
+
+## Shipped In v1.5
+
+- `/chat` is now the default primary operator surface
+- a narrated, read-only session workboard shows:
+  - `Now`
+  - `Why`
+  - `Movement`
+  - `Focus`
+- shortlist, compare posture, recommendation posture, and proactive top picks now live inside one session-centric chat-first surface
+- legacy `/agent-panel/[sessionId]` routes now redirect into the chat-first shell
+- a bounded foreground mission runner now supports:
+  - one active mission per session
+  - multi-round large-scope candidate search
+  - natural-language `tighten`, `retarget`, and stop/pause correction
+  - explicit stop reasons:
+    - `enough_shortlist`
+    - `enough_compare`
+    - `low_marginal_gain`
+    - `needs_user_clarification`
+- mission stop posture now defaults to shortlist-first / compare-first rather than premature `top1`
 
 ## Shipped In v1.4
 
@@ -70,16 +94,14 @@ Seeku is an evidence-driven AI talent search engine. Its current primary operato
 - The shipped daily deal flow is still process-local in its learning loop and does not yet persist user-state durably.
 - External delivery, CRM, and corpus expansion are still out of scope until the next milestone explicitly pulls them in.
 
-## Current Milestone: v1.5 Chat-First Copilot
+## Next Milestone Goals
 
-**Goal:** Turn `/chat` into Seeku's primary operator surface with a narrated, read-only session workboard that folds visible copilot state and deal-flow outputs into one chat-first experience.
-
-**Target features:**
-- chat-first split layout with a read-only right rail
-- narrated session workboard sections: `Now`, `Why`, `Movement`, `Focus`
-- reuse of the existing authoritative session snapshot and event stream
-- integration of shortlist, compare posture, recommendation posture, and `Top 3 today` into the current session view
-- compatible rollout path for `/agent-panel/[sessionId]` and `/deal-flow`
+- not defined yet
+- open the next milestone with a fresh `REQUIREMENTS.md`
+- decide whether the next step is:
+  - deeper mission-quality replay on live distributions
+  - mission expansion beyond first search scope
+  - operator workflow on top of the shipped chat-first surface
 
 ## Key Decisions
 
@@ -108,4 +130,4 @@ This document evolves at phase transitions and milestone boundaries.
 3. Archive requirements and roadmap before opening the next milestone.
 
 ---
-*Last updated: 2026-04-17 after opening milestone v1.5 Chat-First Copilot*
+*Last updated: 2026-04-18 after shipping milestone v1.5 Chat-First Copilot*

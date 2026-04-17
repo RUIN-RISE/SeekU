@@ -77,6 +77,17 @@ function createSearchResponse(results: Array<{
   };
 }
 
+function queueMissionResponses(...responses: Array<ReturnType<typeof createSearchResponse>>) {
+  const queue = [...responses];
+  mockFetch.mockImplementation(async () => {
+    const next = queue.shift() ?? createSearchResponse([], 0);
+    return {
+      ok: true,
+      json: async () => next
+    };
+  });
+}
+
 describe("useChatSession", () => {
   beforeEach(() => {
     vi.useRealTimers();
@@ -239,6 +250,100 @@ describe("useChatSession", () => {
     expect(result.current.messages[result.current.messages.length - 1]?.toolResult?.results.length).toBeGreaterThan(0);
   }, 15000);
 
+  it("stops at shortlist first for converging missions instead of forcing a top1", async () => {
+    vi.useFakeTimers();
+    queueMissionResponses(
+      createSearchResponse([
+        { personId: "p1", name: "Ada", matchScore: 0.92 },
+        { personId: "p2", name: "Lin", matchScore: 0.74 }
+      ], 20),
+      createSearchResponse([
+        { personId: "p3", name: "Mina", matchScore: 0.73 },
+        { personId: "p4", name: "Rui", matchScore: 0.72 }
+      ], 20),
+      createSearchResponse([
+        { personId: "p5", name: "Tao", matchScore: 0.71 }
+      ], 20)
+    );
+
+    const { result } = renderHook(() => useChatSession());
+
+    await act(async () => {
+      await result.current.sendMessage("找上海的 AI 工程师");
+      await vi.runAllTimersAsync();
+    });
+
+    expect(result.current.mission?.phase).toBe("stopped");
+    expect(result.current.mission?.stopReason).toBe("enough_shortlist");
+    expect(result.current.snapshot.status).toBe("waiting-input");
+    expect(result.current.snapshot.currentShortlist).toHaveLength(5);
+    expect(result.current.snapshot.activeCompareSet).toHaveLength(1);
+    expect(result.current.snapshot.recommendedCandidate).toBeNull();
+    expect(result.current.messages[result.current.messages.length - 1]?.content).toContain("给你一版 shortlist");
+    expect(result.current.messages[result.current.messages.length - 1]?.content).toContain("先不要急着定第一名");
+  }, 15000);
+
+  it("stops on low marginal gain when the shortlist stays thin but stable", async () => {
+    vi.useFakeTimers();
+    queueMissionResponses(
+      createSearchResponse([
+        { personId: "p1", name: "Ada", matchScore: 0.74 },
+        { personId: "p2", name: "Lin", matchScore: 0.73 }
+      ], 20),
+      createSearchResponse([
+        { personId: "p3", name: "Mina", matchScore: 0.72 }
+      ], 20),
+      createSearchResponse([], 20)
+    );
+
+    const { result } = renderHook(() => useChatSession());
+
+    await act(async () => {
+      await result.current.sendMessage("找偏 agent runtime 的工程师");
+      await vi.runAllTimersAsync();
+    });
+
+    expect(result.current.mission?.phase).toBe("stopped");
+    expect(result.current.mission?.stopReason).toBe("low_marginal_gain");
+    expect(result.current.snapshot.status).toBe("waiting-input");
+    expect(result.current.snapshot.currentShortlist).toHaveLength(3);
+    expect(result.current.snapshot.activeCompareSet).toHaveLength(0);
+    expect(result.current.snapshot.recommendedCandidate).toBeNull();
+    expect(result.current.snapshot.openUncertainties[0]).toContain("不建议直接定第一名");
+    expect(result.current.messages[result.current.messages.length - 1]?.content).toContain("边际收益已经不高");
+  }, 15000);
+
+  it("stops for clarification when late rounds still reshuffle a weak shortlist", async () => {
+    vi.useFakeTimers();
+    queueMissionResponses(
+      createSearchResponse([
+        { personId: "p1", name: "Ada", matchScore: 0.74 },
+        { personId: "p2", name: "Lin", matchScore: 0.7 }
+      ], 20),
+      createSearchResponse([], 20),
+      createSearchResponse([
+        { personId: "p3", name: "Mina", matchScore: 0.73 },
+        { personId: "p4", name: "Rui", matchScore: 0.72 }
+      ], 20)
+    );
+
+    const { result } = renderHook(() => useChatSession());
+
+    await act(async () => {
+      await result.current.sendMessage("帮我发散找多智能体负责人");
+      await vi.runAllTimersAsync();
+    });
+
+    expect(result.current.mission?.phase).toBe("stopped");
+    expect(result.current.mission?.stopReason).toBe("needs_user_clarification");
+    expect(result.current.snapshot.status).toBe("waiting-input");
+    expect(result.current.snapshot.currentShortlist).toHaveLength(4);
+    expect(result.current.snapshot.activeCompareSet).toHaveLength(0);
+    expect(result.current.snapshot.recommendedCandidate).toBeNull();
+    expect(result.current.snapshot.openUncertainties[0]).toContain("请再补一句更紧的方向");
+    expect(result.current.messages[result.current.messages.length - 1]?.content).toContain("你可以再收紧一句方向");
+  }, 15000);
+
   it("applies mid-run course correction within the same mission", async () => {
     vi.useFakeTimers();
     mockFetch.mockImplementation(async (_url: string, options?: RequestInit) => {
@@ -290,6 +395,85 @@ describe("useChatSession", () => {
     expect(result.current.mission?.corrections.length).toBe(1);
     expect(result.current.mission?.phase).toBe("stopped");
     expect(result.current.snapshot.status).toBe("waiting-input");
+  }, 15000);
+
+  it("supports retarget corrections without spawning a new mission", async () => {
+    vi.useFakeTimers();
+    mockFetch.mockImplementation(async (_url: string, options?: RequestInit) => {
+      const body = JSON.parse(String(options?.body ?? "{}"));
+      const query = String(body.query ?? "");
+
+      if (query.includes("换成产品负责人")) {
+        return {
+          ok: true,
+          json: async () => createSearchResponse([
+            { personId: "p5", name: "Nora", matchScore: 0.93 },
+            { personId: "p6", name: "Kai", matchScore: 0.88 }
+          ], 20)
+        };
+      }
+
+      return {
+        ok: true,
+        json: async () => createSearchResponse([
+          { personId: "p1", name: "Ada", matchScore: 0.79 },
+          { personId: "p2", name: "Lin", matchScore: 0.76 }
+        ], 20)
+      };
+    });
+
+    const { result } = renderHook(() => useChatSession());
+
+    await act(async () => {
+      await result.current.sendMessage("找 AI 工程师");
+    });
+
+    const missionId = result.current.mission?.missionId;
+
+    await act(async () => {
+      await result.current.sendMessage("换成产品负责人，更看上海");
+      await vi.runAllTimersAsync();
+    });
+
+    expect(result.current.mission?.missionId).toBe(missionId);
+    expect(result.current.mission?.corrections).toHaveLength(1);
+    expect(result.current.mission?.corrections[0]?.type).toBe("retarget");
+    expect(result.current.events.some((event) =>
+      event.type === "conditions_updated" && event.data?.correctionType === "retarget"
+    )).toBe(true);
+    expect(result.current.messages.some((message) =>
+      message.role === "assistant" && message.content.includes("按这个方向继续当前 mission")
+    )).toBe(true);
+  }, 15000);
+
+  it("stops cleanly when the user asks to pause and show current results", async () => {
+    vi.useFakeTimers();
+    queueMissionResponses(
+      createSearchResponse([
+        { personId: "p1", name: "Ada", matchScore: 0.91 },
+        { personId: "p2", name: "Lin", matchScore: 0.83 }
+      ], 20)
+    );
+
+    const { result } = renderHook(() => useChatSession());
+
+    await act(async () => {
+      await result.current.sendMessage("找上海的 AI 工程师");
+      await vi.advanceTimersByTimeAsync(120);
+    });
+
+    const missionId = result.current.mission?.missionId;
+
+    await act(async () => {
+      await result.current.sendMessage("先停一下，直接汇报");
+    });
+
+    expect(result.current.mission?.missionId).toBe(missionId);
+    expect(result.current.mission?.phase).toBe("stopped");
+    expect(result.current.mission?.stopReason).toBe("enough_compare");
+    expect(result.current.snapshot.status).toBe("waiting-input");
+    expect(result.current.messages[result.current.messages.length - 1]?.content).toContain("收到，我先停在这里并给你当前结果");
+    expect(result.current.messages[result.current.messages.length - 1]?.content).toContain("当前 compare 集合");
   }, 15000);
 
   it("reset clears mission, messages, and snapshot state", async () => {

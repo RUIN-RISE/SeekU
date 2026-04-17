@@ -203,7 +203,7 @@ function deriveFocus(snapshot: AgentPanelSessionSnapshot | null): FocusSection {
     };
   }
 
-  if (snapshot.activeCompareSet.length > 0 || snapshot.status === "comparing") {
+  if (snapshot.activeCompareSet.length >= 2 || snapshot.status === "comparing") {
     return {
       title: "Compare set",
       subtitle: "当前 compare 已可汇报，但先不默认推荐第一名。",
