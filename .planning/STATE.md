@@ -1,14 +1,14 @@
 ---
 gsd_state_version: 1.0
-milestone: null
-milestone_name: null
-status: ready for next milestone definition
-stopped_at: v1.3 archived; next default move is define the next milestone
-last_updated: "2026-04-17T07:20:00.000Z"
+milestone: v1.4
+milestone_name: Daily Deal Flow
+status: phase planned; ready for execution
+stopped_at: v1.4 planned from approved daily deal flow spec; next move is execute Phase 09
+last_updated: "2026-04-17T13:25:00.000Z"
 progress:
-  total_phases: 0
+  total_phases: 1
   completed_phases: 0
-  total_plans: 0
+  total_plans: 4
   completed_plans: 0
 ---
 
@@ -22,15 +22,15 @@ See:
 - `.planning/MILESTONES.md`
 
 **Core value:** Find the right AI talent through what they've done, not what they claim. Evidence-based matching over profile text matching.
-**Current focus:** `v1.3 Visible Agent Copilot` is shipped; the next step is to define the next milestone.
+**Current focus:** `v1.4 Daily Deal Flow` is planned; the next step is to execute Phase 09 on top of the shipped search-agent and visible-copilot baseline.
 
 ## Current Position
 
-- Active milestone: none
-- Current phase: none
-- Current plan: none
-- Status: `v1.3 Visible Agent Copilot` archived
-- Last activity: 2026-04-17 — archived milestone `v1.3` and reset planning state for next milestone definition
+- Active milestone: `v1.4 Daily Deal Flow`
+- Current phase: `09 Daily Deal Flow`
+- Current plan: planned, not yet started
+- Status: Phase context and plan set created; execution not started
+- Last activity: 2026-04-17 — opened milestone `v1.4`, created active requirements, roadmap, and Phase 09 plans
 
 ## Latest Shipped Milestone
 
@@ -60,6 +60,7 @@ See:
   - `Q8`: `pass`
 - Do not reopen discovery or GitHub expansion by default.
 - Keep recommendation honesty, compare gating, and CLI runtime authority intact.
+- Validate the proactive deal flow on top of the existing corpus before adding external delivery or corpus expansion.
 
 ## Previous Shipped Milestone Snapshot
 
@@ -77,4 +78,4 @@ See:
 ## Session Continuity
 
 Last session: 2026-04-17
-Stopped at: `v1.3 Visible Agent Copilot` archived; next route is fresh milestone definition.
+Stopped at: `v1.4 Daily Deal Flow` planned; next route is execute `.planning/phases/09-daily-deal-flow/01-PLAN.md`.

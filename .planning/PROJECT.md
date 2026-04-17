@@ -10,6 +10,7 @@ Seeku is an evidence-driven AI talent search engine. Its current primary operato
 
 ## Current State
 
+- Current milestone: `v1.4 Daily Deal Flow`
 - Latest shipped milestone: `v1.3 Visible Agent Copilot`
 - Previous shipped milestone: `v1.2 Agentic Search CLI`
 - Milestone archives:
@@ -18,8 +19,19 @@ Seeku is an evidence-driven AI talent search engine. Its current primary operato
 - Requirements archives:
   - `.planning/milestones/v1.3-REQUIREMENTS.md`
   - `.planning/milestones/v1.2-REQUIREMENTS.md`
-- Current status: no active milestone; repo is ready for next milestone definition
-- Current focus: preserve the shipped visible-copilot runtime while deciding the next operator/product milestone
+- Current status: `v1.4` planned and ready to execute
+- Current focus: validate a proactive daily cofounder deal flow above the shipped search-agent and visible-copilot baseline
+
+## Current Milestone: v1.4 Daily Deal Flow
+
+**Goal:** Turn Seeku into a proactive daily cofounder opportunity product that understands the user's goal direction and assembles a daily list of people worth contacting.
+
+**Target features:**
+- daily in-product deal flow generated from the existing Seeku corpus
+- goal-direction scoring and candidate public-expression profiling
+- actionable candidate cards with `why this person`, `why now`, `how to approach`, and confidence
+- explicit and implicit feedback loops that affect subsequent lists
+- short drift-note handling when recent behavior diverges from explicit long-term goals
 
 ## Shipped In v1.3
 
@@ -49,18 +61,18 @@ Seeku is an evidence-driven AI talent search engine. Its current primary operato
 - `Q4` is still a watch item even though the sustain gate is clear.
 - The CLI runtime must remain the single source of truth for shortlist, compare, recommendation, and uncertainty state.
 - The shipped visible panel is a local copilot surface, not a full operator console and not a second runtime.
-- Existing web typecheck debt remains outside the shipped v1.3 milestone scope.
+- `v1.4` should validate the proactive opportunity loop before adding external delivery, CRM, or corpus expansion.
 
 ## Next Milestone Goals
 
-The next milestone is not defined yet.
+`v1.4 Daily Deal Flow` is now the active milestone.
 
-The default next move is to open a fresh milestone and decide whether the next batch should prioritize:
+The milestone should prove:
 
-- visible-copilot productization and session discovery
-- old `apps/web` typecheck debt cleanup
-- broader operator workflow polish above the shipped CLI + panel baseline
-- a new product capability outside the current operator-surface work
+- proactive daily opportunity generation from the existing corpus
+- direction-first cofounder matching
+- feedback-driven next-day list evolution
+- honest uncertainty handling for low-confidence opportunities
 
 ## Key Decisions
 
@@ -69,6 +81,8 @@ The default next move is to open a fresh milestone and decide whether the next b
 - Prefer SSE plus POST for the first local bridge instead of introducing WebSocket orchestration immediately.
 - Keep first-version interventions narrow and structured.
 - Keep milestone boundaries tight: ship the visible copilot before deciding whether to broaden it into a richer operator console.
+- Treat `Daily Deal Flow` as a new proactive layer above the shipped runtime, not as a replacement for reactive search.
+- Prioritize `goal-direction match` over richer but less reliable first-version signals such as broad personality inference or global reachability.
 
 ## Evolution
 
@@ -86,4 +100,4 @@ This document evolves at phase transitions and milestone boundaries.
 3. Archive requirements and roadmap before opening the next milestone.
 
 ---
-*Last updated: 2026-04-17 after v1.3 milestone closeout*
+*Last updated: 2026-04-17 after starting milestone v1.4 Daily Deal Flow*
