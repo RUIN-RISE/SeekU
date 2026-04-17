@@ -124,4 +124,30 @@ describe("daily-deal-flow user goal model", () => {
     expect(model.driftStatus).toBe("shifting");
     expect(model.summary).toContain("Explicit goal leans");
   });
+
+  it("treats interaction and feedback signals as recent behavior for drift detection", () => {
+    const model = buildUserGoalModel({
+      explicitGoal: "Find a cofounder for education products",
+      feedbackEvents: [
+        {
+          kind: "interested",
+          directionTags: ["fintech"]
+        }
+      ],
+      interactionEvents: [
+        {
+          kind: "detail_view",
+          directionTags: ["healthcare"]
+        }
+      ]
+    });
+
+    expect(model.recentDirectionTags).toEqual(
+      expect.arrayContaining(["fintech", "healthcare"])
+    );
+    expect(model.signalSources).toEqual(
+      expect.arrayContaining(["feedback", "interaction"])
+    );
+    expect(model.driftStatus).toBe("shifting");
+  });
 });

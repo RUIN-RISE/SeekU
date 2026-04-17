@@ -22,6 +22,12 @@ export function Header() {
             搜索
           </Link>
           <Link
+            href="/deal-flow"
+            className="text-text-light hover:text-accent-blue transition-colors font-body"
+          >
+            Deal Flow
+          </Link>
+          <Link
             href="/chat"
             className="text-text-light hover:text-accent-blue transition-colors font-body"
           >

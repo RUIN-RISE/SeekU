@@ -516,7 +516,7 @@ export function buildUserGoalModel(input: BuildUserGoalModelInput): UserGoalMode
       collectTaggedSignals(text).map((signal) => signal.tag)
     )
   );
-  const recentDirectionTags = uniqueDirectionTags(
+  const recentSearchDirectionTags = uniqueDirectionTags(
     (input.recentSearches ?? []).flatMap((search) => [
       ...collectTaggedSignals(search.query ?? "").map((signal) => signal.tag),
       ...(search.signalTexts ?? []).flatMap((text) =>
@@ -543,21 +543,24 @@ export function buildUserGoalModel(input: BuildUserGoalModelInput): UserGoalMode
   const interactionDirectionTags = uniqueDirectionTags(
     (input.interactionEvents ?? []).flatMap((event) => event.directionTags ?? [])
   );
+  const recentDirectionTags = uniqueDirectionTags([
+    ...currentDirectionTags,
+    ...recentSearchDirectionTags,
+    ...feedbackDirectionTags,
+    ...interactionDirectionTags
+  ]);
 
   const allDirectionTags = [
     ...explicitDirectionTags,
     ...currentDirectionTags,
-    ...recentDirectionTags,
+    ...recentSearchDirectionTags,
     ...feedbackDirectionTags,
     ...interactionDirectionTags
   ];
 
   const directionCounts = countDirectionTags(allDirectionTags);
   const dominantDirectionTags = sortDirectionTagsByCount(directionCounts);
-  const driftStatus = inferDriftStatus(
-    explicitDirectionTags,
-    uniqueDirectionTags([...currentDirectionTags, ...recentDirectionTags])
-  );
+  const driftStatus = inferDriftStatus(explicitDirectionTags, recentDirectionTags);
 
   const signalSources: UserGoalSignalSource[] = [];
   if (input.explicitGoal?.trim()) {
@@ -580,7 +583,7 @@ export function buildUserGoalModel(input: BuildUserGoalModelInput): UserGoalMode
     explicitGoal: input.explicitGoal?.trim() || null,
     dominantDirectionTags,
     explicitDirectionTags,
-    recentDirectionTags: uniqueDirectionTags([...currentDirectionTags, ...recentDirectionTags]),
+    recentDirectionTags,
     negativeDirectionTags,
     directionCounts,
     driftStatus,
@@ -589,7 +592,7 @@ export function buildUserGoalModel(input: BuildUserGoalModelInput): UserGoalMode
     summary: buildGoalModelSummary(
       dominantDirectionTags,
       explicitDirectionTags,
-      uniqueDirectionTags([...currentDirectionTags, ...recentDirectionTags]),
+      recentDirectionTags,
       driftStatus
     ),
     updatedAt: input.updatedAt ?? new Date()

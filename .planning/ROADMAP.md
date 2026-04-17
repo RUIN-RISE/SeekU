@@ -2,7 +2,7 @@
 
 ## Active Milestone: v1.4 Daily Deal Flow
 
-**Status:** Planned
+**Status:** Completed
 **Started:** 2026-04-17
 **Phase range:** 09
 **Total planned phases:** 1
@@ -27,8 +27,8 @@ The milestone stays intentionally narrow:
 **Plans:**
 - [x] `09-01-PLAN.md` — Goal model and candidate direction foundation
 - [x] `09-02-PLAN.md` — Opportunity scoring and daily curation pipeline
-- [ ] `09-03-PLAN.md` — Deal flow surface and feedback capture
-- [ ] `09-04-PLAN.md` — Drift logic, learning loop, and acceptance
+- [x] `09-03-PLAN.md` — Deal flow surface and feedback capture
+- [x] `09-04-PLAN.md` — Drift logic, learning loop, and acceptance
 
 ## Milestone Guardrails
 
@@ -54,4 +54,4 @@ The milestone is considered successful if it can:
 - `.planning/phases/08-cli-agent-panel/SUMMARY.md`
 
 ---
-*Last updated: 2026-04-17 after approving the Daily Deal Flow design spec*
+*Last updated: 2026-04-17 after completing Phase 09 and milestone `v1.4 Daily Deal Flow`*

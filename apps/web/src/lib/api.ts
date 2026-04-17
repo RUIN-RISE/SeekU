@@ -72,6 +72,77 @@ export interface ProfileResponse {
   };
 }
 
+export type DealFlowFeedbackKind = "interested" | "not_interested" | "contacted" | "revisit";
+export type DealFlowInteractionKind = "detail_view" | "repeat_view" | "evidence_expand" | "dwell";
+export type DealFlowDirectionTag =
+  | "ai_agents"
+  | "ai_infra"
+  | "developer_tools"
+  | "education"
+  | "enterprise_ai"
+  | "open_source"
+  | "robotics"
+  | "healthcare"
+  | "fintech"
+  | "creator_media";
+
+export interface DealFlowCard {
+  personId: string;
+  name: string;
+  headline: string | null;
+  bucket: "new" | "high-confidence" | "needs-validation" | "revisit";
+  confidence: "high" | "medium" | "low";
+  totalScore: number;
+  whyMatched: string;
+  whyNow: string;
+  approachPath: string;
+  whyUncertain?: string;
+  directionSummary: string;
+  directionTags: DealFlowDirectionTag[];
+  overlapTags: DealFlowDirectionTag[];
+  sourceBadges: string[];
+  evidencePreview: Array<{
+    id: string;
+    type: string;
+    title: string | null;
+    description: string | null;
+    url: string | null;
+  }>;
+  state: {
+    seenCount: number;
+    detailViewCount: number;
+    repeatViewCount: number;
+    lastFeedbackKind: DealFlowFeedbackKind | null;
+  };
+}
+
+export interface DealFlowResponse {
+  artifact: {
+    generatedForDate: string;
+    generatedAt: string;
+    topToday: DealFlowCard[];
+    moreOpportunities: DealFlowCard[];
+    totalCandidates: number;
+    bucketCounts: Record<"new" | "high-confidence" | "needs-validation" | "revisit", number>;
+  };
+  goalModel: {
+    explicitGoal: string | null;
+    summary: string;
+    driftStatus: "unknown" | "aligned" | "shifting";
+    dominantDirectionTags: DealFlowDirectionTag[];
+    signalSources: Array<
+      "explicit_goal" | "current_conditions" | "search_history" | "feedback" | "interaction"
+    >;
+  };
+  viewer: {
+    viewerId: string;
+    feedbackCounts: Record<DealFlowFeedbackKind, number>;
+    interactionCounts: Record<DealFlowInteractionKind, number>;
+    surfacedCandidates: number;
+  };
+  driftNote?: string;
+}
+
 export async function searchAPI(request: SearchRequest): Promise<SearchResponse> {
   const response = await fetch(`${API_BASE_URL}/search`, {
     method: "POST",
@@ -96,6 +167,61 @@ export async function getSyncStatusAPI(): Promise<{ runs: Array<{ id: string; so
   const response = await fetch(`${API_BASE_URL}/admin/sync-status`);
   if (!response.ok) {
     throw new Error(`Sync status fetch failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function getDealFlowAPI(request: {
+  viewerId: string;
+  goal?: string;
+}): Promise<DealFlowResponse> {
+  const params = new URLSearchParams({
+    viewerId: request.viewerId
+  });
+
+  if (request.goal?.trim()) {
+    params.set("goal", request.goal.trim());
+  }
+
+  const response = await fetch(`${API_BASE_URL}/deal-flow?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`Deal flow fetch failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function submitDealFlowFeedbackAPI(request: {
+  viewerId: string;
+  personId: string;
+  kind: DealFlowFeedbackKind;
+  directionTags: DealFlowDirectionTag[];
+  note?: string;
+}) {
+  const response = await fetch(`${API_BASE_URL}/deal-flow/feedback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request)
+  });
+  if (!response.ok) {
+    throw new Error(`Deal flow feedback failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function trackDealFlowInteractionAPI(request: {
+  viewerId: string;
+  personId: string;
+  kind: DealFlowInteractionKind;
+  directionTags: DealFlowDirectionTag[];
+  note?: string;
+}) {
+  const response = await fetch(`${API_BASE_URL}/deal-flow/interactions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request)
+  });
+  if (!response.ok) {
+    throw new Error(`Deal flow interaction failed: ${response.status}`);
   }
   return response.json();
 }

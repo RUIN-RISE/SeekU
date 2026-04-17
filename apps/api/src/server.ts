@@ -24,12 +24,25 @@ import { registerClaimVerifyRoutes } from "./routes/claim-verify.js";
 import { registerClaimGitHubRoutes } from "./routes/claim-github.js";
 import { registerProfileEditRoutes } from "./routes/profile-edit.js";
 import { registerAdminClaimsRoutes } from "./routes/admin-claims.js";
+import { registerDealFlowRoutes, type DealFlowStateStore } from "./routes/deal-flow.js";
 import type { SearchServices } from "./routes/search.js";
+import type { DailyDealFlowCurator, OpportunityCandidateInput, OpportunityScorer } from "@seeku/search";
 
 interface BuildApiServerOptions {
   db?: SeekuDatabase;
   searchServices?: SearchServices;
   agentSessionBridge?: AgentSessionBridge;
+  dealFlowServices?: {
+    store?: DealFlowStateStore;
+    loadCandidates?: (input: {
+      db: SeekuDatabase;
+      viewerId: string;
+      now: Date;
+    }) => Promise<OpportunityCandidateInput[]>;
+    scorer?: OpportunityScorer;
+    curator?: DailyDealFlowCurator;
+    now?: () => Date;
+  };
 }
 
 function inferSourceAndHandle(input: {
@@ -132,6 +145,7 @@ export async function buildApiServer(input?: SeekuDatabase | BuildApiServerOptio
   registerClaimGitHubRoutes(fastify, database);
   registerProfileEditRoutes(fastify, database);
   registerAdminClaimsRoutes(fastify, database);
+  registerDealFlowRoutes(fastify, database, options.dealFlowServices);
 
   fastify.post("/opt-out-requests", async (request, reply) => {
     const parsed = OptOutRequestInputSchema.safeParse(request.body);
