@@ -1,9 +1,12 @@
 import type { Person, EvidenceItem, NewSearchDocument, RankFeatures } from "@seeku/db";
 
+import { collectDocumentAliasTerms } from "./search-normalization.js";
+import { isKnownZjuAlumniSeed, type SearchSourceHint, ZJU_MANUAL_SEED_TAG } from "./zju-alumni-seeds.js";
+
 export interface SearchDocumentInput {
   person: Person;
   evidence: EvidenceItem[];
-  sourceHints?: string[];
+  sourceHints?: SearchSourceHint[];
 }
 
 export function buildSearchDocument(input: SearchDocumentInput): NewSearchDocument {
@@ -24,13 +27,15 @@ export function buildSearchDocument(input: SearchDocumentInput): NewSearchDocume
     if (item.description) textParts.push(item.description);
   }
 
+  textParts.push(...collectDocumentAliasTerms(textParts));
+
   const docText = textParts.join(" ");
 
   // Extract facets
   const facetRole = extractRoles(person, evidence);
   const facetLocation = extractLocations(person, evidence);
   const facetSource = extractSources(evidence, sourceHints);
-  const facetTags = extractTags(person, evidence);
+  const facetTags = extractTags(person, evidence, sourceHints);
 
   // Compute rank features
   const rankFeatures = computeRankFeatures(person, evidence);
@@ -305,8 +310,8 @@ function extractLocations(person: Person, evidence: EvidenceItem[]): string[] {
   return Array.from(locations);
 }
 
-function extractSources(evidence: EvidenceItem[], sourceHints: string[] = []): string[] {
-  const sources: Set<string> = new Set(sourceHints.map((value) => value.toLowerCase()));
+function extractSources(evidence: EvidenceItem[], sourceHints: SearchSourceHint[] = []): string[] {
+  const sources: Set<string> = new Set(sourceHints.map((value) => value.source.toLowerCase()));
   evidence.forEach(e => {
     if (e.source) sources.add(e.source);
   });
@@ -321,7 +326,7 @@ const TECH_KEYWORDS = [
   "docker", "kubernetes", "aws", "gcp", "azure", "tensorflow", "pytorch", "cuda"
 ];
 
-function extractTags(person: Person, evidence: EvidenceItem[]): string[] {
+function extractTags(person: Person, evidence: EvidenceItem[], sourceHints: SearchSourceHint[] = []): string[] {
   const tags: Set<string> = new Set();
 
   const allText = [
@@ -341,6 +346,10 @@ function extractTags(person: Person, evidence: EvidenceItem[]): string[] {
       const lang = e.metadata?.language as string | undefined;
       if (lang) tags.add(lang.toLowerCase());
     });
+
+  if (isKnownZjuAlumniSeed(sourceHints)) {
+    tags.add(ZJU_MANUAL_SEED_TAG);
+  }
 
   return Array.from(tags);
 }
@@ -362,7 +371,7 @@ function computeRankFeatures(person: Person, evidence: EvidenceItem[]): RankFeat
 export async function buildAllSearchDocuments(
   persons: Person[],
   evidenceByPerson: Map<string, EvidenceItem[]>,
-  sourceHintsByPerson: Map<string, string[]> = new Map()
+  sourceHintsByPerson: Map<string, SearchSourceHint[]> = new Map()
 ): Promise<NewSearchDocument[]> {
   return persons.map(person => {
     const evidence = evidenceByPerson.get(person.id) ?? [];

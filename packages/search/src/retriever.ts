@@ -1,5 +1,5 @@
 import { and, desc, eq, sql } from "drizzle-orm";
-import type { SQL } from "drizzle-orm";
+import type { SQL, SQLWrapper } from "drizzle-orm";
 
 import type { SeekuDatabase, SearchDocument } from "@seeku/db";
 import { persons, searchDocuments, searchEmbeddings } from "@seeku/db";
@@ -7,6 +7,11 @@ import type { LLMProvider } from "@seeku/llm";
 import { generateEmbedding } from "@seeku/llm";
 
 import type { QueryIntent } from "./planner.js";
+import {
+  escapeRegexPattern,
+  isBoundarySensitiveSearchTerm,
+  normalizeSearchText,
+} from "./search-normalization.js";
 
 export interface SearchResult {
   personId: string;
@@ -115,12 +120,12 @@ function expandSkillTerms(values: string[]): string[] {
 }
 
 function textIncludesAny(text: string, terms: readonly string[]): boolean {
-  const normalized = text.toLowerCase();
-  return terms.some((term) => normalized.includes(term));
+  const normalized = normalizeSearchText(text);
+  return terms.some((term) => normalized.includes(normalizeSearchText(term)));
 }
 
 function isStrongTextMatchTerm(term: string): boolean {
-  const normalized = term.trim().toLowerCase();
+  const normalized = normalizeSearchText(term);
   if (!normalized) {
     return false;
   }
@@ -140,24 +145,70 @@ function isStrongTextMatchTerm(term: string): boolean {
   return normalized.length >= 4;
 }
 
-function buildTextMatchCondition(terms: string[]): SQL | null {
-  const matchableTerms = uniqueLowercase(terms).filter(isStrongTextMatchTerm).slice(0, 12);
-  if (matchableTerms.length === 0) {
+function normalizeSearchExpression(expression: SQLWrapper): SQL<string> {
+  let normalized = sql<string>`lower(coalesce(${expression}, ''))`;
+
+  for (const [from, to] of [
+    ["！", "!"],
+    ["？", "?"],
+    ["，", ","],
+    ["。", "."],
+    ["；", ";"],
+    ["：", ":"],
+    ["（", "("],
+    ["）", ")"],
+    ["【", "["],
+    ["】", "]"],
+    ["《", "<"],
+    ["》", ">"],
+    ["“", "\""],
+    ["”", "\""],
+    ["‘", "'"],
+    ["’", "'"],
+    ["｜", "|"],
+    ["－", "-"],
+    ["　", " "],
+    ["浙江大学", "zhejiang university"],
+    ["浙大", "zhejiang university"],
+  ] as const) {
+    normalized = sql<string>`replace(${normalized}, ${from}, ${to})`;
+  }
+
+  normalized = sql<string>`regexp_replace(${normalized}, ${"\\mzju\\M"}, ${"zhejiang university"}, 'g')`;
+  normalized = sql<string>`regexp_replace(${normalized}, ${"[[:space:][:punct:]]+"}, ${" "}, 'g')`;
+  return sql<string>`trim(${normalized})`;
+}
+
+function buildNormalizedTermCondition(term: string, expression: SQLWrapper): SQL | null {
+  const normalizedTerm = normalizeSearchText(term);
+  if (!normalizedTerm || !isStrongTextMatchTerm(normalizedTerm)) {
     return null;
   }
 
-  return sql`(${sql.join(
-    matchableTerms.map((term) => {
-      const escaped = escapeLikePattern(term);
-      return sql`${searchDocuments.docText} ILIKE ${`%${escaped}%`}`;
-    }),
-    sql.raw(" OR ")
-  )})`;
+  if (isBoundarySensitiveSearchTerm(normalizedTerm)) {
+    return sql`${expression} ~ ${`\\m${escapeRegexPattern(normalizedTerm)}\\M`}`;
+  }
+
+  const escaped = escapeLikePattern(normalizedTerm);
+  return sql`${expression} LIKE ${`%${escaped}%`} ESCAPE '\\'`;
+}
+
+function buildTextMatchCondition(terms: string[], expression: SQLWrapper): SQL | null {
+  const conditions = uniqueLowercase(terms)
+    .map((term) => buildNormalizedTermCondition(term, expression))
+    .filter((condition): condition is SQL => Boolean(condition))
+    .slice(0, 12);
+
+  if (conditions.length === 0) {
+    return null;
+  }
+
+  return sql`(${sql.join(conditions, sql.raw(" OR "))})`;
 }
 
 function queryWantsSpecializedFocus(intent: QueryIntent, expandedSkills: string[] = []): boolean {
-  const text = [intent.rawQuery, ...intent.skills, ...expandedSkills].join(" ").toLowerCase();
-  return SPECIALIZED_QUERY_TERMS.some((term) => text.includes(term));
+  const text = normalizeSearchText([intent.rawQuery, ...intent.skills, ...expandedSkills].join(" "));
+  return SPECIALIZED_QUERY_TERMS.some((term) => text.includes(normalizeSearchText(term)));
 }
 
 export interface KeywordIntentSignals {
@@ -169,7 +220,7 @@ export interface KeywordIntentSignals {
 export function buildKeywordIntentSignals(intent: QueryIntent): KeywordIntentSignals {
   const wantsOpenSource = textIncludesAny(
     [intent.rawQuery, ...intent.skills, ...intent.mustHaves, ...intent.niceToHaves].join(" "),
-    OPEN_SOURCE_QUERY_TERMS
+    OPEN_SOURCE_TEXT_TERMS
   );
 
   if (!wantsOpenSource) {
@@ -212,15 +263,15 @@ function escapeLikePattern(term: string): string {
 }
 
 function buildMustHaveConditions(intent: QueryIntent): SQL[] {
+  const normalizedDocText = normalizeSearchExpression(searchDocuments.docText);
+
   return intent.mustHaves
     .map((term) => term.trim())
     .filter(Boolean)
     .filter((term) => !WEAK_MUST_HAVE_PATTERNS.some((pattern) => pattern.test(term)))
     .slice(0, 20) // Limit number of conditions to prevent query explosion
-    .map((term) => {
-      const escaped = escapeLikePattern(term);
-      return sql`${searchDocuments.docText} ILIKE ${`%${escaped}%`}`;
-    });
+    .map((term) => buildNormalizedTermCondition(term, normalizedDocText))
+    .filter((condition): condition is SQL => Boolean(condition));
 }
 
 export function buildFilterConditions(intent: QueryIntent, filters?: RetrieverFilters): SQL[] {
@@ -294,7 +345,34 @@ function buildKeywordQuery(intent: QueryIntent): string {
     ...intent.niceToHaves
   ];
 
-  return uniqueLowercase(parts).join(" ");
+  return [...new Set(parts.map((value) => normalizeSearchText(value)).filter(Boolean))].join(" ");
+}
+
+function buildNameMatchSignals(rawQuery: string, normalizedPersonName: SQLWrapper) {
+  const normalizedQuery = normalizeSearchText(rawQuery);
+  if (!normalizedQuery) {
+    return {
+      exactCondition: null,
+      prefixCondition: null,
+      exactMatchExpr: sql<number>`0`,
+      prefixMatchExpr: sql<number>`0`
+    };
+  }
+
+  const escaped = escapeLikePattern(normalizedQuery);
+  const exactCondition = sql`${normalizedPersonName} = ${normalizedQuery}`;
+  const prefixCondition = normalizedQuery.includes(" ")
+    ? null
+    : sql`${normalizedPersonName} LIKE ${`${escaped} %`} ESCAPE '\\'`;
+
+  return {
+    exactCondition,
+    prefixCondition,
+    exactMatchExpr: sql<number>`CASE WHEN ${exactCondition} THEN 1 ELSE 0 END`,
+    prefixMatchExpr: prefixCondition
+      ? sql<number>`CASE WHEN ${prefixCondition} THEN 1 ELSE 0 END`
+      : sql<number>`0`
+  };
 }
 
 function mergeMatchedText(existing: string, next: string): string {
@@ -330,19 +408,22 @@ export class HybridRetriever {
       return [];
     }
 
+    const normalizedDocText = normalizeSearchExpression(searchDocuments.docText);
+    const normalizedPersonName = normalizeSearchExpression(persons.primaryName);
+    const nameMatchSignals = buildNameMatchSignals(intent.rawQuery, normalizedPersonName);
     const roleMatchExpr = sql<number>`CASE WHEN ${searchDocuments.facetRole} && ${toTextArray(
       expandedRoles.length > 0 ? expandedRoles : ["__none__"]
     )} THEN 1 ELSE 0 END`;
     const skillMatchExpr = sql<number>`CASE WHEN ${searchDocuments.facetTags} && ${toTextArray(
       expandedSkills.length > 0 ? expandedSkills : ["__none__"]
     )} THEN 1 ELSE 0 END`;
-    const scoreExpr = sql<number>`similarity(${searchDocuments.docText}, ${keywordQuery})`;
+    const scoreExpr = sql<number>`similarity(${normalizedDocText}, ${keywordQuery})`;
     const githubSourceCondition = keywordSignals.wantsOpenSource
       ? sql`${searchDocuments.facetSource} && ${toTextArray(["github"])}`
       : null;
-    const skillTextCondition = buildTextMatchCondition(expandedSkills);
-    const leadershipTextCondition = buildTextMatchCondition(keywordSignals.leadershipTextTerms);
-    const openSourceTextCondition = buildTextMatchCondition(keywordSignals.openSourceTextTerms);
+    const skillTextCondition = buildTextMatchCondition(expandedSkills, normalizedDocText);
+    const leadershipTextCondition = buildTextMatchCondition(keywordSignals.leadershipTextTerms, normalizedDocText);
+    const openSourceTextCondition = buildTextMatchCondition(keywordSignals.openSourceTextTerms, normalizedDocText);
     const skillTextMatchExpr = skillTextCondition
       ? sql<number>`CASE WHEN ${skillTextCondition} THEN 1 ELSE 0 END`
       : sql<number>`0`;
@@ -403,6 +484,14 @@ export class HybridRetriever {
       queryConditions.push(specializedGithubCondition);
     }
 
+    if (nameMatchSignals.exactCondition) {
+      queryConditions.push(nameMatchSignals.exactCondition);
+    }
+
+    if (nameMatchSignals.prefixCondition) {
+      queryConditions.push(nameMatchSignals.prefixCondition);
+    }
+
     const keywordRankExpr = sql<number>`
       ${scoreExpr}
       + ${roleMatchExpr} * 0.08
@@ -412,6 +501,8 @@ export class HybridRetriever {
       + ${openSourceTextMatchExpr} * 0.18
       + ${githubSourceMatchExpr} * 0.06
       + ${specializedGithubMatchExpr} * 0.12
+      + ${nameMatchSignals.exactMatchExpr} * 0.45
+      + ${nameMatchSignals.prefixMatchExpr} * 0.18
     `;
 
     const rows = await this.db
@@ -425,6 +516,8 @@ export class HybridRetriever {
         openSourceTextMatch: openSourceTextMatchExpr,
         githubSourceMatch: githubSourceMatchExpr,
         specializedGithubMatch: specializedGithubMatchExpr,
+        exactNameMatch: nameMatchSignals.exactMatchExpr,
+        prefixNameMatch: nameMatchSignals.prefixMatchExpr,
         score: scoreExpr
       })
       .from(searchDocuments)
@@ -443,6 +536,8 @@ export class HybridRetriever {
         + row.openSourceTextMatch * 0.18
         + row.githubSourceMatch * 0.06
         + row.specializedGithubMatch * 0.12
+        + row.exactNameMatch * 0.45
+        + row.prefixNameMatch * 0.18
       );
 
       return {

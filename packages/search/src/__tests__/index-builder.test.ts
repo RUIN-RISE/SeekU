@@ -110,4 +110,33 @@ describe("index-builder facetRole extraction", () => {
     expect(document.facetRole ?? []).toEqual([]);
     expect(document.facetRole ?? []).not.toContain(longNarrative);
   });
+
+  it("expands zju aliases into docText for future indexing", () => {
+    const person = makePerson({
+      primaryHeadline: "浙大智能教育研究中心成员"
+    });
+
+    const document = buildSearchDocument({ person, evidence: [] });
+
+    expect(document.docText).toContain("浙大智能教育研究中心成员");
+    expect(document.docText).toContain("zhejiang university");
+    expect(document.docText).toContain("zju");
+    expect(document.docText).toContain("浙江大学");
+  });
+
+  it("adds zju manual seed tag for curated bonjour alumni handles", () => {
+    const person = makePerson({
+      primaryName: "Aura"
+    });
+
+    const document = buildSearchDocument({
+      person,
+      evidence: [],
+      sourceHints: [
+        { source: "bonjour", handle: "zxhq0c" }
+      ]
+    });
+
+    expect(document.facetTags ?? []).toContain("zju_manual_seed");
+  });
 });

@@ -15,7 +15,7 @@ import {
   type SearchDocument
 } from "@seeku/db";
 import { createProvider } from "@seeku/llm";
-import { QueryPlanner, HybridRetriever, Reranker, type QueryIntent } from "@seeku/search";
+import { QueryPlanner, HybridRetriever, Reranker, buildDisambiguationNotes, type QueryIntent } from "@seeku/search";
 import { FALLBACK_MATCH_REASONS } from "@seeku/shared";
 import type { ScriptSearchResponseOutput, ScriptSearchResultOutput, SearchConditions } from "./cli/types.js";
 import {
@@ -171,6 +171,16 @@ export async function runSearchCli(options: SearchCliOptions): Promise<ScriptSea
     const sourceProfileMap = new Map(profiles.map((profile) => [profile.id, profile]));
 
     const reranked = reranker.rerank(retrieved, intent, documentMap, evidenceMap);
+    const disambiguationNotes = buildDisambiguationNotes(
+      options.query,
+      reranked.slice(0, Math.max(options.limit ?? 10, 10)).map((result) => ({
+        personId: result.personId,
+        name: personMap.get(result.personId)?.primaryName ?? "Unknown",
+        headline: personMap.get(result.personId)?.primaryHeadline ?? null,
+        matchReasons: result.matchReasons,
+        document: documentMap.get(result.personId)
+      }))
+    );
     const limited = reranked.slice(0, options.limit ?? 10);
     const conditions = buildSearchConditionsFromIntent(intent, options.limit ?? 10);
 
@@ -228,6 +238,8 @@ export async function runSearchCli(options: SearchCliOptions): Promise<ScriptSea
       )
         ? (fallbackMatchReason || explanation.summary)
         : explanation.summary;
+      const disambiguation = disambiguationNotes.get(result.personId);
+      const visibleMatchReason = disambiguation ? `${matchReason} ${disambiguation}` : matchReason;
 
       return {
         personId: result.personId,
@@ -237,8 +249,9 @@ export async function runSearchCli(options: SearchCliOptions): Promise<ScriptSea
         matchScore: result.finalScore,
         matchStrength: classifyMatchStrength(result.finalScore, explanation.reasons),
         matchReasons: result.matchReasons,
-        matchReason,
-        whyMatched: matchReason,
+        matchReason: visibleMatchReason,
+        disambiguation,
+        whyMatched: visibleMatchReason,
         queryReasons: explanation.reasons,
         source: formatSourceSummary(sources),
         sources,

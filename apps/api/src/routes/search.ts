@@ -5,7 +5,7 @@ import {
   evidenceItems,
   eq,
   inArray,
-  ne,
+  not,
   persons,
   searchDocuments,
   type EvidenceItem,
@@ -15,6 +15,7 @@ import {
 } from "@seeku/db";
 import { createProvider, type LLMProvider } from "@seeku/llm";
 import {
+  buildDisambiguationNotes,
   HybridRetriever,
   QueryPlanner,
   Reranker,
@@ -43,6 +44,7 @@ interface SearchResultCard {
   matchScore: number;
   matchStrength: MatchStrength;
   matchReasons: string[];
+  disambiguation?: string;
   evidencePreview: Array<{
     type: string;
     title: string | null;
@@ -170,18 +172,22 @@ function buildApiResultWarning(results: Array<Pick<SearchResultCard, "matchStren
 function buildResponseCard(
   result: RerankResult,
   person: { primaryName: string; primaryHeadline: string | null; searchStatus: SearchStatus } | undefined,
-  evidence: EvidenceItem[]
+  evidence: EvidenceItem[],
+  disambiguation?: string
 ): SearchResultCard {
+  const matchReasons =
+    result.matchReasons.length > 0
+      ? result.matchReasons
+      : ["matched by hybrid keyword and semantic retrieval"];
+
   return {
     personId: result.personId,
     name: person?.primaryName ?? "Unknown",
     headline: person?.primaryHeadline ?? null,
     matchScore: result.finalScore,
     matchStrength: classifyMatchStrength(result.finalScore, result.matchReasons),
-    matchReasons:
-      result.matchReasons.length > 0
-        ? result.matchReasons
-        : ["matched by hybrid keyword and semantic retrieval"],
+    matchReasons: disambiguation ? [...matchReasons, disambiguation] : matchReasons,
+    disambiguation,
     evidencePreview: evidence.slice(0, 3).map((item) => ({
       type: item.evidenceType,
       title: item.title ?? null,
@@ -240,7 +246,7 @@ async function handleSearch(
         searchStatus: persons.searchStatus
       })
       .from(persons)
-      .where(and(ne(persons.searchStatus, "hidden"), inArray(persons.id, personIds)))
+      .where(and(not(eq(persons.searchStatus, "hidden")), inArray(persons.id, personIds)))
   ]);
 
   const documentMap = new Map<string, SearchDocument>(
@@ -249,6 +255,16 @@ async function handleSearch(
   const evidenceMap = groupEvidence(evidence);
   const personMap = new Map(people.map((person) => [person.id, person]));
   const reranked = services.reranker.rerank(retrieved, intent, documentMap, evidenceMap);
+  const disambiguationNotes = buildDisambiguationNotes(
+    body.query,
+    reranked.slice(0, Math.max((body.offset ?? 0) + (body.limit ?? DEFAULT_LIMIT), 10)).map((result) => ({
+      personId: result.personId,
+      name: personMap.get(result.personId)?.primaryName ?? "Unknown",
+      headline: personMap.get(result.personId)?.primaryHeadline ?? null,
+      matchReasons: result.matchReasons,
+      document: documentMap.get(result.personId)
+    }))
+  );
   const offset = body.offset ?? 0;
   const limit = body.limit ?? DEFAULT_LIMIT;
 
@@ -258,7 +274,12 @@ async function handleSearch(
 
   const paged = reranked.slice(offset, offset + limit);
   const responseCards = paged.map((result) =>
-    buildResponseCard(result, personMap.get(result.personId), evidenceMap.get(result.personId) ?? [])
+    buildResponseCard(
+      result,
+      personMap.get(result.personId),
+      evidenceMap.get(result.personId) ?? [],
+      disambiguationNotes.get(result.personId)
+    )
   );
 
   return {

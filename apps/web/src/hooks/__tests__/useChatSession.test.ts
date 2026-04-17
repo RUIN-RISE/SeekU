@@ -148,7 +148,7 @@ describe("useChatSession", () => {
         ok: true,
         json: async () => ({
           results: [
-            { personId: "p1", name: "张三", headline: "AI Engineer", matchScore: 0.87, matchReasons: ["技能匹配"] },
+            { personId: "p1", name: "张三", headline: "AI Engineer", disambiguation: "重名提示：同名候选共 2 个；当前是第 1 个", matchScore: 0.87, matchReasons: ["技能匹配"] },
             { personId: "p2", name: "李四", headline: "ML Engineer", matchScore: 0.75, matchReasons: ["地点匹配"] }
           ],
           total: 2,
@@ -164,6 +164,7 @@ describe("useChatSession", () => {
 
       const assistantMessage = result.current.messages.find(m => m.role === "assistant");
       expect(assistantMessage).toBeDefined();
+      expect(assistantMessage?.toolResult?.results[0]?.disambiguation).toContain("重名提示");
     });
 
     it("should update currentConditions after extracting from message", async () => {

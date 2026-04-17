@@ -147,6 +147,11 @@ export function CandidateCard({ candidate, onSelect }: CandidateCardProps) {
           {candidate.headline && (
             <p className="text-sm text-slate-500 truncate mt-0.5">{candidate.headline}</p>
           )}
+          {candidate.disambiguation && (
+            <p className="mt-1 text-xs text-amber-700 line-clamp-2">
+              {candidate.disambiguation}
+            </p>
+          )}
         </div>
 
         {/* 分数环形图 */}

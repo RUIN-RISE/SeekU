@@ -1,7 +1,7 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
-import { X, Mail, Github, Loader2 } from "lucide-react";
+import { X, Mail, GitBranch, Loader2 } from "lucide-react";
 import { clsx } from "clsx";
 import { useState } from "react";
 import { useClaim, type ClaimResponseBody } from "@/hooks/useClaim";
@@ -105,7 +105,7 @@ export function ClaimForm({ personId, personName, onClose }: ClaimFormProps) {
                       : "border-slate-200 hover:border-slate-300"
                   )}
                 >
-                  <Github className="w-5 h-5" />
+                  <GitBranch className="w-5 h-5" />
                   <span className="font-medium">GitHub OAuth</span>
                 </button>
               </div>

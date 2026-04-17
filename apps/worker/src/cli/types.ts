@@ -73,6 +73,7 @@ export interface ScoredCandidate {
   profile?: MultiDimensionProfile;
   matchStrength?: MatchStrength;
   matchReason?: string;
+  disambiguation?: string;
   queryReasons?: string[];
   conditionAudit?: ConditionAuditItem[];
   // P0: Source & Freshness visibility
@@ -190,6 +191,7 @@ export interface ScriptSearchResultOutput {
   matchStrength: MatchStrength;
   matchReasons: string[];
   matchReason: string;
+  disambiguation?: string;
   whyMatched: string;
   queryReasons: string[];
   source: string;

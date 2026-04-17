@@ -16,6 +16,7 @@ interface SearchResultCard {
   personId: string;
   name: string;
   headline: string | null;
+  disambiguation?: string;
   matchScore: number;
   matchStrength: "strong" | "medium" | "weak";
   matchReasons: string[];
@@ -129,6 +130,7 @@ export function useChatSession(): UseChatSessionReturn {
             personId: r.personId,
             name: r.name,
             headline: r.headline,
+            disambiguation: r.disambiguation,
             matchScore: r.matchScore,
             matchReasons: r.matchReasons
           })),

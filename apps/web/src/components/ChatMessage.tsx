@@ -69,6 +69,7 @@ interface ResultCardProps {
     personId: string;
     name: string;
     headline: string | null;
+    disambiguation?: string;
     matchScore: number;
     matchReasons: string[];
   };
@@ -91,6 +92,9 @@ function ResultCard({ result }: ResultCardProps) {
               <span className="text-xs text-slate-500 truncate">{result.headline}</span>
             )}
           </div>
+          {result.disambiguation && (
+            <p className="mt-1 text-xs text-amber-700 line-clamp-2">{result.disambiguation}</p>
+          )}
 
           {/* Match reasons */}
           {result.matchReasons.length > 0 && (

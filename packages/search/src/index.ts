@@ -7,3 +7,6 @@ export * from "./coverage.js";
 export * from "./query-cache.js";
 export * from "./cross-encoder.js";
 export * from "./pipeline.js";
+export * from "./search-normalization.js";
+export * from "./zju-alumni-seeds.js";
+export * from "./disambiguation.js";

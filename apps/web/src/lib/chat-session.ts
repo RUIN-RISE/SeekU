@@ -37,6 +37,7 @@ export interface SearchResultToolResult {
     personId: string;
     name: string;
     headline: string | null;
+    disambiguation?: string;
     matchScore: number;
     matchReasons: string[];
   }>;

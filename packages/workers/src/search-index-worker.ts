@@ -27,6 +27,12 @@ import {
   type EmbeddingGeneratorConfig
 } from "@seeku/search";
 
+interface SearchSourceHint {
+  source: string;
+  handle?: string;
+  canonicalUrl?: string;
+}
+
 export interface SearchIndexWorkerConfig {
   batchSize?: number;
   embeddingBatchSize?: number;
@@ -105,24 +111,30 @@ export class SearchIndexWorker {
 
   private async loadSourceHints(personIds: string[]) {
     if (personIds.length === 0) {
-      return new Map<string, string[]>();
+      return new Map<string, SearchSourceHint[]>();
     }
 
     const rows = await this.db
       .select({
         personId: personIdentities.personId,
-        source: sourceProfiles.source
+        source: sourceProfiles.source,
+        handle: sourceProfiles.sourceHandle,
+        canonicalUrl: sourceProfiles.canonicalUrl
       })
       .from(personIdentities)
       .innerJoin(sourceProfiles, eq(sourceProfiles.id, personIdentities.sourceProfileId))
       .where(inArray(personIdentities.personId, personIds));
 
-    const hintsByPerson = new Map<string, string[]>();
+    const hintsByPerson = new Map<string, SearchSourceHint[]>();
 
     for (const row of rows) {
       const current = hintsByPerson.get(row.personId) ?? [];
-      if (!current.includes(row.source)) {
-        current.push(row.source);
+      if (!current.some((hint) => hint.source === row.source && hint.handle === row.handle)) {
+        current.push({
+          source: row.source,
+          handle: row.handle,
+          canonicalUrl: row.canonicalUrl
+        });
       }
       hintsByPerson.set(row.personId, current);
     }

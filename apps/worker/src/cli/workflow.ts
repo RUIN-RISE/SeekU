@@ -17,7 +17,7 @@ import {
   type PersonIdentity
 } from "@seeku/db";
 import type { LLMProvider } from "@seeku/llm";
-import { QueryPlanner, HybridRetriever, Reranker, type QueryIntent } from "@seeku/search";
+import { QueryPlanner, HybridRetriever, Reranker, buildDisambiguationNotes, type QueryIntent } from "@seeku/search";
 import { classifyMatchStrength } from "@seeku/shared";
 import { createHash, randomUUID } from "node:crypto";
 import chalk from "chalk";
@@ -2207,7 +2207,7 @@ export class SearchWorkflow {
 
     const reranked = this.reranker.rerank(filteredRetrieved, intent, documentMap, evidenceMap);
     const hydrationWindow = conditions.preferFresh ? Math.min(reranked.length, limit * 2) : limit;
-    const hydrated = reranked.slice(0, hydrationWindow).map((result) => {
+    const hydrated: HydratedCandidate[] = reranked.slice(0, hydrationWindow).map((result) => {
       const person = personMap.get(result.personId);
       if (!person) {
         throw new Error(`Candidate ${result.personId} not found in database.`);
@@ -2276,6 +2276,27 @@ export class SearchWorkflow {
           evidence: candidateEvidence
         }
       };
+    });
+
+    const disambiguationNotes = buildDisambiguationNotes(
+      this.buildEffectiveQuery(conditions),
+      hydrated.map((candidate) => ({
+        personId: candidate.personId,
+        name: candidate.name,
+        headline: candidate.headline,
+        matchReasons: candidate.queryReasons,
+        document: candidate._hydrated.document
+      }))
+    );
+
+    hydrated.forEach((candidate) => {
+      const disambiguation = disambiguationNotes.get(candidate.personId);
+      if (!disambiguation) {
+        return;
+      }
+
+      candidate.disambiguation = disambiguation;
+      candidate.matchReason = `${candidate.matchReason} ${disambiguation}`;
     });
 
     const ordered = this.applySearchStateOrdering(hydrated, conditions).slice(0, limit);
@@ -2377,7 +2398,7 @@ export class SearchWorkflow {
       rows.map((row) => [row.person.id, row.document as SearchDocument])
     );
 
-    const scored = rows
+    const scored: HydratedCandidate[] = rows
       .map((row) => {
         const person = row.person as Person;
         const document = row.document as SearchDocument;
@@ -2454,6 +2475,27 @@ export class SearchWorkflow {
       )
       .sort((left, right) => right.matchScore - left.matchScore)
       .slice(0, conditions.limit);
+
+    const disambiguationNotes = buildDisambiguationNotes(
+      this.buildEffectiveQuery(conditions),
+      scored.map((candidate) => ({
+        personId: candidate.personId,
+        name: candidate.name,
+        headline: candidate.headline,
+        matchReasons: candidate.queryReasons,
+        document: candidate._hydrated.document
+      }))
+    );
+
+    scored.forEach((candidate) => {
+      const disambiguation = disambiguationNotes.get(candidate.personId);
+      if (!disambiguation) {
+        return;
+      }
+
+      candidate.disambiguation = disambiguation;
+      candidate.matchReason = `${candidate.matchReason} ${disambiguation}`;
+    });
 
     return this.applySearchStateOrdering(scored, conditions);
   }

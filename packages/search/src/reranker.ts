@@ -3,6 +3,8 @@ import type { EvidenceItem, SearchDocument } from "@seeku/db";
 import type { QueryIntent } from "./planner.js";
 import type { SearchResult } from "./retriever.js";
 import type { CrossEncoderScore } from "./cross-encoder.js";
+import { normalizeSearchText, textHasUniversitySignal } from "./search-normalization.js";
+import { ZJU_MANUAL_SEED_TAG } from "./zju-alumni-seeds.js";
 
 export interface RerankResult extends SearchResult {
   finalScore: number;
@@ -46,7 +48,7 @@ const SPECIALIZED_QUERY_TERMS = [
 ] as const;
 
 function textFromEvidence(item: EvidenceItem): string {
-  return `${item.title ?? ""} ${item.description ?? ""}`.trim().toLowerCase();
+  return normalizeSearchText(`${item.title ?? ""} ${item.description ?? ""}`);
 }
 
 function asNumber(value: unknown): number {
@@ -62,8 +64,8 @@ function uniqueReasons(reasons: string[]): string[] {
 }
 
 function textIncludesAny(text: string, terms: readonly string[]): boolean {
-  const normalized = text.toLowerCase();
-  return terms.some((term) => normalized.includes(term));
+  const normalized = normalizeSearchText(text);
+  return terms.some((term) => normalized.includes(normalizeSearchText(term)));
 }
 
 export class Reranker {
@@ -128,7 +130,8 @@ export class Reranker {
     const wantsOpenSource = this.queryWantsOpenSource(intent);
     const wantsTechLead = this.queryWantsTechLead(intent);
     const wantsSpecializedFocus = this.queryWantsSpecializedFocus(intent);
-    const documentText = document?.docText?.toLowerCase() ?? "";
+    const wantsUniversityFocus = this.queryWantsUniversityFocus(intent);
+    const documentText = normalizeSearchText(document?.docText ?? "");
 
     for (const item of evidence) {
       const text = textFromEvidence(item);
@@ -179,11 +182,19 @@ export class Reranker {
       const roleText = [
         ...(document?.facetRole ?? []),
         document?.docText ?? ""
-      ].join(" ").toLowerCase();
+      ].join(" ");
 
       if (textIncludesAny(roleText, TECH_LEAD_ROLE_TERMS)) {
         boost += 0.08;
       }
+    }
+
+    if (wantsUniversityFocus && this.documentHasUniversitySignal(document, evidence)) {
+      boost += 0.18;
+    }
+
+    if (wantsUniversityFocus && document?.facetTags?.includes(ZJU_MANUAL_SEED_TAG)) {
+      boost += 0.24;
     }
 
     const followerCount = evidence.reduce((sum, item) => {
@@ -201,22 +212,35 @@ export class Reranker {
   }
 
   private queryWantsOpenSource(intent: QueryIntent): boolean {
-    const text = [intent.rawQuery, ...intent.skills, ...intent.mustHaves, ...intent.niceToHaves]
-      .join(" ")
-      .toLowerCase();
+    const text = [intent.rawQuery, ...intent.skills, ...intent.mustHaves, ...intent.niceToHaves].join(" ");
     return textIncludesAny(text, OPEN_SOURCE_QUERY_TERMS);
   }
 
   private queryWantsTechLead(intent: QueryIntent): boolean {
-    const text = [intent.rawQuery, ...intent.roles].join(" ").toLowerCase();
+    const text = [intent.rawQuery, ...intent.roles].join(" ");
     return textIncludesAny(text, TECH_LEAD_ROLE_TERMS);
   }
 
   private queryWantsSpecializedFocus(intent: QueryIntent): boolean {
-    const text = [intent.rawQuery, ...intent.skills, ...intent.mustHaves, ...intent.niceToHaves]
-      .join(" ")
-      .toLowerCase();
+    const text = [intent.rawQuery, ...intent.skills, ...intent.mustHaves, ...intent.niceToHaves].join(" ");
     return textIncludesAny(text, SPECIALIZED_QUERY_TERMS);
+  }
+
+  private queryWantsUniversityFocus(intent: QueryIntent): boolean {
+    const text = [
+      intent.rawQuery,
+      ...intent.mustHaves,
+      ...intent.niceToHaves
+    ].join(" ");
+    return textHasUniversitySignal(text);
+  }
+
+  private documentHasUniversitySignal(document: SearchDocument | undefined, evidence: EvidenceItem[]): boolean {
+    if (textHasUniversitySignal(document?.docText ?? "")) {
+      return true;
+    }
+
+    return evidence.some((item) => textHasUniversitySignal(`${item.title ?? ""} ${item.description ?? ""}`));
   }
 
   private computeFreshnessPenalty(document?: SearchDocument): number {
@@ -232,7 +256,7 @@ export class Reranker {
     crossEncoderResult?: CrossEncoderScore
   ): string[] {
     const reasons: string[] = [];
-    const matchedText = result.matchedText.toLowerCase();
+    const matchedText = normalizeSearchText(result.matchedText);
 
     // Include cross-encoder reasoning if available and meaningful
     if (crossEncoderResult?.reasoning && crossEncoderResult.relevanceScore >= 0.5) {
@@ -270,10 +294,18 @@ export class Reranker {
       const roleText = [
         ...(document?.facetRole ?? []),
         document?.docText ?? ""
-      ].join(" ").toLowerCase();
+      ].join(" ");
       if (textIncludesAny(roleText, TECH_LEAD_ROLE_TERMS)) {
         reasons.push("tech lead evidence");
       }
+    }
+
+    if (this.queryWantsUniversityFocus(intent) && this.documentHasUniversitySignal(document, evidence)) {
+      reasons.push("zju evidence");
+    }
+
+    if (this.queryWantsUniversityFocus(intent) && document?.facetTags?.includes(ZJU_MANUAL_SEED_TAG)) {
+      reasons.push("zju manual seed");
     }
 
     for (const skill of intent.skills) {

@@ -23,6 +23,7 @@ export interface SearchResultCard {
   personId: string;
   name: string;
   headline: string | null;
+  disambiguation?: string;
   matchScore: number;
   matchStrength: "strong" | "medium" | "weak";
   matchReasons: string[];
