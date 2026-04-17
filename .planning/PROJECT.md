@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Seeku is an evidence-driven AI talent search engine. Its current primary operator surface is a CLI-first search agent that can clarify a hiring/search goal, search candidates, narrow a shortlist, compare 2-3 people, and only recommend when evidence and confidence are strong enough.
+Seeku is an evidence-driven AI talent search engine. Its current primary operator surface is a chat-first copilot that can steer candidate search in natural language, expose a narrated session workboard, narrow a shortlist, compare 2-3 people, and only recommend when evidence and confidence are strong enough.
 
 ## Core Value
 
@@ -11,9 +11,11 @@ Seeku is an evidence-driven AI talent search engine. Its current primary operato
 ## Current State
 
 - Current milestone: none active
-- Latest shipped milestone: `v1.5 Chat-First Copilot`
-- Previous shipped milestone: `v1.3 Visible Agent Copilot`
+- Latest shipped milestone: `v1.6 Mission Replay Hardening`
+- Previous shipped milestone: `v1.5 Chat-First Copilot`
 - Milestone archives:
+  - `.planning/milestones/v1.6-ROADMAP.md`
+  - `.planning/milestones/v1.6-REQUIREMENTS.md`
   - `.planning/milestones/v1.5-ROADMAP.md`
   - `.planning/milestones/v1.5-REQUIREMENTS.md`
   - `.planning/milestones/v1.4-ROADMAP.md`
@@ -21,12 +23,29 @@ Seeku is an evidence-driven AI talent search engine. Its current primary operato
   - `.planning/milestones/v1.3-ROADMAP.md`
   - `.planning/milestones/v1.2-ROADMAP.md`
 - Requirements archives:
+  - `.planning/milestones/v1.6-REQUIREMENTS.md`
   - `.planning/milestones/v1.5-REQUIREMENTS.md`
   - `.planning/milestones/v1.4-REQUIREMENTS.md`
   - `.planning/milestones/v1.3-REQUIREMENTS.md`
   - `.planning/milestones/v1.2-REQUIREMENTS.md`
-- Current status: `v1.5` archived as shipped
-- Current focus: define the next milestone on top of the shipped chat-first copilot and bounded mission runner foundation
+- Current status: `v1.6` archived as shipped
+- Current focus: define the next milestone on top of the replay-hardened bounded mission runner foundation
+
+## Shipped In v1.6
+
+- replayable mission-case fixtures now cover key bounded-mission stop shapes
+- replay evidence now explicitly captures:
+  - stop reason
+  - mission phase
+  - summary copy
+  - uncertainty copy
+  - shortlist and compare posture
+- replay mismatch buckets now classify:
+  - `false_stop`
+  - `late_stop`
+  - `wrong_stage_report`
+  - `ui_semantic_mismatch`
+- clarification-stop framing in the right rail now correctly prioritizes `Goal summary` and tighter direction rather than shortlist-first review
 
 ## Shipped In v1.5
 
@@ -99,9 +118,9 @@ Seeku is an evidence-driven AI talent search engine. Its current primary operato
 - not defined yet
 - open the next milestone with a fresh `REQUIREMENTS.md`
 - decide whether the next step is:
-  - deeper mission-quality replay on live distributions
-  - mission expansion beyond first search scope
-  - operator workflow on top of the shipped chat-first surface
+  - broader replay capture beyond deterministic fixtures
+  - mission expansion beyond the first search mission type
+  - operator workflow on top of the replay-hardened chat-first surface
 
 ## Key Decisions
 
@@ -130,4 +149,4 @@ This document evolves at phase transitions and milestone boundaries.
 3. Archive requirements and roadmap before opening the next milestone.
 
 ---
-*Last updated: 2026-04-18 after shipping milestone v1.5 Chat-First Copilot*
+*Last updated: 2026-04-18 after shipping milestone v1.6 Mission Replay Hardening*

@@ -186,11 +186,19 @@ function deriveMovement(
   };
 }
 
-function deriveFocus(snapshot: AgentPanelSessionSnapshot | null): FocusSection {
+function deriveFocus(snapshot: AgentPanelSessionSnapshot | null, mission: CopilotMission | null): FocusSection {
   if (!snapshot) {
     return {
       title: "Goal summary",
       subtitle: "默认 `/chat` 也会显示 proactive top picks，但 mission 启动后这里会切到当前执行产物。",
+      mode: "goal"
+    };
+  }
+
+  if (mission?.stopReason === "needs_user_clarification") {
+    return {
+      title: "Goal summary",
+      subtitle: "当前 mission 还没收拢到可推荐状态，先补一句更紧的方向。",
       mode: "goal"
     };
   }
@@ -411,7 +419,7 @@ export function ChatCopilotWorkboardView({
   const now = deriveNow(snapshot);
   const why = deriveWhy(snapshot);
   const movement = deriveMovement(snapshot, events);
-  const focus = deriveFocus(snapshot);
+  const focus = deriveFocus(snapshot, mission);
   const chips = snapshot ? buildConditionChips(snapshot) : [];
 
   return (

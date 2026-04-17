@@ -268,6 +268,8 @@ describe("ChatCopilotWorkboardView", () => {
 
     expect(screen.getByText("Mission stopped")).toBeTruthy();
     expect(screen.getByText(/请再补一句更紧的方向/)).toBeTruthy();
+    expect(screen.getByText("Goal summary")).toBeTruthy();
+    expect(screen.queryByText("Top picks right now")).toBeNull();
   });
 
   it("keeps shortlist framing when the mission stops with a reportable shortlist", () => {

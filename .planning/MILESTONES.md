@@ -2,6 +2,22 @@
 
 Earlier milestone history before explicit archival discipline remains in git and the phase summaries under `.planning/phases/`.
 
+## v1.6 Mission Replay Hardening (Shipped: 2026-04-18)
+
+**Phases completed:** 1 phase, 4 plans, 4 delivered batches
+
+**Key accomplishments:**
+- Added first-class replay fixtures for the shipped bounded mission runner instead of relying only on scattered deterministic mission mocks.
+- Added explicit replay evidence capture and failure taxonomy for `false_stop`, `late_stop`, `wrong_stage_report`, and `ui_semantic_mismatch`.
+- Used replay evidence to drive a bounded semantic fix so clarification stops now focus the right rail on goal tightening instead of shortlist-first review.
+- Closed the milestone with a replay-backed acceptance verdict while keeping mission scope intentionally narrow.
+
+**Archives:**
+- `.planning/milestones/v1.6-ROADMAP.md`
+- `.planning/milestones/v1.6-REQUIREMENTS.md`
+
+---
+
 ## v1.5 Chat-First Copilot (Shipped: 2026-04-18)
 
 **Phases completed:** 2 phases, 8 plans, 8 delivered batches
