@@ -1,6 +1,7 @@
 "use client";
 
 import { startTransition, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { clsx } from "clsx";
 import {
   ArrowUpRight,
@@ -20,11 +21,17 @@ import {
   type DealFlowFeedbackKind,
   type DealFlowResponse
 } from "@/lib/api";
+import {
+  DEFAULT_DEAL_FLOW_GOAL,
+  getOrCreateDealFlowViewerId,
+  readSavedDealFlowGoal,
+  saveDealFlowGoal
+} from "@/lib/deal-flow-viewer";
+import { DealFlowReadout } from "@/components/DealFlowReadout";
 
-const STORAGE_VIEWER_KEY = "seeku_deal_flow_viewer";
-const STORAGE_GOAL_KEY = "seeku_deal_flow_goal";
-const DEFAULT_GOAL =
-  "I want to meet builders working on AI agents and developer tools for an ambitious company.";
+function signalBadgeLabel(value: string): string {
+  return value.replace(/_/g, " ");
+}
 
 const FEEDBACK_ACTIONS: Array<{
   kind: DealFlowFeedbackKind;
@@ -52,40 +59,6 @@ const FEEDBACK_ACTIONS: Array<{
     tone: "bg-amber-100 text-amber-900 hover:bg-amber-200"
   }
 ];
-
-function getOrCreateViewerId(): string {
-  if (typeof localStorage === "undefined") {
-    return "deal-flow-viewer";
-  }
-
-  const existing = localStorage.getItem(STORAGE_VIEWER_KEY);
-  if (existing) {
-    return existing;
-  }
-
-  const created =
-    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : `viewer-${Date.now()}`;
-  localStorage.setItem(STORAGE_VIEWER_KEY, created);
-  return created;
-}
-
-function readSavedGoal(): string {
-  if (typeof localStorage === "undefined") {
-    return DEFAULT_GOAL;
-  }
-
-  return localStorage.getItem(STORAGE_GOAL_KEY)?.trim() || DEFAULT_GOAL;
-}
-
-function saveGoal(goal: string) {
-  if (typeof localStorage === "undefined") {
-    return;
-  }
-
-  localStorage.setItem(STORAGE_GOAL_KEY, goal);
-}
 
 function formatScore(score: number): string {
   return `${Math.round(score * 100)}%`;
@@ -124,26 +97,37 @@ function confidenceLabel(confidence: DealFlowCard["confidence"]): string {
   }
 }
 
-function signalBadgeLabel(value: string): string {
-  return value.replace(/_/g, " ");
-}
-
 interface DealFlowCandidateCardProps {
   candidate: DealFlowCard;
   pendingFeedbackKey: string | null;
   onFeedback: (candidate: DealFlowCard, kind: DealFlowFeedbackKind) => Promise<void>;
   onTrackInteraction: (candidate: DealFlowCard, kind: "detail_view" | "evidence_expand" | "dwell", note?: string) => void;
+  autoFocus?: boolean;
 }
 
 function DealFlowCandidateCard({
   candidate,
   pendingFeedbackKey,
   onFeedback,
-  onTrackInteraction
+  onTrackInteraction,
+  autoFocus = false
 }: DealFlowCandidateCardProps) {
-  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(autoFocus);
   const [evidenceOpen, setEvidenceOpen] = useState(false);
   const dwellKeyRef = useRef<string | null>(null);
+  const cardRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!autoFocus) {
+      return;
+    }
+
+    setDetailOpen(true);
+    if (typeof cardRef.current?.scrollIntoView === "function") {
+      cardRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+    onTrackInteraction(candidate, "detail_view", "autofocus");
+  }, [autoFocus, candidate, onTrackInteraction]);
 
   useEffect(() => {
     if (!detailOpen && !evidenceOpen) {
@@ -166,7 +150,13 @@ function DealFlowCandidateCard({
   }, [candidate, detailOpen, evidenceOpen, onTrackInteraction]);
 
   return (
-    <article className="rounded-[28px] border border-slate-200 bg-white/90 p-5 shadow-[0_18px_50px_-24px_rgba(15,23,42,0.35)] backdrop-blur">
+    <article
+      ref={cardRef}
+      className={clsx(
+        "rounded-[28px] border border-slate-200 bg-white/90 p-5 shadow-[0_18px_50px_-24px_rgba(15,23,42,0.35)] backdrop-blur",
+        autoFocus && "ring-2 ring-cyan-300 ring-offset-2 ring-offset-cyan-50"
+      )}
+    >
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
@@ -345,9 +335,9 @@ function DealFlowCandidateCard({
   );
 }
 
-export function DealFlowBoard() {
+export function DealFlowBoard({ focusPersonId }: { focusPersonId?: string }) {
   const [viewerId, setViewerId] = useState("");
-  const [goalInput, setGoalInput] = useState(DEFAULT_GOAL);
+  const [goalInput, setGoalInput] = useState(DEFAULT_DEAL_FLOW_GOAL);
   const [data, setData] = useState<DealFlowResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -365,7 +355,7 @@ export function DealFlowBoard() {
         viewerId: nextViewerId,
         goal: nextGoal
       });
-      saveGoal(nextGoal);
+      saveDealFlowGoal(nextGoal);
       startTransition(() => {
         setData(response);
       });
@@ -382,8 +372,8 @@ export function DealFlowBoard() {
     }
 
     hydratedRef.current = true;
-    const nextViewerId = getOrCreateViewerId();
-    const savedGoal = readSavedGoal();
+    const nextViewerId = getOrCreateDealFlowViewerId();
+    const savedGoal = readSavedDealFlowGoal();
     setViewerId(nextViewerId);
     setGoalInput(savedGoal);
     void loadDealFlow(nextViewerId, savedGoal);
@@ -429,6 +419,24 @@ export function DealFlowBoard() {
   return (
     <div className="min-h-[calc(100vh-60px)] bg-[radial-gradient(circle_at_top,_rgba(34,211,238,0.15),_transparent_35%),linear-gradient(180deg,#f8fafc_0%,#eef6ff_48%,#f8fafc_100%)]">
       <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+        <section className="mb-6 rounded-[28px] border border-cyan-200 bg-cyan-50/80 px-5 py-4 text-sm text-cyan-950 shadow-[0_12px_40px_-24px_rgba(14,165,233,0.35)]">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-700">Chat-First Copilot</div>
+              <p className="mt-1 leading-6">
+                `Deal Flow` 现在是兼容保留的派生视图。新的主入口是 `/chat`，在那里你可以一边自然语言协作，一边在右栏看到当前 session 的推进状态和 top picks。
+              </p>
+            </div>
+            <Link
+              href="/chat"
+              className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-slate-800"
+            >
+              打开 Chat Copilot
+              <ArrowUpRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </section>
+
         <section className="rounded-[36px] border border-slate-200 bg-white/80 p-6 shadow-[0_24px_80px_-36px_rgba(15,23,42,0.35)] backdrop-blur md:p-8">
           <div className="grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
             <div>
@@ -480,42 +488,19 @@ export function DealFlowBoard() {
               </form>
             </div>
 
-            <div className="rounded-[32px] bg-slate-950 p-5 text-white">
-              <div className="text-sm font-semibold uppercase tracking-[0.22em] text-cyan-300">Model Readout</div>
-              <p className="mt-4 text-sm leading-7 text-slate-200">
-                {data?.goalModel.summary ?? "正在根据你的目标和历史动作生成今日名单。"}
-              </p>
-              <div className="mt-5 flex flex-wrap gap-2">
-                {(data?.goalModel.dominantDirectionTags ?? []).slice(0, 4).map((tag) => (
-                  <span key={tag} className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white">
-                    {signalBadgeLabel(tag)}
-                  </span>
-                ))}
+            {data ? (
+              <DealFlowReadout
+                data={data}
+                generatedAtLabel={`更新于 ${formatGeneratedAt(data.artifact.generatedAt)}`}
+              />
+            ) : (
+              <div className="rounded-[32px] bg-slate-950 p-5 text-white">
+                <div className="text-sm font-semibold uppercase tracking-[0.22em] text-cyan-300">Model Readout</div>
+                <p className="mt-4 text-sm leading-7 text-slate-200">
+                  正在根据你的目标和历史动作生成今日名单。
+                </p>
               </div>
-              {data?.driftNote && (
-                <div className="mt-5 rounded-2xl border border-amber-300/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
-                  {data.driftNote}
-                </div>
-              )}
-              <div className="mt-6 grid grid-cols-2 gap-3 text-sm">
-                <div className="rounded-2xl bg-white/5 p-4">
-                  <div className="text-slate-400">今日候选</div>
-                  <div className="mt-1 text-2xl font-bold">{data?.artifact.totalCandidates ?? 0}</div>
-                </div>
-                <div className="rounded-2xl bg-white/5 p-4">
-                  <div className="text-slate-400">已看候选</div>
-                  <div className="mt-1 text-2xl font-bold">{data?.viewer.surfacedCandidates ?? 0}</div>
-                </div>
-                <div className="rounded-2xl bg-white/5 p-4">
-                  <div className="text-slate-400">感兴趣</div>
-                  <div className="mt-1 text-2xl font-bold">{data?.viewer.feedbackCounts.interested ?? 0}</div>
-                </div>
-                <div className="rounded-2xl bg-white/5 p-4">
-                  <div className="text-slate-400">细看次数</div>
-                  <div className="mt-1 text-2xl font-bold">{data?.viewer.interactionCounts.detail_view ?? 0}</div>
-                </div>
-              </div>
-            </div>
+            )}
           </div>
         </section>
 
@@ -556,6 +541,7 @@ export function DealFlowBoard() {
                     pendingFeedbackKey={pendingFeedbackKey}
                     onFeedback={handleFeedback}
                     onTrackInteraction={handleTrackInteraction}
+                    autoFocus={focusPersonId === candidate.personId}
                   />
                 ))}
               </div>
@@ -575,6 +561,7 @@ export function DealFlowBoard() {
                       pendingFeedbackKey={pendingFeedbackKey}
                       onFeedback={handleFeedback}
                       onTrackInteraction={handleTrackInteraction}
+                      autoFocus={focusPersonId === candidate.personId}
                     />
                   ))}
                 </div>

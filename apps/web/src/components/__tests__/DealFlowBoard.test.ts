@@ -123,13 +123,18 @@ describe("DealFlowBoard", () => {
         json: async () => ({ ok: true })
       });
 
-    render(React.createElement(DealFlowBoard));
+    render(React.createElement(DealFlowBoard, { focusPersonId: "person-1" }));
 
     await waitFor(() => {
       expect(screen.getByText("Ada")).toBeTruthy();
     });
 
-    fireEvent.click(screen.getByText("打开档案摘要"));
+    expect(screen.getByText(/新的主入口是/i)).toBeTruthy();
+    expect(screen.getByRole("link", { name: /打开 Chat Copilot/i }).getAttribute("href")).toBe("/chat");
+    expect(screen.getByText("收起档案摘要")).toBeTruthy();
+    expect(screen.getByText("打开完整档案")).toBeTruthy();
+
+    fireEvent.click(screen.getByText("收起档案摘要"));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -139,8 +144,6 @@ describe("DealFlowBoard", () => {
         })
       );
     });
-
-    expect(screen.getByText("打开完整档案")).toBeTruthy();
   });
 
   it("submits feedback and refreshes the board", async () => {
@@ -174,6 +177,8 @@ describe("DealFlowBoard", () => {
     await waitFor(() => {
       expect(screen.getByText("Ada")).toBeTruthy();
     });
+
+    expect(screen.getByText((content) => content.includes("兼容保留的派生视图"))).toBeTruthy();
 
     fireEvent.click(screen.getAllByText("感兴趣")[1]);
 

@@ -1,5 +1,4 @@
-import { Header } from "@/components/Header";
-import { AgentPanel } from "@/components/AgentPanel";
+import { redirect } from "next/navigation";
 
 export default async function AgentPanelPage({
   params
@@ -7,13 +6,5 @@ export default async function AgentPanelPage({
   params: Promise<{ sessionId: string }>;
 }) {
   const { sessionId } = await params;
-
-  return (
-    <div className="min-h-screen bg-bg-dark">
-      <Header />
-      <main>
-        <AgentPanel sessionId={sessionId} />
-      </main>
-    </div>
-  );
+  redirect(`/chat?sessionId=${encodeURIComponent(sessionId)}`);
 }

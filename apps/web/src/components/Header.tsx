@@ -16,7 +16,13 @@ export function Header() {
         {/* Navigation */}
         <nav className="flex items-center gap-6">
           <Link
-            href="/"
+            href="/chat"
+            className="text-text-light hover:text-accent-blue transition-colors font-body"
+          >
+            Copilot
+          </Link>
+          <Link
+            href="/search"
             className="text-text-light hover:text-accent-blue transition-colors font-body"
           >
             搜索
@@ -26,12 +32,6 @@ export function Header() {
             className="text-text-light hover:text-accent-blue transition-colors font-body"
           >
             Deal Flow
-          </Link>
-          <Link
-            href="/chat"
-            className="text-text-light hover:text-accent-blue transition-colors font-body"
-          >
-            对话搜索
           </Link>
           <Link
             href="/admin"
