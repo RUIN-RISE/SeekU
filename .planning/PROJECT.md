@@ -10,7 +10,7 @@ Seeku is an evidence-driven AI talent search engine. Its current primary operato
 
 ## Current State
 
-- Current milestone: none active
+- Current milestone: `v1.5 Chat-First Copilot`
 - Latest shipped milestone: `v1.4 Daily Deal Flow`
 - Previous shipped milestone: `v1.3 Visible Agent Copilot`
 - Milestone archives:
@@ -22,8 +22,8 @@ Seeku is an evidence-driven AI talent search engine. Its current primary operato
   - `.planning/milestones/v1.4-REQUIREMENTS.md`
   - `.planning/milestones/v1.3-REQUIREMENTS.md`
   - `.planning/milestones/v1.2-REQUIREMENTS.md`
-- Current status: `v1.4` shipped and archived
-- Current focus: choose the next milestone now that the first proactive deal-flow loop is live
+- Current status: `v1.5` opened for planning
+- Current focus: unify chat, visible copilot, and deal flow into one chat-first session product
 
 ## Shipped In v1.4
 
@@ -70,16 +70,16 @@ Seeku is an evidence-driven AI talent search engine. Its current primary operato
 - The shipped daily deal flow is still process-local in its learning loop and does not yet persist user-state durably.
 - External delivery, CRM, and corpus expansion are still out of scope until the next milestone explicitly pulls them in.
 
-## Next Milestone Goals
+## Current Milestone: v1.5 Chat-First Copilot
 
-No active milestone is open yet.
+**Goal:** Turn `/chat` into Seeku's primary operator surface with a narrated, read-only session workboard that folds visible copilot state and deal-flow outputs into one chat-first experience.
 
-The next milestone should decide whether Seeku goes deeper on:
-
-- durable learning and persistence for the proactive loop
-- external delivery or outreach assistance
-- richer operator workflow beyond the current in-product list
-- broader sourcing beyond the current corpus
+**Target features:**
+- chat-first split layout with a read-only right rail
+- narrated session workboard sections: `Now`, `Why`, `Movement`, `Focus`
+- reuse of the existing authoritative session snapshot and event stream
+- integration of shortlist, compare posture, recommendation posture, and `Top 3 today` into the current session view
+- compatible rollout path for `/agent-panel/[sessionId]` and `/deal-flow`
 
 ## Key Decisions
 
@@ -90,6 +90,7 @@ The next milestone should decide whether Seeku goes deeper on:
 - Keep milestone boundaries tight: ship the visible copilot before deciding whether to broaden it into a richer operator console.
 - Treat `Daily Deal Flow` as a new proactive layer above the shipped runtime, not as a replacement for reactive search.
 - Prioritize `goal-direction match` over richer but less reliable first-version signals such as broad personality inference or global reachability.
+- Unify shipped chat, panel, and deal-flow surfaces through a session-centric chat-first shell before expanding into durable memory, CRM, or external delivery.
 
 ## Evolution
 
@@ -107,4 +108,4 @@ This document evolves at phase transitions and milestone boundaries.
 3. Archive requirements and roadmap before opening the next milestone.
 
 ---
-*Last updated: 2026-04-17 after archiving milestone v1.4 Daily Deal Flow*
+*Last updated: 2026-04-17 after opening milestone v1.5 Chat-First Copilot*

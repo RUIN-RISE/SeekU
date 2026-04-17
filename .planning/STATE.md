@@ -1,14 +1,14 @@
 ---
 gsd_state_version: 1.0
-milestone: none
-milestone_name: none active
-status: no active milestone; v1.4 archived and project ready for next milestone planning
-stopped_at: milestone v1.4 archived; next move is define the next milestone
-last_updated: "2026-04-17T18:55:00.000Z"
+milestone: v1.5
+milestone_name: Chat-First Copilot
+status: active milestone; requirements and roadmap defined for v1.5
+stopped_at: phase 10 planning ready; next move is create or execute detailed phase plans
+last_updated: "2026-04-17T20:30:00.000Z"
 progress:
-  total_phases: 0
+  total_phases: 1
   completed_phases: 0
-  total_plans: 0
+  total_plans: 4
   completed_plans: 0
 ---
 
@@ -22,15 +22,15 @@ See:
 - `.planning/MILESTONES.md`
 
 **Core value:** Find the right AI talent through what they've done, not what they claim. Evidence-based matching over profile text matching.
-**Current focus:** `v1.4 Daily Deal Flow` is archived; the next step is opening the next milestone from a clean planning surface.
+**Current focus:** `v1.5 Chat-First Copilot` is open; the next step is planning and executing Phase 10.
 
 ## Current Position
 
-- Active milestone: none
-- Current phase: none
-- Current plan: none; phase execution finished
-- Status: `v1.4 Daily Deal Flow` archived; project is ready for the next milestone
-- Last activity: 2026-04-17 — archived milestone `v1.4 Daily Deal Flow`
+- Active milestone: `v1.5 Chat-First Copilot`
+- Current phase: `Phase 10: Chat-First Copilot`
+- Current plan: planning not started; roadmap and requirements defined
+- Status: milestone opened; phase context ready for detailed plan creation
+- Last activity: 2026-04-17 — opened milestone `v1.5 Chat-First Copilot`
 
 ## Latest Shipped Milestone
 
@@ -62,6 +62,7 @@ See:
 - Do not reopen discovery or GitHub expansion by default.
 - Keep recommendation honesty, compare gating, and CLI runtime authority intact.
 - Validate the proactive deal flow on top of the existing corpus before adding external delivery or corpus expansion.
+- Keep the new right rail read-only and avoid introducing a second browser-owned business state model.
 
 ## Previous Shipped Milestone Snapshot
 
@@ -78,4 +79,4 @@ See:
 ## Session Continuity
 
 Last session: 2026-04-17
-Stopped at: milestone `v1.4` archived; next route is next milestone planning.
+Stopped at: milestone `v1.5` opened with active requirements, roadmap, and Phase 10 context; next route is detailed phase planning.
