@@ -1,0 +1,96 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-04-18T06:15:32.234Z",
+  "context": "research",
+  "phase": null,
+  "phase_name": "github-expansion-bonjour-fresh-auth",
+  "phase_dir": null,
+  "plan": null,
+  "task": 3,
+  "total_tasks": 5,
+  "status": "paused",
+  "completed_tasks": [
+    {
+      "id": 1,
+      "name": "Ship CLI-first session ledger",
+      "status": "done",
+      "commit": "5bde1df"
+    },
+    {
+      "id": 2,
+      "name": "Add fresh-auth probe flow and seed builder wiring",
+      "status": "done",
+      "commit": "8c150c1"
+    },
+    {
+      "id": 3,
+      "name": "Add seed exclusion attribution and verify empty-seed behavior",
+      "status": "done",
+      "commit": "9ad4aff",
+      "progress": "Verified bonjour-fresh-auth-probe-test9; 8 fresh candidates were excluded by historical auto-exclude inputs from bonjour-fresh-auth-probe-test2 probe import handles."
+    }
+  ],
+  "remaining_tasks": [
+    {
+      "id": 4,
+      "name": "Decide next expansion after exclusion attribution",
+      "status": "not_started"
+    },
+    {
+      "id": 5,
+      "name": "Optionally compress blocked-handle attribution into a top offenders summary or rerun with adjusted exclude policy",
+      "status": "not_started"
+    }
+  ],
+  "blockers": [
+    {
+      "description": "Fresh-auth seed generation can collapse to zero because historical auto-exclude inputs dominate the latest fresh inputs.",
+      "type": "technical",
+      "workaround": "Inspect output/bonjour-raw/2026-04-18/bonjour-fresh-auth-probe-test9/recent-seed-blocked-handles.json and blocked-reasons.json before changing the builder or rerunning."
+    },
+    {
+      "description": "Some legacy .planning documents still contain placeholder markers and should not be treated as completion evidence.",
+      "type": "technical",
+      "workaround": "Ignore placeholder-bearing files in .planning/phases and older github-expansion notes unless they are actively refreshed."
+    }
+  ],
+  "human_actions_pending": [
+    {
+      "action": "Choose whether the next step is more reporting or a new authenticated crawl variant",
+      "context": "Current code path is committed and verified; remaining work is direction-setting rather than unfinished implementation.",
+      "blocking": false
+    },
+    {
+      "action": "Push local Bonjour commits if desired",
+      "context": "Commits 8c150c1 and 9ad4aff are local only; only 5bde1df was pushed earlier.",
+      "blocking": false
+    }
+  ],
+  "decisions": [
+    {
+      "decision": "CLI remains the only formal product entry; web is not the primary surface.",
+      "rationale": "User explicitly rejected web as the formal entry and wants CLI-centered integration.",
+      "phase": "product"
+    },
+    {
+      "decision": "Default historical excludes were narrowed to prior fresh-auth-consumed artifacts instead of all old frontier files.",
+      "rationale": "Blanket historical frontier exclusion over-pruned candidate discovery and made the experiment uninformative.",
+      "phase": "bonjour"
+    },
+    {
+      "decision": "Fresh seed discovery uses a recency window and small latest-cluster cap.",
+      "rationale": "Using all available same-day seed files kept re-consuming the same handles and hid whether the experiment was seeing anything new.",
+      "phase": "bonjour"
+    },
+    {
+      "decision": "Blocked-handle attribution report must distinguish auto excludes, recent seed excludes, and manual excludes.",
+      "rationale": "The initial report blamed recent seed dedupe by default, but the verified zero-output case was actually caused by auto-excluded historical probe imports.",
+      "phase": "bonjour"
+    }
+  ],
+  "uncommitted_files": [
+    "apps/web/next-env.d.ts"
+  ],
+  "next_action": "Start by reading the test9 summary and blocked-handle report, then decide whether to compress that data into a top blocked summary or loosen the auto-exclude policy for the next fresh-auth probe.",
+  "context_notes": "The current repo branch is main at 9ad4aff. No active phase directory was detected, so this handoff is stored as a research/default pause state under .planning. No background processes need to be preserved. Worker typecheck passed. Treat apps/web/next-env.d.ts as unrelated user work and do not include it in future Bonjour commits unless explicitly requested. Placeholder-bearing planning docs were detected under .planning/phases and older github-expansion notes; do not use them as completion proof."
+}
