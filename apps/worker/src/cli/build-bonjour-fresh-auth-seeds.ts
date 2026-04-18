@@ -55,6 +55,12 @@ interface BuildBonjourFreshAuthSeedsSummary {
   historyInputCount: number;
   mergedUniqueCount: number;
   excludedCount: number;
+  excludedByFileCount: number;
+  excludedByMinOccurrencesCount: number;
+  excludedByPurePostLikeCount: number;
+  excludedByMissingNameCount: number;
+  excludedByRequiredSourceKindsCount: number;
+  excludedByExcludedSourceKindsCount: number;
   candidateCount: number;
   outputCount: number;
   limit: number;
@@ -449,33 +455,46 @@ export async function runBuildBonjourFreshAuthSeedsCommand(argv: string[]) {
   }
 
   const keywords = options.keywords.map(normalizeKeyword).filter(Boolean);
+  let excludedByFileCount = 0;
+  let excludedByMinOccurrencesCount = 0;
+  let excludedByPurePostLikeCount = 0;
+  let excludedByMissingNameCount = 0;
+  let excludedByRequiredSourceKindsCount = 0;
+  let excludedByExcludedSourceKindsCount = 0;
+
   const candidates = [...merged.values()].filter((candidate) => {
     const candidateKinds = new Set(candidate.sourceKinds);
 
     if (excludeSet.has(candidate.handle)) {
+      excludedByFileCount += 1;
       return false;
     }
 
     if (candidate.occurrences < options.minOccurrences) {
+      excludedByMinOccurrencesCount += 1;
       return false;
     }
 
     if (options.excludePurePostLike) {
       const kinds = candidate.sourceKinds;
       if (kinds.length === 1 && kinds[0] === "post_like") {
+        excludedByPurePostLikeCount += 1;
         return false;
       }
     }
 
     if (options.requireProfileName && !candidate.name) {
+      excludedByMissingNameCount += 1;
       return false;
     }
 
     if (options.requiredSourceKinds.some((kind) => !candidateKinds.has(kind))) {
+      excludedByRequiredSourceKindsCount += 1;
       return false;
     }
 
     if (options.excludedSourceKinds.some((kind) => candidateKinds.has(kind))) {
+      excludedByExcludedSourceKindsCount += 1;
       return false;
     }
 
@@ -509,6 +528,12 @@ export async function runBuildBonjourFreshAuthSeedsCommand(argv: string[]) {
     historyInputCount,
     mergedUniqueCount: merged.size,
     excludedCount: excludeSet.size,
+    excludedByFileCount,
+    excludedByMinOccurrencesCount,
+    excludedByPurePostLikeCount,
+    excludedByMissingNameCount,
+    excludedByRequiredSourceKindsCount,
+    excludedByExcludedSourceKindsCount,
     candidateCount: rankedCandidates.length,
     outputCount: outputRecords.length,
     limit: options.limit,
