@@ -33,6 +33,7 @@ import { runBonjourDiscoveryScan, runBonjourSyncJob } from "./index.js";
 import { runCoverageCli } from "./cli/coverage.js";
 import { runAgentEvalCli } from "./cli/agent-eval.js";
 import { runBuildBonjourAuthProbeSeedsCommand } from "./cli/build-bonjour-auth-probe-seeds.js";
+import { runBuildBonjourFreshAuthSeedsCommand } from "./cli/build-bonjour-fresh-auth-seeds.js";
 import { runDumpBonjourAuthHandlesCommand } from "./cli/dump-bonjour-auth-handles.js";
 import { runImportBonjourFriendLinksCommand } from "./cli/import-bonjour-friend-links.js";
 import { runDumpBonjourRawCommand } from "./cli/dump-bonjour-raw.js";
@@ -126,6 +127,10 @@ function buildCommandRegistry(): Map<string, CommandRunner> {
 
   registry.set("build-bonjour-auth-probe-seeds", async (_parsed, rawArgv) => {
     return runBuildBonjourAuthProbeSeedsCommand(rawArgv);
+  });
+
+  registry.set("build-bonjour-fresh-auth-seeds", async (_parsed, rawArgv) => {
+    return runBuildBonjourFreshAuthSeedsCommand(rawArgv);
   });
 
   registry.set("dump-bonjour-raw", async (_parsed, rawArgv) => {
