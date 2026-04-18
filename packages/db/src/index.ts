@@ -8,6 +8,7 @@ import * as schema from "./schema.js";
 export * from "./schema.js";
 export * from "./repositories.js";
 export * from "./profile-cache.js";
+export * from "./agent-sessions.js";
 
 // Re-export search-related types
 export type {

@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
-milestone: null
-milestone_name: null
-status: no active milestone; v1.7 archived as shipped
-stopped_at: milestone v1.7 completed and archived; next move is open the next milestone
-last_updated: "2026-04-18T04:10:00.000Z"
+milestone: v1.8
+milestone_name: CLI-First Session Ledger
+status: active milestone; Phase 14 is in progress
+stopped_at: Phase 14 plan 01 is executing; next move is continue implementing CLI-first session ledger
+last_updated: "2026-04-18T04:45:00.000Z"
 progress:
   total_phases: 1
-  completed_phases: 1
+  completed_phases: 0
   total_plans: 4
-  completed_plans: 4
+  completed_plans: 1
 ---
 
 # Project State
@@ -22,15 +22,15 @@ See:
 - `.planning/MILESTONES.md`
 
 **Core value:** Find the right AI talent through what they've done, not what they claim. Evidence-based matching over profile text matching.
-**Current focus:** `v1.7 Runtime-Backed Chat Agent Integration` is shipped and archived; the next step is defining the next milestone.
+**Current focus:** `v1.8 CLI-First Session Ledger` is active; the current move is restoring formal session ownership and attach/resume flow to the CLI.
 
 ## Current Position
 
-- Active milestone: none
-- Current phase: none
-- Current plan: none
-- Status: `v1.7 Runtime-Backed Chat Agent Integration` completed and archived
-- Last activity: 2026-04-18 — archived milestone `v1.7 Runtime-Backed Chat Agent Integration`
+- Active milestone: `v1.8 CLI-First Session Ledger`
+- Current phase: `Phase 14: CLI-First Session Ledger`
+- Current plan: `14-01` completed; `14-02` pending
+- Status: first implementation batch landed for startup picker, local ledger, and read-only attach shell
+- Last activity: 2026-04-18 — completed `14-01` foundation work and opened remaining Phase 14 batches
 
 ## Latest Shipped Milestone
 
@@ -60,8 +60,8 @@ See:
   - `Q8`: `pass`
 - Do not reopen discovery or GitHub expansion by default.
 - Keep recommendation honesty, compare gating, and CLI runtime authority intact.
-- Keep runtime-backed `/chat` session authority single-sourced and do not reintroduce local simulated execution as a parallel authority path.
-- Keep attached runtime correction bounded until a later milestone explicitly expands the command surface.
+- Keep CLI runtime authority single-sourced and do not reintroduce browser-owned interaction as a formal product dependency.
+- Keep restore scope bounded to chat history and workboard snapshot until a later batch explicitly expands it.
 
 ## Previous Shipped Milestone Snapshot
 
@@ -76,4 +76,4 @@ See:
 ## Session Continuity
 
 Last session: 2026-04-18
-Stopped at: milestone `v1.7` archived after runtime-backed chat acceptance and Phase 13 closeout; next route is opening the next milestone.
+Stopped at: Phase `14-01` landed the first CLI-first session ledger foundation; next route is `14-02` database-backed resume and transcript tightening.

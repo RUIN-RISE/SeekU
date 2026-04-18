@@ -15,6 +15,13 @@
       "when": 1774886480000,
       "tag": "0001_add_web_and_summary",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1776489000000,
+      "tag": "0002_agent_sessions",
+      "breakpoints": true
     }
   ]
 }

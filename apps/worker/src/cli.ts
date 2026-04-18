@@ -244,6 +244,11 @@ function buildCommandRegistry(): Map<string, CommandRunner> {
     return runShowCli({ personId, json });
   });
 
+  registry.set("attach", async (parsed) => {
+    const sessionId = parsed.args.get("sessionId") ?? parsed.positionals[0] ?? "";
+    return runInteractiveSearch(undefined, { attachSessionId: sessionId });
+  });
+
   // --- Utility commands ---
   registry.set("coverage", async (parsed) => {
     return runCoverageCli({ json: parsed.flags.has("json") });
@@ -267,6 +272,7 @@ function buildCommandRegistry(): Map<string, CommandRunner> {
     console.log(chalk.yellow("Commands:"));
     console.log(`  ${chalk.cyan("seeku")}                 🚀 启动会话式人才搜索助手`);
     console.log(`  ${chalk.cyan('seeku "query"')}         带初始需求进入会话式搜索`);
+    console.log(`  ${chalk.cyan("attach <sessionId>")}   恢复一个已停止的 CLI session（只读，需显式 resume）`);
     console.log(`  ${chalk.cyan("search [query]")}        直接进行脚本式人才搜索 (支持 --json)`);
     console.log(`  ${chalk.cyan("show [id]")}            查看指定人才的深度画像`);
     console.log(`  ${chalk.cyan("version")}              显示当前版本信息`);

@@ -46,6 +46,15 @@ export interface AgentSearchHistoryEntrySnapshot extends Omit<SearchHistoryEntry
   timestamp: string;
 }
 
+export type AgentTranscriptRole = "user" | "assistant" | "system";
+
+export interface AgentTranscriptEntry {
+  id: string;
+  role: AgentTranscriptRole;
+  content: string;
+  timestamp: string;
+}
+
 export interface AgentSessionSnapshot {
   sessionId: string;
   status: AgentSessionStatus;

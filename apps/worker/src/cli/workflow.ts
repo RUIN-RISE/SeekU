@@ -62,6 +62,8 @@ import {
   serializeRecommendation,
   serializeSessionCandidate,
   summarizeInterventionCommand,
+  type AgentTranscriptEntry,
+  type AgentTranscriptRole,
   type AgentInterventionCommand,
   type AgentSessionEvent,
   type AgentSessionSnapshot,
@@ -113,6 +115,11 @@ interface DetailOutcome {
 }
 
 export { classifyMatchStrength };
+
+interface SearchWorkflowOptions {
+  sessionId?: string;
+  initialTranscript?: AgentTranscriptEntry[];
+}
 
 export interface QueryMatchExplanation {
   summary: string;
@@ -732,12 +739,13 @@ export class SearchWorkflow {
   private reranker: Reranker;
   private spinner: Ora;
   private sessionState: AgentSessionState;
-  private readonly sessionId = randomUUID();
+  private sessionId: string;
   private sessionStatus: AgentSessionStatus = "idle";
   private sessionStatusSummary: string | null = "等待输入";
   private sessionEventSequence = 0;
   private readonly sessionEvents: AgentSessionEvent[] = [];
   private readonly sessionEventListeners = new Set<(event: AgentSessionEvent) => void>();
+  private readonly transcript: AgentTranscriptEntry[];
   private tools: SearchAgentTools<
     HydratedCandidate,
     AgentInspectCandidateOutput<HydratedCandidate>,
@@ -747,8 +755,11 @@ export class SearchWorkflow {
 
   constructor(
     private db: SeekuDatabase,
-    private llmProvider: LLMProvider
+    private llmProvider: LLMProvider,
+    options: SearchWorkflowOptions = {}
   ) {
+    this.sessionId = options.sessionId ?? randomUUID();
+    this.transcript = [...(options.initialTranscript ?? [])];
     this.chat = new ChatInterface(llmProvider);
     this.tui = new TerminalUI();
     this.scorer = new HybridScoringEngine(llmProvider);
@@ -808,6 +819,7 @@ export class SearchWorkflow {
       "CLI agent 会话已启动，等待输入。",
       { snapshot: this.getSessionSnapshot() }
     );
+    this.appendTranscriptEntry("assistant", "CLI agent 会话已启动，等待输入。");
   }
 
   private get comparePool(): HydratedCandidate[] {
@@ -845,6 +857,33 @@ export class SearchWorkflow {
       ...event,
       data: { ...event.data }
     }));
+  }
+
+  getTranscript(): AgentTranscriptEntry[] {
+    return this.transcript.map((entry) => ({ ...entry }));
+  }
+
+  private appendTranscriptEntry(
+    role: AgentTranscriptRole,
+    content: string,
+    timestamp: Date = new Date()
+  ): void {
+    const normalized = content.trim();
+    if (!normalized) {
+      return;
+    }
+
+    const lastEntry = this.transcript[this.transcript.length - 1];
+    if (lastEntry && lastEntry.role === role && lastEntry.content === normalized) {
+      return;
+    }
+
+    this.transcript.push({
+      id: randomUUID(),
+      role,
+      content: normalized,
+      timestamp: timestamp.toISOString()
+    });
   }
 
   subscribeToSessionEvents(
@@ -1002,6 +1041,9 @@ export class SearchWorkflow {
 
     this.sessionStatus = status;
     this.sessionStatusSummary = normalizedSummary;
+    if (normalizedSummary) {
+      this.appendTranscriptEntry("system", normalizedSummary);
+    }
     this.emitSessionEvent("status_changed", normalizedSummary || `状态切换为 ${status}`, {
       status,
       statusSummary: normalizedSummary
@@ -1199,6 +1241,8 @@ export class SearchWorkflow {
         this.setSessionStatus("completed", "会话已结束。");
         return;
       }
+
+      this.appendTranscriptEntry("user", initialInput);
 
       const clarifyOutcome = await this.runClarifyLoop(initialInput);
       if (!clarifyOutcome) {

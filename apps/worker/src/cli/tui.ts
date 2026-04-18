@@ -1,6 +1,8 @@
 import enquirer from "enquirer";
 import chalk from "chalk";
 import { emitKeypressEvents } from "node:readline";
+import type { AgentSessionSnapshot, AgentTranscriptEntry } from "./agent-session-events.js";
+import type { PersistedCliSessionSummary } from "./session-ledger.js";
 import {
   ClarifyAction,
   DetailAction,
@@ -52,6 +54,132 @@ export class TerminalUI {
   displayWelcomeTips() {
     console.log(chalk.dim("输入一句自然语言需求，我会先回显理解结果，再带你进入 shortlist。"));
     console.log(chalk.dim("例如：找 3 年以上做推理优化的工程师，杭州或远程，熟悉 CUDA / vLLM。\n"));
+  }
+
+  displaySessionLauncher(sessions: PersistedCliSessionSummary[]) {
+    process.stdout.write("\x1Bc");
+    this.displayBanner();
+    console.log(chalk.bold("选择一个入口："));
+    console.log(`[1] ${chalk.green("新开 session")}`);
+
+    sessions.forEach((session, index) => {
+      const stamp = new Date(session.updatedAt).toLocaleString("zh-CN", {
+        hour12: false
+      });
+      const posture = session.posture === "stopped" ? "已停止" : "进行中";
+      const cacheHint = session.cacheOnly ? chalk.dim(" · local cache") : "";
+      console.log(
+        `[${index + 2}] ${chalk.cyan(session.sessionId)} ${chalk.dim(stamp)} ${chalk.dim(`(${posture})`)}${cacheHint}`
+      );
+    });
+
+    console.log("");
+    console.log(chalk.dim("也可以直接输入 attach <sessionId>。"));
+  }
+
+  async promptSessionLauncherChoice(defaultChoice = "1"): Promise<string> {
+    return this.promptLine("launcher>", defaultChoice);
+  }
+
+  displayRestoredSession(transcript: AgentTranscriptEntry[]) {
+    process.stdout.write("\x1Bc");
+    this.displayBanner();
+    console.log(chalk.bold("已恢复停止中的 session（只读）"));
+    console.log(chalk.dim("可用命令：resume / workboard / q\n"));
+
+    if (transcript.length === 0) {
+      console.log(chalk.dim("当前没有可显示的历史消息。\n"));
+      return;
+    }
+
+    for (const entry of transcript) {
+      const stamp = new Date(entry.timestamp).toLocaleString("zh-CN", {
+        hour12: false
+      });
+      const roleLabel = entry.role === "user"
+        ? chalk.blue("你")
+        : entry.role === "assistant"
+          ? chalk.green("助手")
+          : chalk.yellow("系统");
+      console.log(`${roleLabel} ${chalk.dim(stamp)}`);
+      console.log(`${entry.content}\n`);
+    }
+  }
+
+  async promptRestoredSessionCommand(): Promise<string> {
+    return this.promptLine("restored>", "resume");
+  }
+
+  async promptResumeContinuation(): Promise<string> {
+    return this.promptLine("resume>", "");
+  }
+
+  async promptContinue(message = "continue>"): Promise<string> {
+    return this.promptLine(message, "");
+  }
+
+  displayWorkboardSnapshot(snapshot: AgentSessionSnapshot | null) {
+    console.log("");
+    console.log(chalk.bold("Workboard"));
+    console.log(chalk.dim("-".repeat(48)));
+
+    if (!snapshot) {
+      console.log(chalk.dim("暂无 workboard 快照。"));
+      console.log("");
+      return;
+    }
+
+    const nowTitle = this.deriveWorkboardNow(snapshot);
+    const why = snapshot.openUncertainties[0] || snapshot.statusSummary || "当前 session 没有额外解释。";
+    const movement = snapshot.statusSummary || "当前没有新的结构化变动。";
+    const focus = this.deriveWorkboardFocus(snapshot);
+
+    console.log(`${chalk.cyan("Now")}      ${nowTitle}`);
+    console.log(`${chalk.cyan("Why")}      ${why}`);
+    console.log(`${chalk.cyan("Movement")} ${movement}`);
+    console.log(`${chalk.cyan("Focus")}    ${focus}`);
+    console.log("");
+  }
+
+  private deriveWorkboardNow(snapshot: AgentSessionSnapshot): string {
+    switch (snapshot.status) {
+      case "clarifying":
+        return "Clarifying goal";
+      case "searching":
+        return "Searching candidates";
+      case "shortlist":
+        return "Narrowing shortlist";
+      case "comparing":
+        return "Comparing finalists";
+      case "completed":
+        return "Session completed";
+      case "blocked":
+        return "Blocked";
+      case "waiting-input":
+        return "Waiting for input";
+      default:
+        return snapshot.status;
+    }
+  }
+
+  private deriveWorkboardFocus(snapshot: AgentSessionSnapshot): string {
+    if (snapshot.recommendedCandidate) {
+      return `Recommendation: ${snapshot.recommendedCandidate.candidate.name}`;
+    }
+
+    if (snapshot.activeCompareSet.length >= 2 || snapshot.status === "comparing") {
+      return `Compare set: ${snapshot.activeCompareSet.map((candidate) => candidate.name).join(" / ")}`;
+    }
+
+    if (snapshot.currentShortlist.length > 0) {
+      return `Shortlist: ${snapshot.currentShortlist.slice(0, 3).map((candidate) => candidate.name).join(" / ")}`;
+    }
+
+    if (snapshot.userGoal) {
+      return snapshot.userGoal;
+    }
+
+    return "当前没有聚焦对象。";
   }
 
   displayInitialSearch(query: string) {

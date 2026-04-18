@@ -1,31 +1,49 @@
-# Milestones
+# Milestone v1.8: CLI-First Session Ledger
 
-## v1.7 Runtime-Backed Chat Agent Integration (Shipped: 2026-04-18)
+**Status:** ACTIVE
+**Started:** 2026-04-18
+**Phase range:** 14
 
-Archived roadmap: `.planning/milestones/v1.7-ROADMAP.md`
+## Overview
 
-## v1.6 Mission Replay Hardening (Shipped: 2026-04-18)
+This milestone pulls the formal agent interaction loop back into the CLI. The goal is not to improve the browser shell further, but to make the CLI the only formal surface for session start, restore, attach, resume, and workboard inspection.
 
-Archived roadmap: `.planning/milestones/v1.6-ROADMAP.md`
+## Included Phase
 
-## v1.5 Chat-First Copilot (Shipped: 2026-04-18)
+### Phase 14: CLI-First Session Ledger
 
-Archived roadmap: `.planning/milestones/v1.5-ROADMAP.md`
+**Goal:** Add a CLI-owned session ledger with durable restore, startup session selection, read-only attach, explicit resume, and folded workboard inspection.
 
-## v1.4 Daily Deal Flow (Shipped: 2026-04-17)
+**Depends on:** Phase 7 `cli-search-agent-orchestration`, Phase 8 `cli-agent-panel`, Phase 10 `chat-first-copilot`, Phase 13 `runtime-backed-chat-agent-integration`
 
-Archived roadmap: `.planning/milestones/v1.4-ROADMAP.md`
+**Plans:**
+- [x] `14-01-PLAN.md` — Ledger foundation, startup picker, local cache, and read-only attach shell
+- [ ] `14-02-PLAN.md` — Database-backed session storage, transcript model, and same-session resume flow
+- [ ] `14-03-PLAN.md` — Folded CLI workboard, command surface tightening, and non-web runtime ownership cleanup
+- [ ] `14-04-PLAN.md` — Acceptance coverage, residual-risk report, and milestone closeout
 
-## v1.3 Visible Agent Copilot (Shipped: 2026-04-17)
+## Milestone Guardrails
 
-Archived roadmap: `.planning/milestones/v1.3-ROADMAP.md`
+- CLI is the only formal product entry point.
+- Do not treat the web chat shell as a required user path.
+- Restore support is limited to CLI-created sessions.
+- Resume must remain explicit and must not auto-trigger from free-form input.
+- Keep the first durable restore scope narrow:
+  - chat history
+  - latest workboard snapshot
 
-## v1.2 Agentic Search CLI (Shipped: 2026-04-16)
+## Planned Outcome
 
-Archived roadmap: `.planning/milestones/v1.2-ROADMAP.md`
+- startup enters a CLI-first session launcher
+- users can restore stopped CLI sessions by `sessionId`
+- restored sessions open read-only and require `resume`
+- workboard inspection moves into the CLI surface
+- browser-owned interaction is no longer required for normal agent use
 
-## Next Milestone
+## References
 
-Not started.
-
-Use `$gsd-new-milestone` to open the next milestone with a fresh `REQUIREMENTS.md` and roadmap.
+- `.planning/PROJECT.md`
+- `.planning/STATE.md`
+- `.planning/REQUIREMENTS.md`
+- `docs/superpowers/specs/2026-04-18-cli-first-session-ledger-design.md`
+- `.planning/phases/13-runtime-backed-chat-agent-integration/04-SUMMARY.md`

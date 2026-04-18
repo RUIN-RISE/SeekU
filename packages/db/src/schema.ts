@@ -32,6 +32,8 @@ export const evidenceType = pgEnum("evidence_type", [
 export const searchStatus = pgEnum("search_status", ["active", "hidden", "claimed"]);
 export const claimMethod = pgEnum("claim_method", ["email", "github"]);
 export const claimStatus = pgEnum("claim_status", ["pending", "approved", "rejected", "revoked"]);
+export const agentSessionOrigin = pgEnum("agent_session_origin", ["cli"]);
+export const agentSessionPosture = pgEnum("agent_session_posture", ["active", "stopped"]);
 
 export const sourceSyncRuns = pgTable("source_sync_runs", {
   id: uuid("id").default(sql`uuid_generate_v4()`).primaryKey(),
@@ -101,6 +103,22 @@ export const optOutRequests = pgTable("opt_out_requests", {
   status: text("status").default("pending").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   resolvedAt: timestamp("resolved_at", { withTimezone: true })
+});
+
+export const agentSessions = pgTable("agent_sessions", {
+  sessionId: uuid("session_id").primaryKey(),
+  origin: agentSessionOrigin("origin").default("cli").notNull(),
+  posture: agentSessionPosture("posture").default("active").notNull(),
+  transcript: jsonb("transcript")
+    .$type<Record<string, unknown>[]>()
+    .default(sql`'[]'::jsonb`)
+    .notNull(),
+  latestSnapshot: jsonb("latest_snapshot")
+    .$type<Record<string, unknown> | null>()
+    .default(sql`'{}'::jsonb`)
+    .notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
 });
 
 export interface MatchReason {
@@ -210,12 +228,16 @@ export type SourceName = typeof sourceName.enumValues[number];
 export type SyncStatus = typeof syncStatus.enumValues[number];
 export type EvidenceType = typeof evidenceType.enumValues[number];
 export type SearchStatus = typeof searchStatus.enumValues[number];
+export type AgentSessionOrigin = typeof agentSessionOrigin.enumValues[number];
+export type AgentSessionPosture = typeof agentSessionPosture.enumValues[number];
 export type SourceSyncRun = typeof sourceSyncRuns.$inferSelect;
 export type NewSourceSyncRun = typeof sourceSyncRuns.$inferInsert;
 export type SourceProfile = typeof sourceProfiles.$inferSelect;
 export type NewSourceProfile = typeof sourceProfiles.$inferInsert;
 export type OptOutRequest = typeof optOutRequests.$inferSelect;
 export type NewOptOutRequest = typeof optOutRequests.$inferInsert;
+export type AgentSession = typeof agentSessions.$inferSelect;
+export type NewAgentSession = typeof agentSessions.$inferInsert;
 export type Person = typeof persons.$inferSelect;
 export type NewPerson = typeof persons.$inferInsert;
 export type PersonIdentity = typeof personIdentities.$inferSelect;

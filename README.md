@@ -149,6 +149,9 @@ npx tsx apps/worker/src/cli.ts
 # Interactive mode with an initial prompt
 npx tsx apps/worker/src/cli.ts "Find ML engineers in Hangzhou"
 
+# Restore a stopped CLI session by id
+npx tsx apps/worker/src/cli.ts attach <session-id>
+
 # Script mode
 npx tsx apps/worker/src/cli.ts search "杭州 AI" --json --limit 10
 ```
@@ -162,6 +165,7 @@ Command                                                Description
 -----------------------------------------------------------------------------------------
 npx tsx apps/worker/src/cli.ts                         Start interactive search
 npx tsx apps/worker/src/cli.ts "query"                 Start interactive search with a prompt
+npx tsx apps/worker/src/cli.ts attach <session-id>     Restore a stopped CLI session
 npx tsx apps/worker/src/cli.ts search "query" --json   Script mode JSON output
 npx tsx apps/worker/src/cli.ts show <person-id>        Show a candidate profile
 npx tsx apps/worker/src/cli.ts help                    Show CLI help

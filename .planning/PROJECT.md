@@ -10,7 +10,7 @@ Seeku is an evidence-driven AI talent search engine. Its current primary operato
 
 ## Current State
 
-- Current milestone: none active
+- Current milestone: `v1.8 CLI-First Session Ledger`
 - Latest shipped milestone: `v1.7 Runtime-Backed Chat Agent Integration`
 - Previous shipped milestone: `v1.6 Mission Replay Hardening`
 - Milestone archives:
@@ -32,7 +32,7 @@ Seeku is an evidence-driven AI talent search engine. Its current primary operato
   - `.planning/milestones/v1.3-REQUIREMENTS.md`
   - `.planning/milestones/v1.2-REQUIREMENTS.md`
 - Current status: `v1.7` archived as shipped
-- Current focus: define the next milestone on top of the runtime-backed chat copilot foundation
+- Current focus: move the formal agent product surface back into the CLI and add a durable CLI-owned session ledger
 
 ## Shipped In v1.7
 
@@ -127,14 +127,15 @@ Seeku is an evidence-driven AI talent search engine. Its current primary operato
 - The shipped daily deal flow is still process-local in its learning loop and does not yet persist user-state durably.
 - External delivery, CRM, and corpus expansion are still out of scope until the next milestone explicitly pulls them in.
 
-## Next Milestone Goals
+## Current Milestone: v1.8 CLI-First Session Ledger
 
-- not defined yet
-- open the next milestone with a fresh `REQUIREMENTS.md`
-- decide whether the next step is:
-  - broader attached-chat runtime command coverage beyond bounded feedback tags
-  - mission expansion beyond the first runtime-backed bounded search scope
-  - operator workflow on top of the now-runtime-backed chat-first surface
+**Goal:** Make the CLI the only formal agent interaction surface and add durable CLI-owned session restore, attach, and resume primitives without depending on the browser chat shell.
+
+**Target features:**
+- CLI startup shows recent sessions and allows `new session` or `attach <sessionId>`
+- stopped CLI-created sessions can be restored from a durable ledger
+- restored sessions open read-only and require explicit `resume`
+- the CLI gains a folded workboard view for restored session inspection
 
 ## Key Decisions
 
@@ -163,4 +164,4 @@ This document evolves at phase transitions and milestone boundaries.
 3. Archive requirements and roadmap before opening the next milestone.
 
 ---
-*Last updated: 2026-04-18 after shipping milestone v1.7 Runtime-Backed Chat Agent Integration*
+*Last updated: 2026-04-18 after opening milestone v1.8 CLI-First Session Ledger*
