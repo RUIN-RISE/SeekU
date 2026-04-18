@@ -1223,6 +1223,67 @@ export class SearchWorkflow {
     }
   }
 
+  async bootstrapMission(initialPrompt: string): Promise<void> {
+    const prompt = initialPrompt.trim();
+    if (!prompt) {
+      this.setSessionStatus("blocked", "缺少初始搜索目标。");
+      return;
+    }
+
+    this.setSessionStatus("clarifying", "正在理解你的搜索目标。");
+    let conditions = await this.extractDraftFromQuery(prompt);
+    let nextState = setSessionUserGoal(this.sessionState, prompt);
+    nextState = recordClarification(nextState, prompt, conditions);
+    this.applySessionState(nextState);
+    this.emitSessionEvent("clarify_started", "开始解析 runtime-backed 搜索目标。", {
+      prompt,
+      clarificationCount: this.sessionState.clarificationHistory.length
+    });
+
+    const effectiveQuery = this.buildEffectiveQuery(conditions);
+    if (!effectiveQuery) {
+      this.setSessionStatus("blocked", "当前条件不足以形成有效搜索。");
+      return;
+    }
+
+    this.setSessionStatus("searching", "正在搜索匹配候选人。");
+    this.emitSessionEvent("search_started", `开始搜索：${truncateDisplayValue(effectiveQuery, 48)}`, {
+      query: effectiveQuery,
+      conditions
+    });
+
+    const searchResult = await this.tools.searchCandidates({
+      query: effectiveQuery,
+      conditions
+    });
+    const candidates = searchResult.candidates;
+
+    if (candidates.length === 0) {
+      let emptyState = setSessionShortlist(this.sessionState, []);
+      emptyState = setOpenUncertainties(emptyState, ["当前条件下没有检索到足够候选人。"]);
+      this.applySessionState(emptyState);
+      this.emitSessionEvent("search_completed", "搜索完成，但当前没有命中候选人。", {
+        query: effectiveQuery,
+        resultCount: 0
+      });
+      this.setSessionStatus("waiting-input", "当前没有命中候选人，请继续收紧或调整方向。");
+      return;
+    }
+
+    this.applySessionState(recordSearchExecution(this.sessionState, {
+      conditions: { ...conditions },
+      resultCount: candidates.length,
+      shortlist: candidates,
+      timestamp: new Date()
+    }));
+    this.emitSessionEvent("search_completed", `搜索完成，命中 ${candidates.length} 位候选人。`, {
+      query: effectiveQuery,
+      resultCount: candidates.length,
+      shortlistSize: this.sessionState.currentShortlist.length
+    });
+    this.setSessionStatus("waiting-input", `runtime session 已准备好当前 shortlist（${candidates.length} 人）。`);
+  }
+
   private async runClarifyLoop(initialInput: string): Promise<SearchConditions | null> {
     let query = initialInput.trim();
     this.setSessionStatus("clarifying", "正在理解你的搜索目标。");

@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { SearchWorkflow } from "../../../worker/src/cli/workflow.js";
 
 export interface AgentPanelInterventionCommand {
   type: "add_to_compare" | "remove_from_shortlist" | "expand_evidence" | "apply_feedback";
@@ -32,6 +33,7 @@ export interface AgentPanelInterventionResult {
 }
 
 export interface AgentSessionBridge {
+  registerWorkflow?(workflow: SearchWorkflow): AgentPanelSessionSnapshot;
   hasSession(sessionId: string): boolean;
   getSnapshot(sessionId: string): AgentPanelSessionSnapshot | null;
   subscribe(

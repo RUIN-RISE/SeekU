@@ -44,6 +44,26 @@ function buildInterventionUrl(sessionId: string): string {
   return `${API_BASE_URL}/agent-panel/${encodeURIComponent(sessionId)}/interventions`;
 }
 
+function createSyntheticInterventionEvent(
+  sessionId: string,
+  sequence: number,
+  command: AgentPanelInterventionCommand,
+  status: AgentPanelSessionSnapshot["status"],
+  summary: string,
+  data: Record<string, unknown>,
+  type: "intervention_applied" | "intervention_rejected"
+): AgentPanelSessionEvent {
+  return {
+    sessionId,
+    sequence,
+    timestamp: new Date().toISOString(),
+    type,
+    status,
+    summary,
+    data
+  };
+}
+
 export function useAgentPanelSession(sessionId: string): UseAgentPanelSessionResult {
   const [state, setState] = useState<AgentPanelState>(() => createInitialAgentPanelState(sessionId));
   const [pendingCommandKey, setPendingCommandKey] = useState<string | null>(null);
@@ -258,9 +278,22 @@ export function useAgentPanelSession(sessionId: string): UseAgentPanelSessionRes
           const nextState = payload.snapshot
             ? applyAgentPanelSnapshot(previousState, payload.snapshot)
             : previousState;
+          const nextSequence = (nextState.events.at(-1)?.sequence ?? 0) + 1;
+          const nextEvent = createSyntheticInterventionEvent(
+            sessionId,
+            nextSequence,
+            command,
+            payload.snapshot?.status ?? nextState.snapshot?.status ?? "waiting-input",
+            payload.summary ?? "这次干预被 runtime 拒绝了。",
+            {
+              command,
+              reason: payload.reason
+            },
+            "intervention_rejected"
+          );
 
           return {
-            ...nextState,
+            ...applyAgentPanelEvent(nextState, nextEvent),
             latestNotice: {
               kind: "error",
               message: payload.summary ?? "这次干预被 runtime 拒绝了。"
@@ -278,9 +311,21 @@ export function useAgentPanelSession(sessionId: string): UseAgentPanelSessionRes
         const nextState = payload.snapshot
           ? applyAgentPanelSnapshot(previousState, payload.snapshot)
           : previousState;
+        const nextSequence = (nextState.events.at(-1)?.sequence ?? 0) + 1;
+        const nextEvent = createSyntheticInterventionEvent(
+          sessionId,
+          nextSequence,
+          command,
+          payload.snapshot?.status ?? nextState.snapshot?.status ?? "waiting-input",
+          payload.summary ?? "干预命令已提交。",
+          {
+            command
+          },
+          "intervention_applied"
+        );
 
         return {
-          ...nextState,
+          ...applyAgentPanelEvent(nextState, nextEvent),
           latestNotice: {
             kind: "success",
             message: payload.summary ?? "干预命令已提交。"

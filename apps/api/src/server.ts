@@ -17,6 +17,7 @@ import { OptOutRequestInputSchema, type SourceName } from "@seeku/shared";
 import { registerSearchRoutes } from "./routes/search.js";
 import { registerStreamSearchRoutes } from "./routes/search-stream.js";
 import { registerAgentPanelRoutes, type AgentSessionBridge } from "./routes/agent-panel.js";
+import { registerChatMissionRoutes } from "./routes/chat-mission.js";
 import { registerProfileRoutes } from "./routes/profiles.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerClaimRoutes } from "./routes/claim.js";
@@ -138,6 +139,10 @@ export async function buildApiServer(input?: SeekuDatabase | BuildApiServerOptio
   registerSearchRoutes(fastify, database, { services: options.searchServices });
   registerStreamSearchRoutes(fastify, database);
   registerAgentPanelRoutes(fastify, { bridge: options.agentSessionBridge });
+  registerChatMissionRoutes(fastify, database, {
+    bridge: options.agentSessionBridge,
+    provider: options.searchServices?.provider
+  });
   registerProfileRoutes(fastify, database);
   registerAdminRoutes(fastify, database);
   registerClaimRoutes(fastify, database);

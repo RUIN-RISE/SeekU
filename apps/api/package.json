@@ -16,6 +16,7 @@
     "@fastify/cors": "^11.2.0",
     "@seeku/db": "workspace:*",
     "@seeku/llm": "workspace:*",
+    "@seeku/worker": "workspace:*",
     "@seeku/search": "workspace:*",
     "@seeku/shared": "workspace:*",
     "drizzle-orm": "^0.30.10",

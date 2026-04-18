@@ -11,9 +11,11 @@ Seeku is an evidence-driven AI talent search engine. Its current primary operato
 ## Current State
 
 - Current milestone: none active
-- Latest shipped milestone: `v1.6 Mission Replay Hardening`
-- Previous shipped milestone: `v1.5 Chat-First Copilot`
+- Latest shipped milestone: `v1.7 Runtime-Backed Chat Agent Integration`
+- Previous shipped milestone: `v1.6 Mission Replay Hardening`
 - Milestone archives:
+  - `.planning/milestones/v1.7-ROADMAP.md`
+  - `.planning/milestones/v1.7-REQUIREMENTS.md`
   - `.planning/milestones/v1.6-ROADMAP.md`
   - `.planning/milestones/v1.6-REQUIREMENTS.md`
   - `.planning/milestones/v1.5-ROADMAP.md`
@@ -23,13 +25,25 @@ Seeku is an evidence-driven AI talent search engine. Its current primary operato
   - `.planning/milestones/v1.3-ROADMAP.md`
   - `.planning/milestones/v1.2-ROADMAP.md`
 - Requirements archives:
+  - `.planning/milestones/v1.7-REQUIREMENTS.md`
   - `.planning/milestones/v1.6-REQUIREMENTS.md`
   - `.planning/milestones/v1.5-REQUIREMENTS.md`
   - `.planning/milestones/v1.4-REQUIREMENTS.md`
   - `.planning/milestones/v1.3-REQUIREMENTS.md`
   - `.planning/milestones/v1.2-REQUIREMENTS.md`
-- Current status: `v1.6` archived as shipped
-- Current focus: define the next milestone on top of the replay-hardened bounded mission runner foundation
+- Current status: `v1.7` archived as shipped
+- Current focus: define the next milestone on top of the runtime-backed chat copilot foundation
+
+## Shipped In v1.7
+
+- `/chat` now starts and observes a real runtime/API-backed mission path instead of relying on front-end simulated execution as the primary authority
+- attached runtime sessions project into the shipped chat-first workboard contract without giving the browser business-state ownership
+- bounded attached-chat correction now routes through the existing runtime intervention surface and remains runtime-derived
+- degraded attached states are explicit and safe:
+  - `missing`
+  - `disconnected`
+  - `error`
+- milestone acceptance now records rollout guardrails for the first bounded runtime-backed chat scope
 
 ## Shipped In v1.6
 
@@ -118,9 +132,9 @@ Seeku is an evidence-driven AI talent search engine. Its current primary operato
 - not defined yet
 - open the next milestone with a fresh `REQUIREMENTS.md`
 - decide whether the next step is:
-  - broader replay capture beyond deterministic fixtures
-  - mission expansion beyond the first search mission type
-  - operator workflow on top of the replay-hardened chat-first surface
+  - broader attached-chat runtime command coverage beyond bounded feedback tags
+  - mission expansion beyond the first runtime-backed bounded search scope
+  - operator workflow on top of the now-runtime-backed chat-first surface
 
 ## Key Decisions
 
@@ -149,4 +163,4 @@ This document evolves at phase transitions and milestone boundaries.
 3. Archive requirements and roadmap before opening the next milestone.
 
 ---
-*Last updated: 2026-04-18 after shipping milestone v1.6 Mission Replay Hardening*
+*Last updated: 2026-04-18 after shipping milestone v1.7 Runtime-Backed Chat Agent Integration*

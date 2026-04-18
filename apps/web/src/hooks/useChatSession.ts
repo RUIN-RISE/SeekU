@@ -11,6 +11,9 @@ import {
 } from "@/lib/chat-session";
 import type {
   AgentPanelCandidateSnapshot,
+  AgentPanelConnectionStatus,
+  AgentPanelInterventionCommand,
+  AgentPanelNotice,
   AgentPanelSearchConditions,
   AgentPanelSessionEvent,
   AgentPanelSessionSnapshot
@@ -19,6 +22,8 @@ import {
   evaluateMissionStopPolicy,
   type MissionStopReason
 } from "./mission-stop-policy";
+import { useAgentPanelSession } from "./useAgentPanelSession";
+import { buildAttachedMission } from "./chat-runtime-attachment";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
 const MISSION_PAGE_SIZE = 10;
@@ -88,8 +93,16 @@ interface UseChatSessionReturn {
   mission: CopilotMission | null;
   snapshot: AgentPanelSessionSnapshot;
   events: AgentPanelSessionEvent[];
+  runtimeConnectionStatus: AgentPanelConnectionStatus | null;
+  runtimeNotice: AgentPanelNotice | null;
   sendMessage: (input: string) => Promise<void>;
+  retryRuntimeConnection: () => void;
   reset: () => void;
+}
+
+interface UseChatSessionOptions {
+  attachedSessionId?: string;
+  runtimeStartEnabled?: boolean;
 }
 
 interface MissionRuntimeState {
@@ -103,10 +116,19 @@ interface MissionRuntimeState {
   };
 }
 
+function cancelLocalMissionRuntime(missionRuntimeRef: { current: MissionRuntimeState | null }) {
+  missionRuntimeRef.current = null;
+}
+
 /**
  * React hook for managing chat session state with search integration
  */
-export function useChatSession(): UseChatSessionReturn {
+export function useChatSession(options: UseChatSessionOptions = {}): UseChatSessionReturn {
+  const attachedSessionId = options.attachedSessionId?.trim() || null;
+  const runtimeStartEnabled = options.runtimeStartEnabled ?? true;
+  const [runtimeAttachedSessionId, setRuntimeAttachedSessionId] = useState<string | null>(attachedSessionId);
+  const effectiveAttachedSessionId = runtimeAttachedSessionId ?? attachedSessionId;
+  const runtimeSession = useAgentPanelSession(effectiveAttachedSessionId ?? "");
   // Use refs to persist the session across renders
   const sessionRef = useRef<WebChatSession | null>(null);
   const isFirstRender = useRef(true);
@@ -132,6 +154,18 @@ export function useChatSession(): UseChatSessionReturn {
   const shortlistRef = useRef<AgentPanelCandidateSnapshot[]>([]);
   const recommendedCandidateRef = useRef<AgentPanelSessionSnapshot["recommendedCandidate"]>(null);
   const uncertaintyRef = useRef<string[]>([]);
+  const runtimeStartInFlightRef = useRef(false);
+  const lastRuntimeNoticeKeyRef = useRef<string | null>(null);
+  const lastRuntimeStopSummaryKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    setRuntimeAttachedSessionId(attachedSessionId);
+  }, [attachedSessionId]);
+
+  useEffect(() => {
+    lastRuntimeNoticeKeyRef.current = null;
+    lastRuntimeStopSummaryKeyRef.current = null;
+  }, [effectiveAttachedSessionId]);
 
   // Load from localStorage on first render (client-side only)
   useEffect(() => {
@@ -145,6 +179,25 @@ export function useChatSession(): UseChatSessionReturn {
       isFirstRender.current = false;
     }
   }, []);
+
+  useEffect(() => {
+    if (!effectiveAttachedSessionId || !runtimeSession.snapshot) {
+      return;
+    }
+
+    cancelLocalMissionRuntime(missionRuntimeRef);
+
+    setSnapshot(runtimeSession.snapshot);
+    setEvents(runtimeSession.events);
+    const nextMission = buildAttachedMission(
+      effectiveAttachedSessionId,
+      runtimeSession.snapshot,
+      runtimeSession.events,
+      missionRef.current
+    );
+    missionRef.current = nextMission;
+    setMission(nextMission);
+  }, [effectiveAttachedSessionId, runtimeSession.events, runtimeSession.snapshot]);
 
   // Save to localStorage when messages or conditions change
   useEffect(() => {
@@ -192,6 +245,38 @@ export function useChatSession(): UseChatSessionReturn {
     setMessages([...(sessionRef.current?.messages ?? [])]);
   }, []);
 
+  useEffect(() => {
+    if (!effectiveAttachedSessionId || !runtimeSession.latestNotice?.message) {
+      return;
+    }
+
+    const noticeKey = `${runtimeSession.latestNotice.kind}:${runtimeSession.latestNotice.message}`;
+    if (lastRuntimeNoticeKeyRef.current === noticeKey) {
+      return;
+    }
+
+    addAssistantMessage(runtimeSession.latestNotice.message);
+    lastRuntimeNoticeKeyRef.current = noticeKey;
+  }, [addAssistantMessage, effectiveAttachedSessionId, runtimeSession.latestNotice]);
+
+  useEffect(() => {
+    if (!effectiveAttachedSessionId || !runtimeSession.snapshot?.statusSummary) {
+      return;
+    }
+
+    if (runtimeSession.snapshot.status !== "waiting-input") {
+      return;
+    }
+
+    const summaryKey = `${effectiveAttachedSessionId}:${runtimeSession.snapshot.statusSummary}`;
+    if (lastRuntimeStopSummaryKeyRef.current === summaryKey) {
+      return;
+    }
+
+    addAssistantMessage(runtimeSession.snapshot.statusSummary);
+    lastRuntimeStopSummaryKeyRef.current = summaryKey;
+  }, [addAssistantMessage, effectiveAttachedSessionId, runtimeSession.snapshot]);
+
   const setMissionPhase = useCallback((phase: MissionPhase, summary: string) => {
     updateMission((current) => current ? {
       ...current,
@@ -203,6 +288,10 @@ export function useChatSession(): UseChatSessionReturn {
   }, [updateMission]);
 
   const runMissionStep = useCallback(async (token: number) => {
+    if (effectiveAttachedSessionId) {
+      return;
+    }
+
     const runtime = missionRuntimeRef.current;
     if (!runtime || runtime.token !== token) {
       return;
@@ -343,9 +432,13 @@ export function useChatSession(): UseChatSessionReturn {
       : `第 ${round} 轮后继续收敛 shortlist。`);
 
     window.setTimeout(() => {
+      if (!missionRuntimeRef.current || missionRuntimeRef.current.token !== token || effectiveAttachedSessionId) {
+        return;
+      }
+
       void runMissionStep(token);
     }, 200);
-  }, [addAssistantMessage, emitEvent, setMissionPhase, snapshot.sessionId, syncSnapshot, updateMission]);
+  }, [addAssistantMessage, effectiveAttachedSessionId, emitEvent, setMissionPhase, snapshot.sessionId, syncSnapshot, updateMission]);
 
   const startMission = useCallback(async (goal: string, conditions: SearchConditions) => {
     const missionId = `mission-${Date.now()}`;
@@ -477,6 +570,36 @@ export function useChatSession(): UseChatSessionReturn {
     });
   }, [addAssistantMessage, emitEvent, setMissionPhase, snapshot.sessionId, syncSnapshot, updateMission]);
 
+  const handleAttachedRuntimeMessage = useCallback(async (input: string) => {
+    const connectionStatus = runtimeSession.connectionStatus;
+
+    if (connectionStatus === "missing") {
+      addAssistantMessage("当前 runtime session 已不存在，无法继续提交纠偏。请重新启动一个新的 mission。");
+      return;
+    }
+
+    if (connectionStatus === "disconnected" || connectionStatus === "error") {
+      addAssistantMessage("当前 runtime 连接已中断，暂时无法提交纠偏。页面会自动重连，连上后再试。");
+      return;
+    }
+
+    const feedbackTag = classifyAttachedRuntimeFeedback(input);
+    if (feedbackTag) {
+      await runtimeSession.sendIntervention({
+        type: "apply_feedback",
+        tag: feedbackTag
+      } satisfies AgentPanelInterventionCommand);
+      return;
+    }
+
+    if (classifyMissionCorrection(input) === "stop_or_pause_intent") {
+      addAssistantMessage("当前 attached runtime 还不支持直接通过聊天触发停止或汇报；停止总结仍以 runtime 自己的输出为准。");
+      return;
+    }
+
+    addAssistantMessage("当前 attached runtime 只支持有限纠偏，例如：别太学术、更看近期执行、更偏工程经理、更偏亲手做事。更自由的自然语言纠偏还没接上。");
+  }, [addAssistantMessage, runtimeSession]);
+
   /**
    * Send a message and handle the search flow
    */
@@ -487,11 +610,16 @@ export function useChatSession(): UseChatSessionReturn {
 
     try {
       // Add user message
-      const userMessage = sessionRef.current.addMessage({
+      sessionRef.current.addMessage({
         role: "user",
         content: input.trim()
       });
       setMessages([...sessionRef.current.messages]);
+
+      if (effectiveAttachedSessionId) {
+        await handleAttachedRuntimeMessage(input.trim());
+        return;
+      }
 
       if (missionRef.current && missionRef.current.phase !== "stopped") {
         await handleMissionCorrection(input.trim());
@@ -509,8 +637,45 @@ export function useChatSession(): UseChatSessionReturn {
         statusSummary: "正在启动 mission。"
       });
 
+      if (runtimeStartEnabled) {
+        runtimeStartInFlightRef.current = true;
+        const runtimeResponse = await fetch(`${API_BASE_URL}/chat-missions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            prompt: input.trim()
+          })
+        });
+
+        if (runtimeResponse.ok) {
+          const payload = await runtimeResponse.json() as {
+            sessionId: string;
+            snapshot: AgentPanelSessionSnapshot;
+          };
+
+          cancelLocalMissionRuntime(missionRuntimeRef);
+          setRuntimeAttachedSessionId(payload.sessionId);
+          setSnapshot(payload.snapshot);
+          setEvents([]);
+          const nextMission = buildAttachedMission(payload.sessionId, payload.snapshot, [], missionRef.current);
+          missionRef.current = nextMission;
+          setMission(nextMission);
+          addAssistantMessage("已接入 runtime-backed mission，会继续从真实 session 流中接收进度。");
+          runtimeStartInFlightRef.current = false;
+          return;
+        }
+        runtimeStartInFlightRef.current = false;
+      }
+
+      if (runtimeStartInFlightRef.current) {
+        return;
+      }
+
       await startMission(input.trim(), conditions);
     } catch (error) {
+      runtimeStartInFlightRef.current = false;
       console.error("Failed to process message:", error);
 
       // Add error message
@@ -522,7 +687,7 @@ export function useChatSession(): UseChatSessionReturn {
     } finally {
       setIsProcessing(false);
     }
-  }, [handleMissionCorrection, startMission, syncSnapshot]);
+  }, [addAssistantMessage, effectiveAttachedSessionId, handleAttachedRuntimeMessage, handleMissionCorrection, runtimeStartEnabled, startMission, syncSnapshot]);
 
   /**
    * Reset the session
@@ -534,7 +699,9 @@ export function useChatSession(): UseChatSessionReturn {
     conditionsRef.current = createEmptyConditions();
     setMission(null);
     missionRef.current = null;
-    missionRuntimeRef.current = null;
+    cancelLocalMissionRuntime(missionRuntimeRef);
+    runtimeStartInFlightRef.current = false;
+    setRuntimeAttachedSessionId(attachedSessionId);
     searchHistoryRef.current = [];
     shortlistRef.current = [];
     compareSetRef.current = [];
@@ -552,7 +719,10 @@ export function useChatSession(): UseChatSessionReturn {
     mission,
     snapshot,
     events,
+    runtimeConnectionStatus: effectiveAttachedSessionId ? runtimeSession.connectionStatus : null,
+    runtimeNotice: effectiveAttachedSessionId ? runtimeSession.latestNotice : null,
     sendMessage,
+    retryRuntimeConnection: runtimeSession.retryConnection,
     reset
   };
 }
@@ -746,6 +916,26 @@ function classifyMissionCorrection(input: string): MissionCorrectionType {
     return "retarget";
   }
   return "tighten";
+}
+
+function classifyAttachedRuntimeFeedback(input: string): string | null {
+  if (/学术|academic/i.test(input)) {
+    return "less_academic";
+  }
+
+  if (/近期执行|最近在做|最近做过|prefer recent|近期/i.test(input)) {
+    return "prefer_recent_execution";
+  }
+
+  if (/工程经理|manager|管理/i.test(input)) {
+    return "more_engineering_manager";
+  }
+
+  if (/亲手做事|builder|hands-on|落地/i.test(input)) {
+    return "more_hands_on_builder";
+  }
+
+  return null;
 }
 
 export type {

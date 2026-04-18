@@ -2,6 +2,22 @@
 
 Earlier milestone history before explicit archival discipline remains in git and the phase summaries under `.planning/phases/`.
 
+## v1.7 Runtime-Backed Chat Agent Integration (Shipped: 2026-04-18)
+
+**Phases completed:** 1 phase, 4 plans, 4 delivered batches
+
+**Key accomplishments:**
+- Moved `/chat` from front-end simulated mission authority onto a real runtime/API-backed mission start and attached-session path.
+- Kept the shipped chat-first workboard contract intact by projecting runtime snapshots and events into the existing mission/session shape.
+- Added bounded attached-chat correction through the runtime intervention surface and made runtime-derived notices the source of truth.
+- Hardened degraded attached states so missing, disconnected, and error sessions stay explicit and never silently fall back to local mission execution.
+
+**Archives:**
+- `.planning/milestones/v1.7-ROADMAP.md`
+- `.planning/milestones/v1.7-REQUIREMENTS.md`
+
+---
+
 ## v1.6 Mission Replay Hardening (Shipped: 2026-04-18)
 
 **Phases completed:** 1 phase, 4 plans, 4 delivered batches

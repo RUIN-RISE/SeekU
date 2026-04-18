@@ -1,5 +1,9 @@
 # Milestones
 
+## v1.7 Runtime-Backed Chat Agent Integration (Shipped: 2026-04-18)
+
+Archived roadmap: `.planning/milestones/v1.7-ROADMAP.md`
+
 ## v1.6 Mission Replay Hardening (Shipped: 2026-04-18)
 
 Archived roadmap: `.planning/milestones/v1.6-ROADMAP.md`

@@ -6,7 +6,7 @@ import { ChatMessage } from "./ChatMessage";
 import { ChatCopilotWorkboard } from "./ChatCopilotWorkboard";
 import { useChatSession } from "@/hooks/useChatSession";
 
-export function ChatInterface() {
+export function ChatInterface({ sessionId }: { sessionId?: string }) {
   const {
     messages,
     isProcessing,
@@ -14,11 +14,15 @@ export function ChatInterface() {
     reset,
     mission,
     snapshot,
-    events
-  } = useChatSession();
+    events,
+    runtimeConnectionStatus,
+    runtimeNotice,
+    retryRuntimeConnection
+  } = useChatSession({ attachedSessionId: sessionId });
   const [inputValue, setInputValue] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const attachedRuntimeSession = Boolean(sessionId);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -36,6 +40,20 @@ export function ChatInterface() {
     await sendMessage(trimmed);
     inputRef.current?.focus();
   };
+
+  const runtimeConnectionLabel = runtimeConnectionStatus === "live"
+    ? "runtime 已连接"
+    : runtimeConnectionStatus === "connecting"
+      ? "runtime 连接中"
+      : runtimeConnectionStatus === "reconnecting"
+        ? "runtime 重连中"
+        : runtimeConnectionStatus === "disconnected"
+          ? "runtime 已断开"
+          : runtimeConnectionStatus === "missing"
+            ? "runtime session 不存在"
+            : runtimeConnectionStatus === "error"
+              ? "runtime 连接失败"
+              : null;
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -55,10 +73,15 @@ export function ChatInterface() {
             <div>
               <h1 className="font-semibold text-slate-800">Seeku 智能搜索</h1>
               <p className="text-xs text-slate-500">
-                {mission
+                {attachedRuntimeSession
+                  ? `Attached runtime session${mission ? ` · mission ${mission.phase}` : ""}`
+                  : mission
                   ? `Mission ${mission.phase} · round ${mission.roundCount}`
                   : "Mission-ready chat copilot"}
               </p>
+              {attachedRuntimeSession && runtimeConnectionLabel && (
+                <p className="text-[11px] text-slate-400">{runtimeConnectionLabel}</p>
+              )}
             </div>
           </div>
 
@@ -75,6 +98,30 @@ export function ChatInterface() {
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-4">
+          {attachedRuntimeSession && runtimeNotice?.message && (
+            <div className="mb-3 rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-xs text-slate-600">
+              {runtimeNotice.message}
+            </div>
+          )}
+
+          {attachedRuntimeSession && (runtimeConnectionStatus === "disconnected" || runtimeConnectionStatus === "error" || runtimeConnectionStatus === "missing") && (
+            <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <span>
+                {runtimeConnectionStatus === "missing"
+                  ? "这个 runtime session 已失效，当前聊天不会伪造继续执行。"
+                  : "当前 runtime 连接不稳定，纠偏会明确失败而不会偷偷走本地 fallback。"}
+              </span>
+              {runtimeConnectionStatus !== "missing" && (
+                <button
+                  onClick={retryRuntimeConnection}
+                  className="rounded-md border border-amber-300 px-2 py-1 text-[11px] font-medium text-amber-900 transition-colors hover:bg-amber-100"
+                >
+                  重新连接
+                </button>
+              )}
+            </div>
+          )}
+
           {messages.length === 0 && (
             <div className="flex h-full flex-col items-center justify-center text-center">
               <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-100 to-cyan-50">
@@ -106,7 +153,11 @@ export function ChatInterface() {
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={handleKeyDown}
                 disabled={isProcessing}
-                placeholder={mission ? "运行中可随时插话纠偏..." : "描述一个大范围候选搜索任务..."}
+                placeholder={attachedRuntimeSession
+                  ? "可提交有限纠偏，例如：别太学术 / 更看近期执行 / 更偏工程经理"
+                  : mission
+                    ? "运行中可随时插话纠偏..."
+                    : "描述一个大范围候选搜索任务..."}
                 className="w-full rounded-xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50"
               />
             </div>
@@ -126,7 +177,9 @@ export function ChatInterface() {
           </div>
 
           <p className="mt-2 text-center text-xs text-slate-400">
-            {mission
+            {attachedRuntimeSession
+              ? "当前是 runtime-backed chat：只会把有限纠偏交给真实 runtime，不会回退到本地伪执行。"
+              : mission
               ? "Mission 运行中可插话，例如：先只看上海 / 别看 academic-heavy / 先给我结果"
               : "发起后，agent 会前台持续搜索、收敛并自动停在明确结果点"}
           </p>
