@@ -14,6 +14,7 @@ BLOCKED_REASONS_PATH="${BLOCKED_REASONS_PATH:-$CAMPAIGN_DIR/blocked-reasons.json
 FRESH_INPUT_REPORT_PATH="${FRESH_INPUT_REPORT_PATH:-$CAMPAIGN_DIR/fresh-inputs.json}"
 RECENT_SEED_EXCLUDE_PATH="${RECENT_SEED_EXCLUDE_PATH:-$CAMPAIGN_DIR/recent-seed-excludes.json}"
 RECENT_SEED_BLOCKED_PATH="${RECENT_SEED_BLOCKED_PATH:-$CAMPAIGN_DIR/recent-seed-blocked-handles.json}"
+TOP_BLOCKED_SUMMARY_PATH="${TOP_BLOCKED_SUMMARY_PATH:-$CAMPAIGN_DIR/top-blocked-summary.json}"
 
 FRESH_INPUTS="${FRESH_INPUTS:-}"
 HISTORY_INPUTS="${HISTORY_INPUTS:-}"
@@ -64,6 +65,7 @@ write_summary() {
     const freshInputReportPath = process.argv[15];
     const recentSeedExcludePath = process.argv[16];
     const recentSeedBlockedPath = process.argv[17];
+    const topBlockedSummaryPath = process.argv[18];
 
     const readJson = (path) => {
       if (!path || !fs.existsSync(path)) return null;
@@ -228,6 +230,134 @@ write_summary() {
       };
     };
 
+    const sanitizeMatchedExcludeSources = (value) => {
+      if (!Array.isArray(value)) {
+        return [];
+      }
+
+      return value
+        .flatMap((item) => {
+          if (!item || typeof item !== "object") {
+            return [];
+          }
+
+          const excludeFile = typeof item.excludeFile === "string" ? item.excludeFile : null;
+          if (!excludeFile) {
+            return [];
+          }
+
+          return [{
+            sourceType: typeof item.sourceType === "string" ? item.sourceType : "unknown",
+            campaignTag: typeof item.campaignTag === "string" ? item.campaignTag : null,
+            campaignStage: typeof item.campaignStage === "string" ? item.campaignStage : null,
+            excludeFile
+          }];
+        })
+        .sort((left, right) =>
+          left.excludeFile.localeCompare(right.excludeFile) ||
+          left.sourceType.localeCompare(right.sourceType) ||
+          (left.campaignTag ?? "").localeCompare(right.campaignTag ?? "") ||
+          (left.campaignStage ?? "").localeCompare(right.campaignStage ?? "")
+        );
+    };
+
+    const buildTopBlockedSummary = (blockedReport) => {
+      const blockedHandles = Array.isArray(blockedReport?.blockedHandles)
+        ? blockedReport.blockedHandles.filter((item) => item && typeof item === "object")
+        : [];
+
+      const topExcludeFiles = new Map();
+      const topCampaignStages = new Map();
+      const limitedUniquePush = (list, value, limit = 3) => {
+        if (typeof value !== "string" || !value || list.includes(value) || list.length >= limit) {
+          return;
+        }
+        list.push(value);
+      };
+
+      const sampleBlockedHandles = blockedHandles
+        .slice(0, 5)
+        .map((item) => ({
+          handle: typeof item.handle === "string" ? item.handle : null,
+          name: typeof item.name === "string" ? item.name : null,
+          matchedExcludeSources: sanitizeMatchedExcludeSources(item.matchedExcludeSources)
+        }))
+        .filter((item) => item.handle);
+
+      for (const item of blockedHandles) {
+        const handle = typeof item.handle === "string" ? item.handle : null;
+        const matchedExcludeSources = sanitizeMatchedExcludeSources(item.matchedExcludeSources);
+
+        for (const source of matchedExcludeSources) {
+          const excludeEntry = topExcludeFiles.get(source.excludeFile) ?? {
+            excludeFile: source.excludeFile,
+            count: 0,
+            sourceType: source.sourceType,
+            campaignTag: source.campaignTag,
+            campaignStage: source.campaignStage,
+            sampleHandles: []
+          };
+          excludeEntry.count += 1;
+          limitedUniquePush(excludeEntry.sampleHandles, handle);
+          topExcludeFiles.set(source.excludeFile, excludeEntry);
+
+          const campaignStageKey = `${source.campaignTag ?? ""}\u0000${source.campaignStage ?? ""}`;
+          const campaignStageEntry = topCampaignStages.get(campaignStageKey) ?? {
+            campaignTag: source.campaignTag,
+            campaignStage: source.campaignStage,
+            count: 0,
+            sampleExcludeFiles: []
+          };
+          campaignStageEntry.count += 1;
+          limitedUniquePush(campaignStageEntry.sampleExcludeFiles, source.excludeFile);
+          topCampaignStages.set(campaignStageKey, campaignStageEntry);
+        }
+      }
+
+      const normalizeCountsBySourceType = () => {
+        if (
+          blockedReport?.blockedHandleCountsBySourceType &&
+          typeof blockedReport.blockedHandleCountsBySourceType === "object" &&
+          !Array.isArray(blockedReport.blockedHandleCountsBySourceType)
+        ) {
+          return Object.fromEntries(
+            Object.entries(blockedReport.blockedHandleCountsBySourceType)
+              .filter((entry) => typeof entry[0] === "string" && typeof entry[1] === "number" && Number.isFinite(entry[1]))
+              .sort((left, right) => left[0].localeCompare(right[0]))
+          );
+        }
+
+        return blockedHandles.reduce((acc, item) => {
+          const sourceTypes = [...new Set(sanitizeMatchedExcludeSources(item.matchedExcludeSources).map((entry) => entry.sourceType))];
+          for (const sourceType of sourceTypes) {
+            acc[sourceType] = (acc[sourceType] ?? 0) + 1;
+          }
+          return acc;
+        }, {});
+      };
+
+      return {
+        recordedAt: new Date().toISOString(),
+        campaignTag,
+        blockedHandleCount:
+          typeof blockedReport?.blockedHandleCount === "number" && Number.isFinite(blockedReport.blockedHandleCount)
+            ? blockedReport.blockedHandleCount
+            : blockedHandles.length,
+        blockedHandleCountsBySourceType: normalizeCountsBySourceType(),
+        topExcludeFiles: [...topExcludeFiles.values()].sort((left, right) =>
+          right.count - left.count ||
+          left.excludeFile.localeCompare(right.excludeFile) ||
+          left.sourceType.localeCompare(right.sourceType)
+        ),
+        topCampaignStages: [...topCampaignStages.values()].sort((left, right) =>
+          right.count - left.count ||
+          (left.campaignTag ?? "").localeCompare(right.campaignTag ?? "") ||
+          (left.campaignStage ?? "").localeCompare(right.campaignStage ?? "")
+        ),
+        sampleBlockedHandles
+      };
+    };
+
     const probeObjects = extractJsonObjects(probeRunnerLog);
     const expandObjects = extractJsonObjects(expandRunnerLog);
     const deltaObjects = extractJsonObjects(deltaRunnerLog);
@@ -235,6 +365,8 @@ write_summary() {
     const probeFilter = findFilterSummary(probeObjects);
     const expandFilter = findFilterSummary(expandObjects);
     const seedBuildSummary = findSeedBuildSummary(campaignObjects);
+    const recentSeedBlockedReport = readJson(recentSeedBlockedPath);
+    const topBlockedSummary = buildTopBlockedSummary(recentSeedBlockedReport);
     const blockedReasons = {
       recordedAt: new Date().toISOString(),
       campaignTag,
@@ -259,7 +391,8 @@ write_summary() {
         blockedReasonsPath,
         freshInputReportPath,
         recentSeedExcludePath,
-        recentSeedBlockedPath
+        recentSeedBlockedPath,
+        topBlockedSummaryPath
       },
       probe: {
         outputDir: probeDir,
@@ -282,6 +415,7 @@ write_summary() {
 
     fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2) + "\n");
     fs.writeFileSync(blockedReasonsPath, JSON.stringify(blockedReasons, null, 2) + "\n");
+    fs.writeFileSync(topBlockedSummaryPath, JSON.stringify(topBlockedSummary, null, 2) + "\n");
   ' "$CAMPAIGN_TAG" "$RUN_DATE" "$SUMMARY_PATH" "$SEED_FILE" \
     "$REPO_DIR/output/bonjour-raw/$RUN_DATE/$PROBE_BATCH_TAG" \
     "$REPO_DIR/output/bonjour-raw/$RUN_DATE/${PROBE_BATCH_TAG}-runner.log" \
@@ -295,7 +429,8 @@ write_summary() {
     "$LOG_PATH" \
     "$FRESH_INPUT_REPORT_PATH" \
     "$RECENT_SEED_EXCLUDE_PATH" \
-    "$RECENT_SEED_BLOCKED_PATH"
+    "$RECENT_SEED_BLOCKED_PATH" \
+    "$TOP_BLOCKED_SUMMARY_PATH"
 }
 
 if [[ -z "$NODE_BIN" ]]; then
