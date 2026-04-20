@@ -234,6 +234,87 @@ describe("TerminalRenderer", () => {
     expect(whyOutput).toContain("没有找到强匹配");
   });
 
+  it("shows explicit low-confidence shortlist framing in detail and why views", () => {
+    const detailOutput = renderer.renderProfile(
+      {
+        id: "person-3",
+        primaryName: "Kai",
+        primaryHeadline: "Generalist Engineer"
+      } as any,
+      [],
+      {
+        dimensions: {
+          techMatch: 48,
+          locationMatch: 72,
+          careerStability: 55,
+          projectDepth: 44,
+          academicImpact: 18,
+          communityReputation: 28
+        },
+        overallScore: 46,
+        summary: "方向还不够聚焦。",
+        highlights: []
+      },
+      "地点命中：杭州",
+      {
+        queryReasons: ["地点命中：杭州"],
+        matchStrength: "weak",
+        recoveryMode: "low-confidence",
+        recoverySummary: "这些人可以先看，但我还不能直接推荐。",
+        sources: ["Bonjour"]
+      }
+    );
+
+    const whyOutput = renderer.renderWhyMatched(
+      {
+        personId: "person-3",
+        name: "Kai",
+        headline: "Generalist Engineer",
+        location: "杭州",
+        company: null,
+        experienceYears: null,
+        matchScore: 33,
+        matchStrength: "weak",
+        matchReason: "地点命中：杭州",
+        queryReasons: ["地点命中：杭州"],
+        sources: ["Bonjour"]
+      },
+      {
+        dimensions: {
+          techMatch: 48,
+          locationMatch: 72,
+          careerStability: 55,
+          projectDepth: 44,
+          academicImpact: 18,
+          communityReputation: 28
+        },
+        overallScore: 46,
+        summary: "方向还不够聚焦。",
+        highlights: []
+      },
+      {
+        skills: ["python"],
+        locations: ["杭州"],
+        experience: undefined,
+        role: "backend",
+        sourceBias: undefined,
+        mustHave: [],
+        niceToHave: [],
+        exclude: [],
+        preferFresh: false,
+        candidateAnchor: undefined,
+        limit: 10
+      },
+      {
+        recoveryMode: "low-confidence",
+        recoverySummary: "这些人可以先看，但我还不能直接推荐。"
+      }
+    );
+
+    expect(detailOutput).toContain("低置信 shortlist");
+    expect(whyOutput).toContain("低置信 shortlist");
+  });
+
   it("renders complete evidence cards in detail view", () => {
     const output = renderer.renderProfile(
       {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { SearchConditions } from "../types.js";
 import {
   decideClarifyAction,
+  decideRecoveryAction,
   decidePostSearchAction,
   pickComparisonTargets
 } from "../agent-policy.js";
@@ -104,5 +105,38 @@ describe("agent-policy", () => {
 
     expect(decision.action).toBe("narrow");
     expect(decision.rationale).toContain("偏弱");
+  });
+
+  it("asks for one recovery clarification when failure looks like missing intent", () => {
+    const decision = decideRecoveryAction({
+      diagnosis: "intent_missing",
+      clarificationCount: 0,
+      rewriteCount: 0,
+      hasFallbackCandidates: true
+    });
+
+    expect(decision.action).toBe("clarify");
+  });
+
+  it("rewrites once when intent is already clear but retrieval failed", () => {
+    const decision = decideRecoveryAction({
+      diagnosis: "retrieval_failed",
+      clarificationCount: 0,
+      rewriteCount: 0,
+      hasFallbackCandidates: true
+    });
+
+    expect(decision.action).toBe("rewrite");
+  });
+
+  it("falls back to low-confidence shortlist after recovery budget is spent", () => {
+    const decision = decideRecoveryAction({
+      diagnosis: "retrieval_failed",
+      clarificationCount: 1,
+      rewriteCount: 1,
+      hasFallbackCandidates: true
+    });
+
+    expect(decision.action).toBe("low_confidence_shortlist");
   });
 });

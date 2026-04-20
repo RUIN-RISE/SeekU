@@ -43,6 +43,8 @@ export class TerminalRenderer {
         conditionAudit?: ConditionAuditItem[];
         queryReasons?: string[];
         matchStrength?: MatchStrength;
+        recoveryMode?: "low-confidence";
+        recoverySummary?: string;
         sources?: string[];
         bonjourUrl?: string;
         primaryLinks?: CandidatePrimaryLink[];
@@ -105,6 +107,9 @@ export class TerminalRenderer {
     const matchStrengthWarning = extra?.matchStrength === "weak"
       ? chalk.yellow("当前结果提示：没有找到强匹配，这位候选人仅弱相关。")
       : undefined;
+    const recoveryWarning = extra?.recoveryMode === "low-confidence"
+      ? chalk.yellow(`当前处于低置信 shortlist：${extra.recoverySummary || "这些人可以先看，但我还不能直接推荐。"} `)
+      : undefined;
     const conditionAuditSection = this.renderConditionAudit(extra?.conditionAudit);
 
     // Evidence sources summary
@@ -130,6 +135,7 @@ ${primaryLinksSection}
 ${lastSyncedLine} | ${latestEvidenceLine}
 ${evidenceSourcesLine}
 ${matchStrengthLine}
+${recoveryWarning || ""}
 ${matchStrengthWarning || ""}
 
 ${chalk.bold("本次搜索为什么匹配：")} ${matchReason || "与本轮搜索条件高度相关"}
@@ -165,9 +171,20 @@ ${chalk.dim("下一步：back 返回 | o 打开 Bonjour | why 评分依据 | ref
     });
   }
 
-  renderWhyMatched(candidate: ScoredCandidate, profile: MultiDimensionProfile, conditions: SearchConditions): string {
+  renderWhyMatched(
+    candidate: ScoredCandidate,
+    profile: MultiDimensionProfile,
+    conditions: SearchConditions,
+    options?: {
+      recoveryMode?: "low-confidence";
+      recoverySummary?: string;
+    }
+  ): string {
     const bullets = [
       `当前查询：${this.formatConditionsSummary(conditions)}`,
+      ...(options?.recoveryMode === "low-confidence"
+        ? [`当前处于低置信 shortlist：${options.recoverySummary || "这些人可以先看，但我还不能直接推荐。"}`]
+        : []),
       `匹配强度：${this.getMatchStrengthLabel(candidate.matchStrength)}`,
       ...(candidate.matchStrength === "weak" ? ["当前结果提示：没有找到强匹配，这位候选人仅弱相关。"] : []),
       `本次搜索命中：${candidate.matchReason || "与当前条件整体相关度较高"}`,

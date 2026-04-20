@@ -31,10 +31,12 @@ import {
   removeCompareCandidates as removeCompareCandidatesFromState,
   replaceSearchHistory,
   rewindSearchHistory,
+  resetRecoveryState,
   setCurrentShortlist,
   setConfidenceStatus,
   setOpenUncertainties,
   setRecommendedCandidate,
+  setRecoveryState,
   setSessionConditions,
   setSessionShortlist,
   setSessionUserGoal,
@@ -42,7 +44,8 @@ import {
 } from "./agent-state.js";
 import {
   decideClarifyAction,
-  decidePostSearchAction
+  decidePostSearchAction,
+  decideRecoveryAction
 } from "./agent-policy.js";
 import {
   buildRefineContextCandidates,
@@ -58,6 +61,7 @@ import {
   type AgentInterventionResult,
   buildAgentSessionSnapshot,
   createAgentSessionEvent,
+  serializeRecoveryState,
   serializeConfidenceStatus,
   serializeRecommendation,
   serializeSessionCandidate,
@@ -86,9 +90,11 @@ import {
   ConditionAuditStatus,
   ExportCandidateRecord,
   MultiDimensionProfile,
+  RecoveryDiagnosis,
   ResultListCommand,
   ScoredCandidate,
   SearchConditions,
+  SearchRecoveryState,
   SearchDraft,
   SearchHistoryEntry,
   ShortlistStatusMessage,
@@ -107,6 +113,22 @@ interface SearchLoopOutcome {
   type: "refine" | "restart" | "quit" | "restore";
   prompt?: string;
   conditions?: SearchConditions;  // For undo: directly restore conditions
+}
+
+interface SearchRecoveryAssessment {
+  usable: boolean;
+  diagnosis?: RecoveryDiagnosis;
+  rationale?: string;
+  weakCandidateCount: number;
+  canEmitLowConfidenceShortlist: boolean;
+}
+
+interface SearchRecoveryHandlingResult {
+  type: "continue" | "retry" | "low_confidence_shortlist" | "stop";
+  conditions?: SearchConditions;
+  candidates?: HydratedCandidate[];
+  resultWarning?: string;
+  uncertaintySummary?: string;
 }
 
 interface DetailOutcome {
@@ -545,6 +567,19 @@ export function buildResultWarning(
   }
 
   return "没有找到强匹配，只找到了弱相关候选人。建议继续补充必须项、关键技术或放宽来源过滤。";
+}
+
+function createEmptyRecoveryState(overrides: Partial<SearchRecoveryState> = {}): SearchRecoveryState {
+  return {
+    phase: "idle",
+    diagnosis: undefined,
+    rationale: undefined,
+    clarificationCount: 0,
+    rewriteCount: 0,
+    lowConfidenceEmitted: false,
+    lastRewrittenQuery: undefined,
+    ...overrides
+  };
 }
 
 function buildFullMatchReason(candidate: Pick<ScoredCandidate, "queryReasons" | "matchReason">) {
@@ -1129,6 +1164,18 @@ export class SearchWorkflow {
         }
       );
     }
+
+    if (this.recoverySignature(previousState) !== this.recoverySignature(nextState)) {
+      this.emitSessionEvent(
+        "recovery_updated",
+        nextState.recoveryState.phase === "idle"
+          ? "当前没有活跃 recovery。"
+          : `recovery 状态已更新为 ${nextState.recoveryState.phase}。`,
+        {
+          recoveryState: serializeRecoveryState(nextState.recoveryState)
+        }
+      );
+    }
   }
 
   private conditionsSignature(conditions: SearchConditions): string {
@@ -1149,6 +1196,10 @@ export class SearchWorkflow {
 
   private uncertaintySignature(state: AgentSessionState): string {
     return JSON.stringify(state.openUncertainties);
+  }
+
+  private recoverySignature(state: AgentSessionState): string {
+    return JSON.stringify(serializeRecoveryState(state.recoveryState));
   }
 
   private acceptIntervention(
@@ -1375,10 +1426,305 @@ export class SearchWorkflow {
     }
   }
 
+  private assessSearchRecovery(
+    candidates: HydratedCandidate[],
+    conditions: SearchConditions
+  ): SearchRecoveryAssessment {
+    if (candidates.length === 0) {
+      const diagnosis = this.classifyRecoveryDiagnosis(conditions);
+      return {
+        usable: false,
+        diagnosis,
+        rationale:
+          diagnosis === "intent_missing"
+            ? "当前更像缺少关键搜索约束，先补一个高价值条件再试更稳。"
+            : "当前目标已经够清楚，但这轮检索没有带出可用候选人。",
+        weakCandidateCount: 0,
+        canEmitLowConfidenceShortlist: false
+      };
+    }
+
+    const weakCandidateCount = candidates.filter((candidate) => candidate.matchStrength === "weak").length;
+    const allWeak = weakCandidateCount === candidates.length;
+    const sparseReasons = candidates.every((candidate) => (candidate.queryReasons?.length ?? 0) <= 1);
+    const weakAudit = candidates.every((candidate) => this.hasWeakConditionAudit(candidate.conditionAudit));
+
+    if (!allWeak) {
+      return {
+        usable: true,
+        weakCandidateCount,
+        canEmitLowConfidenceShortlist: false
+      };
+    }
+
+    const diagnosis = this.classifyRecoveryDiagnosis(conditions);
+    const rationale =
+      diagnosis === "intent_missing"
+        ? "当前结果偏弱，而且缺少能真正收紧目标的关键约束。"
+        : sparseReasons || weakAudit
+          ? "当前目标基本清楚，但这轮召回结果太弱，还不足以直接推荐。"
+          : "当前结果整体偏弱，需要先尝试恢复再决定是否停下。";
+
+    return {
+      usable: false,
+      diagnosis,
+      rationale,
+      weakCandidateCount,
+      canEmitLowConfidenceShortlist: candidates.length > 0
+    };
+  }
+
+  private classifyRecoveryDiagnosis(conditions: SearchConditions): RecoveryDiagnosis {
+    const roleSignal = Boolean(conditions.role || conditions.candidateAnchor?.personId || conditions.candidateAnchor?.name);
+    const skillSignal = conditions.skills.length + conditions.mustHave.length > 0;
+    const signalCount = [
+      roleSignal,
+      skillSignal,
+      conditions.locations.length > 0,
+      Boolean(conditions.experience),
+      Boolean(conditions.sourceBias),
+      Boolean(conditions.candidateAnchor?.personId || conditions.candidateAnchor?.name)
+    ].filter(Boolean).length;
+
+    if ((!roleSignal && !skillSignal) || signalCount <= 1) {
+      return "intent_missing";
+    }
+
+    return "retrieval_failed";
+  }
+
+  private hasWeakConditionAudit(conditionAudit?: ConditionAuditItem[]): boolean {
+    if (!conditionAudit || conditionAudit.length === 0) {
+      return true;
+    }
+
+    const metCount = conditionAudit.filter((item) => item.status === "met").length;
+    return metCount === 0 || metCount < Math.ceil(conditionAudit.length / 3);
+  }
+
+  private buildRecoveryClarificationPrompt(conditions: SearchConditions): string {
+    if (!conditions.role && !conditions.candidateAnchor?.personId && !conditions.candidateAnchor?.name) {
+      return "我现在缺少最核心的角色方向。补一句：你最想找的是哪类人？";
+    }
+
+    if (conditions.skills.length === 0 && conditions.mustHave.length === 0) {
+      return "我现在缺少必须技术或领域主轴。补一句你最不能妥协的技术/方向。";
+    }
+
+    if (conditions.locations.length === 0) {
+      return "如果地点是硬约束，补一句目标地点；如果不是，回我“不限”。";
+    }
+
+    return "补一句你这轮最不能妥协的必须项，我再重试一轮。";
+  }
+
+  private async rewriteConditionsForRecovery(
+    conditions: SearchConditions,
+    candidates: HydratedCandidate[] = []
+  ): Promise<SearchConditions> {
+    this.spinner.start("正在自动收敛检索表达...");
+    try {
+      return this.normalizeConditions(
+        await this.chat.reviseConditions(
+          conditions,
+          "不要改变用户显式 must-have / exclude / sourceBias 的前提下，把这轮搜索条件改写成更利于召回正确候选人的版本。收紧角色主轴，补全显式技能表述，去掉空泛表述，但不要发明新的用户约束。",
+          "tighten",
+          {
+            shortlist: buildRefineContextCandidates(candidates)
+          }
+        )
+      );
+    } finally {
+      this.spinner.stop();
+    }
+  }
+
+  private applyRecoveryStateWithUncertainty(
+    recoveryState: SearchRecoveryState,
+    uncertaintySummary?: string
+  ): void {
+    let nextState = setRecoveryState(this.sessionState, recoveryState);
+    if (typeof uncertaintySummary === "string") {
+      nextState = setOpenUncertainties(nextState, [uncertaintySummary]);
+    }
+    this.applySessionState(nextState);
+  }
+
+  private async handleSearchRecovery(
+    candidates: HydratedCandidate[],
+    conditions: SearchConditions,
+    effectiveQuery: string
+  ): Promise<SearchRecoveryHandlingResult> {
+    const assessment = this.assessSearchRecovery(candidates, conditions);
+    if (assessment.usable) {
+      let nextState = resetRecoveryState(this.sessionState);
+      nextState = setOpenUncertainties(nextState, []);
+      this.applySessionState(nextState);
+      return {
+        type: "continue",
+        candidates,
+        resultWarning: buildResultWarning(candidates)
+      };
+    }
+
+    const currentRecovery = this.sessionState.recoveryState;
+    const diagnosis = assessment.diagnosis ?? "retrieval_failed";
+    const diagnosingState = createEmptyRecoveryState({
+      ...currentRecovery,
+      phase: "diagnosing",
+      diagnosis,
+      rationale: assessment.rationale
+    });
+    this.applyRecoveryStateWithUncertainty(diagnosingState, assessment.rationale);
+    this.setSessionStatus("recovering", assessment.rationale || "正在判断为什么这轮结果不够理想。");
+
+    const decision = decideRecoveryAction({
+      diagnosis,
+      clarificationCount: currentRecovery.clarificationCount,
+      rewriteCount: currentRecovery.rewriteCount,
+      hasFallbackCandidates: assessment.canEmitLowConfidenceShortlist
+    });
+    console.log(chalk.dim(`Recovery 决策：${decision.rationale}`));
+
+    if (decision.action === "clarify") {
+      const prompt = this.buildRecoveryClarificationPrompt(conditions);
+      this.applyRecoveryStateWithUncertainty(
+        createEmptyRecoveryState({
+          ...diagnosingState,
+          phase: "clarifying"
+        }),
+        "我还缺一个关键约束，先补一句再重试。"
+      );
+      this.setSessionStatus("recovering", "我还缺一个关键约束，先问你一句。");
+      const instruction = await this.chat.askFreeform(prompt);
+
+      if (!instruction) {
+        if (assessment.canEmitLowConfidenceShortlist) {
+          const lowConfidenceState = createEmptyRecoveryState({
+            ...diagnosingState,
+            phase: "low_confidence_shortlist",
+            lowConfidenceEmitted: true
+          });
+          this.applyRecoveryStateWithUncertainty(
+            lowConfidenceState,
+            "没有补充新的关键约束，因此当前只能提供低置信 shortlist。"
+          );
+          this.applySessionState(setConfidenceStatus(this.sessionState, {
+            level: "low",
+            rationale: "recovery clarification skipped",
+            updatedAt: new Date()
+          }));
+          return {
+            type: "low_confidence_shortlist",
+            candidates,
+            resultWarning: "这是低置信 shortlist：先给你一组可先看的人，但我还不能直接推荐。",
+            uncertaintySummary: "我还缺一个关键约束，所以这轮只能给低置信 shortlist。"
+          };
+        }
+
+        this.applyRecoveryStateWithUncertainty(
+          createEmptyRecoveryState({
+            ...diagnosingState,
+            phase: "exhausted"
+          }),
+          "没有补充新的关键约束，因此当前无法继续恢复。"
+        );
+        return { type: "stop" };
+      }
+
+      this.appendTranscriptEntry("user", instruction);
+      const revisedConditions = await this.reviseSessionConditions(conditions, instruction, candidates);
+      this.applyRecoveryStateWithUncertainty(
+        createEmptyRecoveryState({
+          ...diagnosingState,
+          phase: "idle",
+          clarificationCount: currentRecovery.clarificationCount + 1
+        }),
+        "已补充关键约束，重新搜索。"
+      );
+      this.setSessionStatus("searching", "已补充关键约束，正在重新搜索。");
+      return {
+        type: "retry",
+        conditions: revisedConditions
+      };
+    }
+
+    if (decision.action === "rewrite") {
+      this.applyRecoveryStateWithUncertainty(
+        createEmptyRecoveryState({
+          ...diagnosingState,
+          phase: "rewriting"
+        }),
+        "你的目标已经够清楚，我先自动收敛检索再试一轮。"
+      );
+      this.setSessionStatus("recovering", "你的目标已经够清楚，我先自动收敛检索再试一轮。");
+      const rewrittenConditions = await this.rewriteConditionsForRecovery(conditions, candidates);
+      const rewrittenQuery = this.buildEffectiveQuery(rewrittenConditions) || effectiveQuery;
+      this.applyRecoveryStateWithUncertainty(
+        createEmptyRecoveryState({
+          ...diagnosingState,
+          phase: "idle",
+          rewriteCount: currentRecovery.rewriteCount + 1,
+          lastRewrittenQuery: rewrittenQuery
+        }),
+        `我把检索表达收敛成更明确的版本后再试一轮：${truncateDisplayValue(rewrittenQuery, 48)}`
+      );
+      this.setSessionStatus("searching", "已收敛检索表达，正在重新搜索。");
+      return {
+        type: "retry",
+        conditions: rewrittenConditions
+      };
+    }
+
+    if (decision.action === "low_confidence_shortlist" && assessment.canEmitLowConfidenceShortlist) {
+      const uncertaintySummary =
+        diagnosis === "intent_missing"
+          ? "当前还有关键约束没补全，所以这份 shortlist 只能低置信参考。"
+          : "我已经自动重试过一轮，但这批人仍然只够低置信参考。";
+      this.applyRecoveryStateWithUncertainty(
+        createEmptyRecoveryState({
+          ...diagnosingState,
+          phase: "low_confidence_shortlist",
+          lowConfidenceEmitted: true
+        }),
+        uncertaintySummary
+      );
+      this.applySessionState(setConfidenceStatus(this.sessionState, {
+        level: "low",
+        rationale: diagnosis,
+        updatedAt: new Date()
+      }));
+      this.setSessionStatus("shortlist", "当前是低置信 shortlist，只适合先看，不适合直接推荐。");
+      return {
+        type: "low_confidence_shortlist",
+        candidates,
+        resultWarning: "这是低置信 shortlist：先给你一组可先看的人，但我还不能直接推荐。",
+        uncertaintySummary
+      };
+    }
+
+    this.applyRecoveryStateWithUncertainty(
+      createEmptyRecoveryState({
+        ...diagnosingState,
+        phase: "exhausted"
+      }),
+      "这轮 recovery 已经用完，但仍没有形成可用 shortlist。"
+    );
+    this.setSessionStatus("blocked", "这轮 recovery 已用完，但仍没有形成可用 shortlist。");
+    return { type: "stop" };
+  }
+
   private async runSearchLoop(initialConditions: SearchConditions): Promise<SearchLoopOutcome> {
     let conditions = this.normalizeConditions(initialConditions);
     let sortMode: SortMode = "overall";
-    this.applySessionState(setSessionConditions(this.sessionState, conditions));
+    let shortlistPresentation:
+      | {
+          lowConfidence: boolean;
+          resultWarning?: string;
+          uncertaintySummary?: string;
+        }
+      | undefined;
+    this.applySessionState(resetRecoveryState(setSessionConditions(this.sessionState, conditions)));
 
     while (true) {
       const effectiveQuery = this.buildEffectiveQuery(conditions);
@@ -1407,15 +1753,22 @@ export class SearchWorkflow {
         throw error;
       }
 
-      if (candidates.length === 0) {
+      const recoveryOutcome = await this.handleSearchRecovery(candidates, conditions, effectiveQuery);
+      if (recoveryOutcome.type === "retry" && recoveryOutcome.conditions) {
+        conditions = recoveryOutcome.conditions;
+        shortlistPresentation = undefined;
+        sortMode = "overall";
+        continue;
+      }
+
+      if (recoveryOutcome.type === "stop") {
         let nextState = setSessionShortlist(this.sessionState, []);
-        nextState = setOpenUncertainties(nextState, ["当前条件下没有检索到足够候选人。"]);
+        nextState = setOpenUncertainties(nextState, ["这轮 recovery 已经用完，但仍没有形成可用 shortlist。"]);
         this.applySessionState(nextState);
-        this.emitSessionEvent("search_completed", "搜索完成，但当前没有命中候选人。", {
+        this.emitSessionEvent("search_completed", "搜索完成，但当前没有形成可用候选池。", {
           query: effectiveQuery,
           resultCount: 0
         });
-        this.setSessionStatus("blocked", "当前条件下没有检索到足够候选人。");
         this.tui.displayNoResults(conditions);
         this.setSessionStatus("waiting-input", "等待你调整搜索方向。");
         const prompt = await this.chat.askFreeform("想怎么调整这轮搜索？例如：去掉销售 / 更看重最近活跃 / 更偏 Bonjour");
@@ -1425,9 +1778,17 @@ export class SearchWorkflow {
         }
 
         conditions = await this.reviseSessionConditions(conditions, prompt);
+        shortlistPresentation = undefined;
         sortMode = "overall";
         continue;
       }
+
+      candidates = recoveryOutcome.candidates ?? candidates;
+      shortlistPresentation = {
+        lowConfidence: recoveryOutcome.type === "low_confidence_shortlist",
+        resultWarning: recoveryOutcome.resultWarning,
+        uncertaintySummary: recoveryOutcome.uncertaintySummary
+      };
 
       this.applySessionState(recordSearchExecution(this.sessionState, {
         conditions: { ...conditions },
@@ -1440,14 +1801,16 @@ export class SearchWorkflow {
         resultCount: candidates.length,
         shortlistSize: this.sessionState.currentShortlist.length
       });
-      this.setSessionStatus("shortlist", `当前 shortlist 有 ${candidates.length} 位候选人。`);
+      if (!shortlistPresentation.lowConfidence) {
+        this.setSessionStatus("shortlist", `当前 shortlist 有 ${candidates.length} 位候选人。`);
+      }
 
       const preloadPromise = this.shouldPreloadProfiles()
         ? this.preloadProfiles(candidates, conditions)
         : undefined;
       const nextAction = decidePostSearchAction({ candidates });
       console.log(chalk.dim(`Agent 决策：${nextAction.rationale}`));
-      if (nextAction.action === "compare") {
+      if (!shortlistPresentation.lowConfidence && nextAction.action === "compare") {
         const compareOutcome = await this.presentComparison(
           nextAction.targets,
           candidates,
@@ -1462,7 +1825,7 @@ export class SearchWorkflow {
           return { type: "quit" };
         }
       }
-      const result = await this.runShortlistLoop(candidates, conditions, sortMode);
+      const result = await this.runShortlistLoop(candidates, conditions, sortMode, shortlistPresentation);
       preloadPromise?.catch(() => {});
 
       if (result.type === "quit") {
@@ -1476,11 +1839,13 @@ export class SearchWorkflow {
       if (result.type === "restore" && result.conditions) {
         // Undo: directly restore previous conditions without LLM round-trip
         conditions = this.normalizeConditions(result.conditions);
+        shortlistPresentation = undefined;
         sortMode = "overall";
         continue;
       }
 
       conditions = await this.reviseSessionConditions(conditions, result.prompt || "", candidates);
+      shortlistPresentation = undefined;
       sortMode = "overall";
     }
   }
@@ -1488,12 +1853,17 @@ export class SearchWorkflow {
   private async runShortlistLoop(
     candidates: HydratedCandidate[],
     conditions: SearchConditions,
-    initialSortMode: SortMode
+    initialSortMode: SortMode,
+    presentation?: {
+      lowConfidence: boolean;
+      resultWarning?: string;
+      uncertaintySummary?: string;
+    }
   ): Promise<SearchLoopOutcome> {
     let sortMode = initialSortMode;
     let visibleCount = Math.min(5, candidates.length);
     let selectedIndex = 0;
-    const resultWarning = buildResultWarning(candidates);
+    const resultWarning = presentation?.resultWarning ?? buildResultWarning(candidates);
     let statusMessage: ShortlistStatusMessage | undefined;
     let reuseViewport = false;
 
@@ -1508,6 +1878,8 @@ export class SearchWorkflow {
         poolPersonIds: this.comparePool.map((candidate) => candidate.personId),
         selectedIndex,
         resultWarning,
+        lowConfidence: presentation?.lowConfidence,
+        uncertaintySummary: presentation?.uncertaintySummary,
         statusMessage,
         reuseViewport
       });
@@ -1924,6 +2296,11 @@ export class SearchWorkflow {
           conditionAudit: selected.conditionAudit,
           queryReasons: selected.queryReasons,
           matchStrength: selected.matchStrength,
+          recoveryMode: this.sessionState.recoveryState.phase === "low_confidence_shortlist" ? "low-confidence" : undefined,
+          recoverySummary:
+            this.sessionState.recoveryState.phase === "low_confidence_shortlist"
+              ? this.sessionState.openUncertainties[0]
+              : undefined,
           sources: selected.sources,
           bonjourUrl: selected.bonjourUrl,
           primaryLinks: selected.primaryLinks,
@@ -1955,7 +2332,17 @@ export class SearchWorkflow {
       }
 
       if (action === "why") {
-        console.log(this.renderer.renderWhyMatched(selected, profile, conditions));
+        console.log(this.renderer.renderWhyMatched(
+          selected,
+          profile,
+          conditions,
+          this.sessionState.recoveryState.phase === "low_confidence_shortlist"
+            ? {
+                recoveryMode: "low-confidence",
+                recoverySummary: this.sessionState.openUncertainties[0]
+              }
+            : undefined
+        ));
         continue;
       }
 
@@ -3086,7 +3473,14 @@ export class SearchWorkflow {
       prompt,
       shortlist: candidates
     });
-    this.applySessionState(recordClarification(this.sessionState, prompt, revised.conditions));
+    this.applySessionState(
+      setOpenUncertainties(
+        resetRecoveryState(
+          recordClarification(this.sessionState, prompt, revised.conditions)
+        ),
+        []
+      )
+    );
     return revised.conditions;
   }
 

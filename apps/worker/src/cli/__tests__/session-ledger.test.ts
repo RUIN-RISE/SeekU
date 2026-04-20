@@ -53,6 +53,12 @@ describe("CliSessionLedger", () => {
         },
         recommendedCandidate: null,
         openUncertainties: [],
+        recoveryState: {
+          phase: "idle",
+          clarificationCount: 0,
+          rewriteCount: 0,
+          lowConfidenceEmitted: false
+        },
         clarificationCount: 0,
         searchHistory: []
       },

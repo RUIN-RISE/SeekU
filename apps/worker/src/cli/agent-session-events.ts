@@ -4,12 +4,18 @@ import type {
   AgentSessionState,
   RecommendationGateFailureReason
 } from "./agent-state.js";
-import type { ScoredCandidate, SearchConditions, SearchHistoryEntry } from "./types.js";
+import type {
+  ScoredCandidate,
+  SearchConditions,
+  SearchHistoryEntry,
+  SearchRecoveryState
+} from "./types.js";
 
 export type AgentSessionStatus =
   | "idle"
   | "clarifying"
   | "searching"
+  | "recovering"
   | "shortlist"
   | "comparing"
   | "waiting-input"
@@ -46,6 +52,8 @@ export interface AgentSearchHistoryEntrySnapshot extends Omit<SearchHistoryEntry
   timestamp: string;
 }
 
+export interface AgentRecoveryStateSnapshot extends SearchRecoveryState {}
+
 export type AgentTranscriptRole = "user" | "assistant" | "system";
 
 export interface AgentTranscriptEntry {
@@ -66,6 +74,7 @@ export interface AgentSessionSnapshot {
   confidenceStatus: AgentConfidenceStatusSnapshot;
   recommendedCandidate: AgentRecommendationSnapshot | null;
   openUncertainties: string[];
+  recoveryState: AgentRecoveryStateSnapshot;
   clarificationCount: number;
   searchHistory: AgentSearchHistoryEntrySnapshot[];
 }
@@ -84,6 +93,7 @@ export type AgentSessionEventType =
   | "confidence_updated"
   | "recommendation_updated"
   | "uncertainty_updated"
+  | "recovery_updated"
   | "compare_started"
   | "intervention_received"
   | "intervention_applied"
@@ -191,6 +201,20 @@ export function serializeConfidenceStatus(
   };
 }
 
+export function serializeRecoveryState(
+  recoveryState: SearchRecoveryState
+): AgentRecoveryStateSnapshot {
+  return {
+    phase: recoveryState.phase,
+    diagnosis: recoveryState.diagnosis,
+    rationale: recoveryState.rationale,
+    clarificationCount: recoveryState.clarificationCount,
+    rewriteCount: recoveryState.rewriteCount,
+    lowConfidenceEmitted: recoveryState.lowConfidenceEmitted,
+    lastRewrittenQuery: recoveryState.lastRewrittenQuery
+  };
+}
+
 export function serializeRecommendation(
   recommendation: AgentRecommendation | null
 ): AgentRecommendationSnapshot | null {
@@ -225,6 +249,7 @@ export function buildAgentSessionSnapshot(options: {
     confidenceStatus: serializeConfidenceStatus(state.confidenceStatus),
     recommendedCandidate: serializeRecommendation(state.recommendedCandidate),
     openUncertainties: [...state.openUncertainties],
+    recoveryState: serializeRecoveryState(state.recoveryState),
     clarificationCount: state.clarificationHistory.length,
     searchHistory: state.searchHistory.map(serializeSearchHistoryEntry)
   };

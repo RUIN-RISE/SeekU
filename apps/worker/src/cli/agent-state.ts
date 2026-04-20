@@ -1,4 +1,9 @@
-import type { ScoredCandidate, SearchConditions, SearchHistoryEntry } from "./types.js";
+import type {
+  ScoredCandidate,
+  SearchConditions,
+  SearchHistoryEntry,
+  SearchRecoveryState
+} from "./types.js";
 
 export type AgentConfidenceLevel = "high" | "medium" | "low";
 export type RecommendationGateFailureReason =
@@ -34,6 +39,7 @@ export interface AgentSessionState {
   confidenceStatus: AgentConfidenceStatus;
   recommendedCandidate: AgentRecommendation | null;
   openUncertainties: string[];
+  recoveryState: SearchRecoveryState;
 }
 
 export type SearchSessionState<TCandidate extends ScoredCandidate = ScoredCandidate> =
@@ -57,6 +63,7 @@ export interface CreateAgentSessionStateOptions {
   };
   recommendedCandidate?: AgentRecommendation | null;
   openUncertainties?: string[];
+  recoveryState?: Partial<SearchRecoveryState>;
 }
 
 export interface RecordSearchOptions {
@@ -107,6 +114,18 @@ function createDefaultSearchConditions(): SearchConditions {
     preferFresh: false,
     candidateAnchor: undefined,
     limit: 10
+  };
+}
+
+function createDefaultRecoveryState(): SearchRecoveryState {
+  return {
+    phase: "idle",
+    diagnosis: undefined,
+    rationale: undefined,
+    clarificationCount: 0,
+    rewriteCount: 0,
+    lowConfidenceEmitted: false,
+    lastRewrittenQuery: undefined
   };
 }
 
@@ -215,7 +234,11 @@ export function createAgentSessionState(
       updatedAt: options.confidenceStatus?.updatedAt ?? new Date(0)
     },
     recommendedCandidate: options.recommendedCandidate ?? null,
-    openUncertainties: dedupeStrings(options.openUncertainties ?? [])
+    openUncertainties: dedupeStrings(options.openUncertainties ?? []),
+    recoveryState: {
+      ...createDefaultRecoveryState(),
+      ...options.recoveryState
+    }
   };
 
   return clearRecommendationIfInvalid(state);
@@ -234,6 +257,20 @@ export function setUserGoal(
 }
 
 export const setSessionUserGoal = setUserGoal;
+
+export function setRecoveryState(
+  state: AgentSessionState,
+  recoveryState: SearchRecoveryState
+): AgentSessionState {
+  return {
+    ...state,
+    recoveryState: { ...recoveryState }
+  };
+}
+
+export function resetRecoveryState(state: AgentSessionState): AgentSessionState {
+  return setRecoveryState(state, createDefaultRecoveryState());
+}
 
 export function setCurrentConditions(
   state: AgentSessionState,

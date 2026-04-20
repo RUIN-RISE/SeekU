@@ -110,16 +110,24 @@ function createWorkflowHarness() {
     detectMissing: vi.fn(() => [])
   };
   const mockRenderer = {
-    renderComparison: vi.fn(() => "COMPARE VIEW")
+    renderComparison: vi.fn(() => "COMPARE VIEW"),
+    renderProfile: vi.fn(() => "PROFILE"),
+    renderWhyMatched: vi.fn(() => "WHY")
   };
   const mockExporter = {
     export: vi.fn()
+  };
+  const mockSpinner = {
+    start: vi.fn(),
+    stop: vi.fn(),
+    fail: vi.fn()
   };
 
   (workflow as any).tui = mockTui;
   (workflow as any).chat = mockChat;
   (workflow as any).renderer = mockRenderer;
   (workflow as any).exporter = mockExporter;
+  (workflow as any).spinner = mockSpinner;
   (workflow as any).refreshCandidateQueryExplanation = vi.fn();
   (workflow as any).ensureProfiles = vi.fn(async () => undefined);
   (workflow as any).sortCandidates = vi.fn(async () => undefined);
@@ -131,6 +139,7 @@ function createWorkflowHarness() {
     mockChat,
     mockRenderer,
     mockExporter,
+    mockSpinner,
     runClarifyLoop: (workflow as any).runClarifyLoop.bind(workflow) as (
       initialInput: string
     ) => Promise<SearchConditions | null>,
@@ -231,9 +240,9 @@ describe("SearchWorkflow agent policy integration", () => {
     expect(result).toEqual({ type: "quit" });
   });
 
-  it("stays in shortlist flow when results are too weak for compare", async () => {
+  it("stays in shortlist flow when results are usable but still not compare-ready", async () => {
     const { workflow, runSearchLoop } = createWorkflowHarness();
-    const first = createCandidate({ personId: "person-1", matchStrength: "weak" });
+    const first = createCandidate({ personId: "person-1", matchStrength: "medium" });
     const second = createCandidate({ personId: "person-2", name: "Lin", matchStrength: "weak" });
     const compareSpy = vi.spyOn(workflow as any, "presentComparison").mockResolvedValue("back");
     const shortlistSpy = vi.fn(async () => ({ type: "quit" }));
@@ -250,6 +259,120 @@ describe("SearchWorkflow agent policy integration", () => {
 
     expect(compareSpy).not.toHaveBeenCalled();
     expect(shortlistSpy).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ type: "quit" });
+  });
+
+  it("asks one targeted recovery clarification before retrying when intent is missing", async () => {
+    const { workflow, mockChat, runSearchLoop } = createWorkflowHarness();
+    const weakCandidate = createCandidate({
+      personId: "person-1",
+      matchStrength: "weak",
+      matchScore: 0.31,
+      queryReasons: ["地点命中：杭州"]
+    });
+    const strongCandidate = createCandidate({
+      personId: "person-2",
+      matchStrength: "strong",
+      matchScore: 0.86,
+      queryReasons: ["角色贴合：backend", "技术命中：python"]
+    });
+    const shortlistSpy = vi.fn(async () => ({ type: "quit" }));
+
+    (workflow as any).shouldPreloadProfiles = vi.fn(() => false);
+    (workflow as any).tools.searchCandidates = vi
+      .fn()
+      .mockResolvedValueOnce({
+        query: "杭州",
+        conditions: {
+          ...BASE_CONDITIONS,
+          role: undefined,
+          skills: [],
+          mustHave: []
+        },
+        candidates: [weakCandidate]
+      })
+      .mockResolvedValueOnce({
+        query: "杭州 python backend",
+        conditions: BASE_CONDITIONS,
+        candidates: [strongCandidate]
+      });
+    (workflow as any).runShortlistLoop = shortlistSpy;
+    mockChat.askFreeform.mockResolvedValue("更偏 Python 后端");
+    mockChat.reviseConditions.mockResolvedValue(BASE_CONDITIONS);
+
+    const result = await runSearchLoop({
+      ...BASE_CONDITIONS,
+      role: undefined,
+      skills: [],
+      mustHave: []
+    });
+
+    expect(mockChat.askFreeform).toHaveBeenCalledTimes(1);
+    expect((workflow as any).tools.searchCandidates).toHaveBeenCalledTimes(2);
+    expect(shortlistSpy).toHaveBeenCalledWith(
+      [strongCandidate],
+      BASE_CONDITIONS,
+      "overall",
+      expect.objectContaining({ lowConfidence: false })
+    );
+    expect(result).toEqual({ type: "quit" });
+  });
+
+  it("rewrites once and then emits a low-confidence shortlist when retrieval stays weak", async () => {
+    const { workflow, mockChat, runSearchLoop } = createWorkflowHarness();
+    const weakFirst = createCandidate({
+      personId: "person-1",
+      matchStrength: "weak",
+      matchScore: 0.28,
+      queryReasons: ["地点命中：杭州"]
+    });
+    const weakSecond = createCandidate({
+      personId: "person-2",
+      matchStrength: "weak",
+      matchScore: 0.34,
+      queryReasons: ["地点命中：杭州"]
+    });
+    const shortlistSpy = vi.fn(async () => ({ type: "quit" }));
+
+    (workflow as any).shouldPreloadProfiles = vi.fn(() => false);
+    (workflow as any).tools.searchCandidates = vi
+      .fn()
+      .mockResolvedValueOnce({
+        query: "杭州 python backend",
+        conditions: BASE_CONDITIONS,
+        candidates: [weakFirst]
+      })
+      .mockResolvedValueOnce({
+        query: "杭州 python backend rewrite",
+        conditions: {
+          ...BASE_CONDITIONS,
+          mustHave: ["python backend"]
+        },
+        candidates: [weakSecond]
+      });
+    (workflow as any).runShortlistLoop = shortlistSpy;
+    mockChat.reviseConditions.mockResolvedValue({
+      ...BASE_CONDITIONS,
+      mustHave: ["python backend"]
+    });
+
+    const result = await runSearchLoop(BASE_CONDITIONS);
+
+    expect(mockChat.reviseConditions).toHaveBeenCalledWith(
+      BASE_CONDITIONS,
+      expect.stringContaining("不要改变用户显式 must-have"),
+      "tighten",
+      expect.any(Object)
+    );
+    expect(shortlistSpy).toHaveBeenCalledWith(
+      [weakSecond],
+      expect.objectContaining({ mustHave: ["python backend"] }),
+      "overall",
+      expect.objectContaining({
+        lowConfidence: true,
+        resultWarning: expect.stringContaining("低置信 shortlist")
+      })
+    );
     expect(result).toEqual({ type: "quit" });
   });
 });

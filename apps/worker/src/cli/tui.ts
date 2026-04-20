@@ -31,6 +31,8 @@ interface ShortlistViewOptions {
   poolPersonIds?: string[];
   selectedIndex?: number;
   resultWarning?: string;
+  lowConfidence?: boolean;
+  uncertaintySummary?: string;
   statusMessage?: ShortlistStatusMessage;
   reuseViewport?: boolean;
 }
@@ -147,6 +149,8 @@ export class TerminalUI {
         return "Clarifying goal";
       case "searching":
         return "Searching candidates";
+      case "recovering":
+        return "Recovering weak results";
       case "shortlist":
         return "Narrowing shortlist";
       case "comparing":
@@ -256,6 +260,13 @@ export class TerminalUI {
     lines.push(`${chalk.bold(`Top ${options.showingCount}`)} / ${options.totalCount} | ${chalk.bold("排序")}：${sortLabel[options.sortMode]}`);
     lines.push(chalk.dim(this.formatConditionsSummary(conditions)));
     lines.push(chalk.dim("=".repeat(72)));
+
+    if (options.lowConfidence) {
+      lines.push(chalk.yellow("低置信 shortlist"));
+      lines.push(chalk.dim("可先看的人：先从下面这些候选人开始，这不是最终推荐。"));
+      lines.push(chalk.dim(`为什么我还不能直接推荐：${options.uncertaintySummary || "当前结果还不够稳。继续 refine 后再做 compare 更合适。"} `));
+      lines.push(chalk.dim("-".repeat(72)));
+    }
 
     if (options.resultWarning) {
       lines.push(chalk.yellow(`⚠ ${options.resultWarning}`));

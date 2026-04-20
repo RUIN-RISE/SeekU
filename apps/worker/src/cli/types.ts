@@ -20,6 +20,25 @@ export interface SearchCandidateAnchor {
   name?: string;
 }
 
+export type RecoveryDiagnosis = "intent_missing" | "retrieval_failed";
+export type RecoveryPhase =
+  | "idle"
+  | "diagnosing"
+  | "clarifying"
+  | "rewriting"
+  | "low_confidence_shortlist"
+  | "exhausted";
+
+export interface SearchRecoveryState {
+  phase: RecoveryPhase;
+  diagnosis?: RecoveryDiagnosis;
+  rationale?: string;
+  clarificationCount: number;
+  rewriteCount: number;
+  lowConfidenceEmitted: boolean;
+  lastRewrittenQuery?: string;
+}
+
 export type { MatchStrength };
 export type ConditionAuditStatus = "met" | "unmet" | "unknown";
 
