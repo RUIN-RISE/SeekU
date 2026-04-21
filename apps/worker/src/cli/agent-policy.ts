@@ -4,6 +4,8 @@ import type {
   ScoredCandidate,
   SearchConditions
 } from "./types.js";
+import type { FailureCode, SearchAttemptReport } from "./search-attempt-report.js";
+import type { SearchFailureReport } from "./search-failure-report.js";
 
 export type AgentLoopAction = "clarify" | "search" | "narrow" | "compare" | "decide";
 export type RecoveryAction = "clarify" | "rewrite" | "low_confidence_shortlist" | "stop";
@@ -25,6 +27,15 @@ export interface RecoveryPolicyDecision {
   rationale: string;
 }
 
+export type RecoveryPromptKind = "anchor" | "role" | "skill" | "generic";
+
+export interface RecoveryPolicyDecisionV2 {
+  action: RecoveryAction;
+  rationale: string;
+  targetFailureCode?: FailureCode;
+  promptKind?: RecoveryPromptKind;
+}
+
 interface ClarifyPolicyInput {
   conditions: SearchConditions;
   clarificationCount: number;
@@ -39,6 +50,34 @@ interface RecoveryPolicyInput {
   clarificationCount: number;
   rewriteCount: number;
   hasFallbackCandidates: boolean;
+}
+
+interface RecoveryPolicyInputV2 {
+  attempt: SearchAttemptReport;
+  failure: SearchFailureReport;
+}
+
+function hasDiagnosticFailure(
+  failure: SearchFailureReport,
+  code: FailureCode
+): boolean {
+  return failure.summary.diagnosticFailures.includes(code);
+}
+
+function buildRewriteRecoveryRationale(failure: SearchFailureReport): string {
+  if (hasDiagnosticFailure(failure, "source_coverage_gap")) {
+    return "这轮也可能碰到数据覆盖边界，我先自动收敛检索表达再试一轮。";
+  }
+
+  if (hasDiagnosticFailure(failure, "query_too_broad")) {
+    return "目标已经基本清楚，但当前检索表达偏宽，我先自动收敛检索表达再试一轮。";
+  }
+
+  if (hasDiagnosticFailure(failure, "source_bias_conflict")) {
+    return "目标已经基本清楚，但来源偏好可能压掉了可召回结果，我先自动收敛检索表达再试一轮。";
+  }
+
+  return "目标已经基本清楚，先自动收敛检索表达再试一轮。";
 }
 
 function hasNonEmptyValue(value: string | undefined): boolean {
@@ -167,4 +206,100 @@ export function decideRecoveryAction(input: RecoveryPolicyInput): RecoveryPolicy
     action: "stop",
     rationale: "恢复预算已用完，且当前没有可用的低置信候选池。"
   };
+}
+
+export function decideRecoveryActionV2(input: RecoveryPolicyInputV2): RecoveryPolicyDecisionV2 {
+  const primary = input.failure.summary.primaryFailureCode;
+  const exhausted = input.failure.summary.terminalFailureCodes.includes("recovery_budget_exhausted");
+  const clarifyAvailable =
+    input.attempt.history.budget.clarifyUsed < input.attempt.history.budget.clarifyLimit;
+  const rewriteAvailable =
+    input.attempt.history.budget.rewriteUsed < input.attempt.history.budget.rewriteLimit;
+
+  const fallbackDecision = (): RecoveryPolicyDecisionV2 => {
+    if (input.attempt.outcome.lowConfidenceShortlistPossible) {
+      return {
+        action: "low_confidence_shortlist",
+        rationale: exhausted
+          ? "recovery 预算已用完，但还有可供低置信参考的候选人。"
+          : "当前主恢复动作已用完，先给低置信 shortlist 作为 fallback。"
+      };
+    }
+
+    return {
+      action: "stop",
+      rationale: exhausted
+        ? "recovery 预算已用完，且当前没有可用 fallback。"
+        : "当前主恢复动作已用完，且没有可用 fallback。"
+    };
+  };
+
+  if (exhausted) {
+    return fallbackDecision();
+  }
+
+  switch (primary) {
+    case "intent_anchor_missing":
+      if (!clarifyAvailable) {
+        return rewriteAvailable
+          ? {
+              action: "rewrite",
+              rationale: "参照锚点澄清机会已用完，先自动收敛检索表达再试一轮。",
+              targetFailureCode: primary
+            }
+          : fallbackDecision();
+      }
+      return {
+        action: "clarify",
+        rationale: "当前参照人失效，先换一个参照人或直接描述目标更稳。",
+        targetFailureCode: primary,
+        promptKind: "anchor"
+      };
+    case "intent_missing_role_axis":
+      if (!clarifyAvailable) {
+        return rewriteAvailable
+          ? {
+              action: "rewrite",
+              rationale: "角色澄清机会已用完，先自动收敛检索表达再试一轮。",
+              targetFailureCode: primary
+            }
+          : fallbackDecision();
+      }
+      return {
+        action: "clarify",
+        rationale: "当前缺少角色主轴，先补角色方向再重试。",
+        targetFailureCode: primary,
+        promptKind: "role"
+      };
+    case "intent_missing_skill_axis":
+      if (!clarifyAvailable) {
+        return rewriteAvailable
+          ? {
+              action: "rewrite",
+              rationale: "技能澄清机会已用完，先自动收敛检索表达再试一轮。",
+              targetFailureCode: primary
+            }
+          : fallbackDecision();
+      }
+      return {
+        action: "clarify",
+        rationale: "当前缺少技能主轴，先补关键技能或方向再重试。",
+        targetFailureCode: primary,
+        promptKind: "skill"
+      };
+    case "condition_mismatch_dominant":
+    case "filter_too_strict":
+    case "retrieval_zero_hits":
+    case "retrieval_all_weak":
+      if (!rewriteAvailable) {
+        return fallbackDecision();
+      }
+      return {
+        action: "rewrite",
+        rationale: buildRewriteRecoveryRationale(input.failure),
+        targetFailureCode: primary
+      };
+    default:
+      return fallbackDecision();
+  }
 }
