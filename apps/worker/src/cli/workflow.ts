@@ -29,8 +29,6 @@ import {
   recordClarification,
   recordSearchExecution,
   removeCompareCandidates as removeCompareCandidatesFromState,
-  replaceSearchHistory,
-  rewindSearchHistory,
   resetRecoveryState,
   setCurrentShortlist,
   setConfidenceStatus,
@@ -67,7 +65,7 @@ import {
   buildEvidenceHeadline
 } from "./comparison-formatters.js";
 import { ProfileManager } from "./profile-manager.js";
-import { ComparisonController, type CompareLoopOutcome } from "./comparison-controller.js";
+import { ComparisonController } from "./comparison-controller.js";
 import { SearchExecutor, type SearchExecutionResult, type SearchExecutionDiagnostics, type HydratedCandidate } from "./search-executor.js";
 import { ConditionRevisionService } from "./condition-revision-service.js";
 import { RecoveryHandler, type SearchRecoveryHandlingResult } from "./recovery-handler.js";
@@ -121,16 +119,12 @@ import {
   ComparisonResult,
   ConditionAuditItem,
   ConditionAuditStatus,
-  ExportCandidateRecord,
   MultiDimensionProfile,
   RecoveryDiagnosis,
-  ResultListCommand,
   ScoredCandidate,
   SearchConditions,
-  SearchRecoveryState,
   SearchDraft,
-  SearchHistoryEntry,
-  ShortlistStatusMessage,
+  SearchRecoveryState,
   SortMode
 } from "./types.js";
 
@@ -907,14 +901,6 @@ export class SearchWorkflow {
   private set comparePool(candidates: HydratedCandidate[]) {
     const nextState = addCompareCandidates(clearCompareSet(this.sessionState), candidates);
     this.applySessionState(nextState);
-  }
-
-  private get searchHistory(): SearchHistoryEntry[] {
-    return this.sessionState.searchHistory;
-  }
-
-  private set searchHistory(entries: SearchHistoryEntry[]) {
-    this.applySessionState(replaceSearchHistory(this.sessionState, entries));
   }
 
   getSessionId(): string {
@@ -1785,12 +1771,5 @@ export class SearchWorkflow {
     );
 
     return prepareComparisonResult(hydratedTargets, hydratedAllCandidates, conditions);
-  }
-
-  private applySearchStateOrdering(
-    candidates: HydratedCandidate[],
-    conditions: SearchConditions
-  ): HydratedCandidate[] {
-    return this.searchExecutor.applySearchStateOrdering(candidates, conditions);
   }
 }

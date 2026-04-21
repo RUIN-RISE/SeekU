@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MultiDimensionProfile, SearchConditions } from "../types.js";
 import { SearchWorkflow } from "../workflow.js";
+import { RecoveryHandler } from "../recovery-handler.js";
+import { ComparisonController } from "../comparison-controller.js";
+import { ShortlistController } from "../shortlist-controller.js";
 
 const BASE_CONDITIONS: SearchConditions = {
   skills: ["python"],
@@ -99,13 +102,61 @@ function createWorkflowHarness() {
   const mockRenderer = {
     renderComparison: vi.fn(() => "COMPARE VIEW")
   };
+  const mockSpinner = {
+    start: vi.fn(),
+    stop: vi.fn(),
+    fail: vi.fn()
+  };
 
   (workflow as any).tui = mockTui;
   (workflow as any).chat = mockChat;
   (workflow as any).renderer = mockRenderer;
+  (workflow as any).spinner = mockSpinner;
   (workflow as any).refreshCandidateQueryExplanation = vi.fn();
-  (workflow as any).ensureProfiles = vi.fn(async () => undefined);
-  (workflow as any).sortCandidates = vi.fn(async () => undefined);
+  (workflow as any).profileManager.ensureProfiles = vi.fn(async () => undefined);
+
+  (workflow as any).recoveryHandler = new RecoveryHandler({
+    conditionRevisionService: (workflow as any).conditionRevisionService,
+    chat: mockChat,
+    spinner: mockSpinner,
+    scorer: (workflow as any).scorer,
+    getSessionState: () => (workflow as any).sessionState,
+    applySessionState: (next: any) => (workflow as any).applySessionState(next),
+    setSessionStatus: (status: string, summary?: string | null) => (workflow as any).setSessionStatus(status, summary),
+    appendTranscriptEntry: (role: string, content: string) => (workflow as any).appendTranscriptEntry(role as any, content),
+    getLastSearchDiagnostics: () => (workflow as any).lastSearchDiagnostics,
+    getSessionId: () => (workflow as any).sessionId
+  });
+
+  (workflow as any).comparisonController = new ComparisonController({
+    profileManager: (workflow as any).profileManager,
+    tools: (workflow as any).tools,
+    renderer: mockRenderer as any,
+    tui: mockTui as any,
+    chat: mockChat as any,
+    getSessionState: () => (workflow as any).sessionState,
+    applySessionState: (next: any) => (workflow as any).applySessionState(next),
+    setSessionStatus: (status: string, summary?: string | null) => (workflow as any).setSessionStatus(status, summary),
+    emitSessionEvent: (type: string, summary: string, data: Record<string, unknown>) => (workflow as any).emitSessionEvent(type, summary, data),
+    refreshCandidateQueryExplanation: (candidate: any, conditions: any) => (workflow as any).refreshCandidateQueryExplanation(candidate, conditions),
+    decorateComparisonResult: (result: any, conditions: any) => (workflow as any).recoveryHandler.applyBoundaryContextToComparisonResult(result, conditions),
+    buildCompareRefinePrompt: (conditions: any) => (workflow as any).recoveryHandler.buildCompareRefinePrompt(conditions)
+  });
+
+  (workflow as any).shortlistController = new ShortlistController({
+    tui: mockTui as any,
+    chat: mockChat as any,
+    renderer: mockRenderer as any,
+    exporter: (workflow as any).exporter,
+    comparisonController: (workflow as any).comparisonController,
+    profileManager: (workflow as any).profileManager,
+    searchExecutor: (workflow as any).searchExecutor,
+    recoveryHandler: (workflow as any).recoveryHandler,
+    scorer: (workflow as any).scorer,
+    tools: (workflow as any).tools,
+    getSessionState: () => (workflow as any).sessionState,
+    applySessionState: (next: any) => (workflow as any).applySessionState(next)
+  });
 
   return {
     workflow,
@@ -117,7 +168,7 @@ function createWorkflowHarness() {
     runSearchLoop: (workflow as any).runSearchLoop.bind(workflow) as (
       initialConditions: SearchConditions
     ) => Promise<any>,
-    presentComparison: (workflow as any).presentComparison.bind(workflow) as (
+    presentComparison: (workflow as any).comparisonController.presentComparison.bind((workflow as any).comparisonController) as (
       targets: any[],
       allCandidates: any[],
       conditions: SearchConditions,
@@ -151,7 +202,7 @@ describe("SearchWorkflow session events", () => {
       conditions: BASE_CONDITIONS,
       candidates: [first, second]
     }));
-    (workflow as any).runShortlistLoop = vi.fn(async () => ({ type: "quit" }));
+    (workflow as any).shortlistController.runShortlistLoop = vi.fn(async () => ({ type: "quit" }));
 
     await runSearchLoop(BASE_CONDITIONS);
 
@@ -275,7 +326,7 @@ describe("SearchWorkflow session events", () => {
       ...BASE_CONDITIONS,
       mustHave: ["infra backend"]
     });
-    (workflow as any).runShortlistLoop = vi.fn(async () => ({ type: "quit" }));
+    (workflow as any).shortlistController.runShortlistLoop = vi.fn(async () => ({ type: "quit" }));
 
     await runSearchLoop(BASE_CONDITIONS);
 
