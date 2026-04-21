@@ -107,7 +107,6 @@ export interface RecoveryHandlerDependencies {
   applySessionState: (next: AgentSessionState) => void;
   setSessionStatus: (status: string, summary?: string | null) => void;
   appendTranscriptEntry: (role: string, content: string) => void;
-  getLastSearchDiagnostics: () => SearchExecutionDiagnostics | undefined;
   getSessionId: () => string;
 }
 
@@ -116,12 +115,13 @@ export class RecoveryHandler {
 
   analyzeSearchRecovery(
     candidates: HydratedCandidate[],
-    conditions: SearchConditions
+    conditions: SearchConditions,
+    searchDiagnostics?: SearchExecutionDiagnostics
   ): SearchRecoveryAnalysis {
     const sessionState = this.deps.getSessionState();
     const currentRecovery = sessionState.recoveryState;
     const now = new Date();
-    const retrievalDiagnostics = this.buildAttemptRetrievalDiagnostics(candidates.length);
+    const retrievalDiagnostics = this.buildAttemptRetrievalDiagnostics(candidates.length, searchDiagnostics);
 
     const attemptReport = buildSearchAttemptReport({
       sessionId: this.deps.getSessionId(),
@@ -165,9 +165,9 @@ export class RecoveryHandler {
   }
 
   buildAttemptRetrievalDiagnostics(
-    candidateCount: number
+    candidateCount: number,
+    baseDiagnostics?: SearchExecutionDiagnostics
   ): SearchExecutionDiagnostics | undefined {
-    const baseDiagnostics = this.deps.getLastSearchDiagnostics();
     if (!baseDiagnostics) {
       return undefined;
     }
@@ -307,9 +307,10 @@ export class RecoveryHandler {
   async handleSearchRecovery(
     candidates: HydratedCandidate[],
     conditions: SearchConditions,
-    effectiveQuery: string
+    effectiveQuery: string,
+    searchDiagnostics?: SearchExecutionDiagnostics
   ): Promise<SearchRecoveryHandlingResult> {
-    const analysis = this.analyzeSearchRecovery(candidates, conditions);
+    const analysis = this.analyzeSearchRecovery(candidates, conditions, searchDiagnostics);
     const { assessment, failureReport, attemptReport } = analysis;
     if (assessment.usable) {
       let nextState = resetRecoveryState(this.deps.getSessionState());

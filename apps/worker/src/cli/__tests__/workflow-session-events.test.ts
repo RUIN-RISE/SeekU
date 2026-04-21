@@ -124,7 +124,6 @@ function createWorkflowHarness() {
     applySessionState: (next: any) => (workflow as any).applySessionState(next),
     setSessionStatus: (status: string, summary?: string | null) => (workflow as any).setSessionStatus(status, summary),
     appendTranscriptEntry: (role: string, content: string) => (workflow as any).appendTranscriptEntry(role as any, content),
-    getLastSearchDiagnostics: () => (workflow as any).lastSearchDiagnostics,
     getSessionId: () => (workflow as any).sessionId
   });
 

@@ -80,6 +80,7 @@ export interface AgentSearchCandidatesOutput<TCandidate extends ScoredCandidate 
   query: string;
   conditions: SearchConditions;
   candidates: TCandidate[];
+  diagnostics?: import("./search-executor.js").SearchExecutionDiagnostics;
 }
 
 export interface AgentInspectCandidateInput<TCandidate extends ScoredCandidate = ScoredCandidate> {

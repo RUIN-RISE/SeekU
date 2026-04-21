@@ -171,7 +171,6 @@ function createWorkflowHarness() {
     applySessionState: (next: any) => (workflow as any).applySessionState(next),
     setSessionStatus: (status: string, summary?: string | null) => (workflow as any).setSessionStatus(status, summary),
     appendTranscriptEntry: (role: string, content: string) => (workflow as any).appendTranscriptEntry(role as any, content),
-    getLastSearchDiagnostics: () => (workflow as any).lastSearchDiagnostics,
     getSessionId: () => (workflow as any).sessionId
   });
 
@@ -229,7 +228,8 @@ function createWorkflowHarness() {
     handleSearchRecovery: (workflow as any).recoveryHandler.handleSearchRecovery.bind((workflow as any).recoveryHandler) as (
       candidates: any[],
       conditions: SearchConditions,
-      effectiveQuery: string
+      effectiveQuery: string,
+      searchDiagnostics?: any
     ) => Promise<any>,
     showCandidateDetail: (workflow as any).shortlistController.showCandidateDetail.bind((workflow as any).shortlistController) as (
       selected: any,
@@ -514,7 +514,7 @@ describe("SearchWorkflow agent policy integration", () => {
         rewriteCount: 1
       }
     };
-    (workflow as any).lastSearchDiagnostics = {
+    const searchDiagnostics = {
       filterDropoff: {
         status: "available",
         dominantFilter: "unknown",
@@ -527,7 +527,7 @@ describe("SearchWorkflow agent policy integration", () => {
       }
     };
 
-    const result = await handleSearchRecovery([], BASE_CONDITIONS, "杭州 python backend");
+    const result = await handleSearchRecovery([], BASE_CONDITIONS, "杭州 python backend", searchDiagnostics);
 
     expect(result).toEqual({ type: "stop" });
     expect(workflow.getSessionSnapshot().openUncertainties[0]).toContain("当前库里可能没有完全匹配的人");

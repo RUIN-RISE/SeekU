@@ -818,13 +818,12 @@ export class SearchWorkflow {
       applySessionState: (next) => this.applySessionState(next),
       setSessionStatus: (status, summary) => this.setSessionStatus(status as any, summary),
       appendTranscriptEntry: (role, content) => this.appendTranscriptEntry(role as any, content),
-      getLastSearchDiagnostics: () => this.lastSearchDiagnostics,
       getSessionId: () => this.sessionId
     });
     this.tools = createSearchAgentTools({
       searchCandidates: async ({ query, conditions }) => {
         const result = await this.performSearch(query, conditions);
-        return { query, conditions, candidates: result.candidates };
+        return { query, conditions, candidates: result.candidates, diagnostics: result.diagnostics };
       },
       inspectCandidate: async ({ personId, shortlist, activeCompareSet }) =>
         inspectCandidateFromState({ personId, shortlist, activeCompareSet }),
@@ -1478,6 +1477,7 @@ export class SearchWorkflow {
       }
 
       let candidates: HydratedCandidate[];
+      let searchDiagnostics: SearchExecutionDiagnostics | undefined;
       try {
         this.setSessionStatus("searching", "正在搜索匹配候选人。");
         this.emitSessionEvent("search_started", `开始搜索：${truncateDisplayValue(effectiveQuery, 48)}`, {
@@ -1490,13 +1490,14 @@ export class SearchWorkflow {
           conditions
         });
         candidates = searchResult.candidates;
+        searchDiagnostics = searchResult.diagnostics;
         this.spinner.stop();
       } catch (error) {
         this.spinner.fail("搜索失败。");
         throw error;
       }
 
-      const recoveryOutcome = await this.recoveryHandler.handleSearchRecovery(candidates, conditions, effectiveQuery);
+      const recoveryOutcome = await this.recoveryHandler.handleSearchRecovery(candidates, conditions, effectiveQuery, searchDiagnostics);
       if (recoveryOutcome.type === "retry" && recoveryOutcome.conditions) {
         conditions = recoveryOutcome.conditions;
         shortlistPresentation = undefined;
@@ -1639,12 +1640,8 @@ export class SearchWorkflow {
     };
   }
 
-  private lastSearchDiagnostics?: SearchExecutionDiagnostics;
-
   private async performSearch(query: string, conditions: SearchConditions): Promise<SearchExecutionResult> {
-    const result = await this.searchExecutor.performSearch(query, conditions);
-    this.lastSearchDiagnostics = result.diagnostics;
-    return result;
+    return this.searchExecutor.performSearch(query, conditions);
   }
 
   private getMatchedLocations(
