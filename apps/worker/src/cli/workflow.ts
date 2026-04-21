@@ -64,14 +64,14 @@ import {
 } from "./search-conditions.js";
 import {
   truncateForDisplay,
-  buildEvidenceHeadline,
-  buildComparisonEvidence
+  buildEvidenceHeadline
 } from "./comparison-formatters.js";
 import { ProfileManager } from "./profile-manager.js";
 import { ComparisonController, type CompareLoopOutcome } from "./comparison-controller.js";
 import { SearchExecutor, type SearchExecutionResult, type SearchExecutionDiagnostics, type HydratedCandidate } from "./search-executor.js";
 import { ConditionRevisionService } from "./condition-revision-service.js";
 import { RecoveryHandler, type SearchRecoveryHandlingResult } from "./recovery-handler.js";
+import { ShortlistController } from "./shortlist-controller.js";
 import { contextHasTermValue, buildSearchStateContextValue, findMatchedTermsValue } from "./search-context-helpers.js";
 import {
   type AgentInterventionResult,
@@ -140,10 +140,6 @@ interface SearchLoopOutcome {
   conditions?: SearchConditions;  // For undo: directly restore conditions
 }
 
-interface DetailOutcome {
-  type: "back" | "refine" | "quit";
-  prompt?: string;
-}
 
 export { classifyMatchStrength };
 
@@ -562,13 +558,6 @@ function createEmptyRecoveryState(overrides: Partial<SearchRecoveryState> = {}):
   };
 }
 
-function buildFullMatchReason(candidate: Pick<ScoredCandidate, "queryReasons" | "matchReason">) {
-  if (candidate.queryReasons && candidate.queryReasons.length > 0) {
-    return candidate.queryReasons.join("；");
-  }
-
-  return candidate.matchReason || "与当前条件整体相关度较高";
-}
 
 function buildConditionAuditItem(
   label: string,
@@ -771,6 +760,7 @@ export class SearchWorkflow {
   private searchExecutor: SearchExecutor;
   private conditionRevisionService: ConditionRevisionService;
   private recoveryHandler: RecoveryHandler;
+  private shortlistController: ShortlistController;
 
   constructor(
     private db: SeekuDatabase,
@@ -887,6 +877,20 @@ export class SearchWorkflow {
       refreshCandidateQueryExplanation: (candidate, conditions) => this.searchExecutor.refreshCandidateQueryExplanation(candidate as any, conditions),
       decorateComparisonResult: (result, conditions) => this.recoveryHandler.applyBoundaryContextToComparisonResult(result, conditions),
       buildCompareRefinePrompt: (conditions) => this.recoveryHandler.buildCompareRefinePrompt(conditions)
+    });
+    this.shortlistController = new ShortlistController({
+      tui: this.tui,
+      chat: this.chat,
+      renderer: this.renderer,
+      exporter: this.exporter,
+      comparisonController: this.comparisonController,
+      profileManager: this.profileManager,
+      searchExecutor: this.searchExecutor,
+      recoveryHandler: this.recoveryHandler,
+      scorer: this.scorer,
+      tools: this.tools,
+      getSessionState: () => this.sessionState,
+      applySessionState: (next) => this.applySessionState(next)
     });
     this.emitSessionEvent(
       "session_started",
@@ -1014,7 +1018,7 @@ export class SearchWorkflow {
       }
 
       const beforeCount = this.comparePool.length;
-      this.addCandidatesToPool([candidate]);
+      this.shortlistController.addCandidatesToPool([candidate]);
       const added = this.comparePool.length > beforeCount;
       return this.acceptIntervention(
         command,
@@ -1601,7 +1605,7 @@ export class SearchWorkflow {
           continue;
         }
       }
-      const result = await this.runShortlistLoop(candidates, conditions, sortMode, shortlistPresentation);
+      const result = await this.shortlistController.runShortlistLoop(candidates, conditions, sortMode, shortlistPresentation);
       preloadPromise?.catch(() => {});
 
       if (result.type === "quit") {
@@ -1630,594 +1634,6 @@ export class SearchWorkflow {
     }
   }
 
-  private async runShortlistLoop(
-    candidates: HydratedCandidate[],
-    conditions: SearchConditions,
-    initialSortMode: SortMode,
-    presentation?: {
-      lowConfidence: boolean;
-      resultWarning?: string;
-      uncertaintySummary?: string;
-    }
-  ): Promise<SearchLoopOutcome> {
-    let sortMode = initialSortMode;
-    let visibleCount = Math.min(5, candidates.length);
-    let selectedIndex = 0;
-    const resultWarning = presentation?.resultWarning ?? buildResultWarning(candidates);
-    let statusMessage: ShortlistStatusMessage | undefined;
-    let reuseViewport = false;
-
-    await this.sortCandidates(candidates, sortMode, conditions);
-
-    while (true) {
-      this.tui.displayShortlist(candidates, conditions, {
-        sortMode,
-        showingCount: visibleCount,
-        totalCount: candidates.length,
-        poolCount: this.comparePool.length,
-        poolPersonIds: this.comparePool.map((candidate) => candidate.personId),
-        selectedIndex,
-        resultWarning,
-        lowConfidence: presentation?.lowConfidence,
-        uncertaintySummary: presentation?.uncertaintySummary,
-        statusMessage,
-        reuseViewport
-      });
-
-      const command = await this.tui.promptShortlistAction({
-        selectedIndex,
-        showingCount: visibleCount
-      });
-      const outcome = await this.handleShortlistCommand(command, candidates, conditions, {
-        sortMode,
-        visibleCount,
-        selectedIndex
-      });
-
-      if (outcome.type === "continue") {
-        sortMode = outcome.sortMode;
-        visibleCount = outcome.visibleCount;
-        selectedIndex = outcome.selectedIndex;
-        statusMessage = outcome.statusMessage;
-        reuseViewport = outcome.reuseViewport;
-        continue;
-      }
-
-      this.tui.resetShortlistViewport();
-      return outcome.result;
-    }
-  }
-
-  private async handleShortlistCommand(
-    command: ResultListCommand,
-    candidates: HydratedCandidate[],
-    conditions: SearchConditions,
-    state: { sortMode: SortMode; visibleCount: number; selectedIndex: number }
-  ): Promise<
-    | {
-      type: "continue";
-      sortMode: SortMode;
-      visibleCount: number;
-      selectedIndex: number;
-      statusMessage?: ShortlistStatusMessage;
-      reuseViewport: boolean;
-    }
-    | { type: "done"; result: SearchLoopOutcome }
-  > {
-    const continueWith = (overrides: Partial<{
-      sortMode: SortMode;
-      visibleCount: number;
-      selectedIndex: number;
-      statusMessage?: ShortlistStatusMessage;
-      reuseViewport: boolean;
-    }> = {}) => ({
-      type: "continue" as const,
-      sortMode: overrides.sortMode ?? state.sortMode,
-      visibleCount: overrides.visibleCount ?? state.visibleCount,
-      selectedIndex: overrides.selectedIndex ?? state.selectedIndex,
-      statusMessage: overrides.statusMessage,
-      reuseViewport: overrides.reuseViewport ?? false
-    });
-
-    if (command.type === "help") {
-      this.tui.resetShortlistViewport();
-      this.tui.displayHelp();
-      return continueWith();
-    }
-
-    if (command.type === "back") {
-      return continueWith({ reuseViewport: true });
-    }
-
-    if (command.type === "quit") {
-      return { type: "done", result: { type: "quit" } };
-    }
-
-    if (command.type === "moveSelection") {
-      let nextSelectedIndex = state.selectedIndex;
-      if (command.direction === "up") {
-        nextSelectedIndex -= 1;
-      } else if (command.direction === "down") {
-        nextSelectedIndex += 1;
-      } else if (command.direction === "top") {
-        nextSelectedIndex = 0;
-      } else if (command.direction === "bottom") {
-        nextSelectedIndex = state.visibleCount - 1;
-      } else if (typeof command.direction === "number") {
-        nextSelectedIndex += command.direction;
-      }
-      
-      nextSelectedIndex = Math.max(0, Math.min(nextSelectedIndex, state.visibleCount - 1));
-      return continueWith({
-        selectedIndex: nextSelectedIndex,
-        reuseViewport: true
-      });
-    }
-
-    if (command.type === "showMore") {
-      return continueWith({
-        visibleCount: Math.min(state.visibleCount + 5, candidates.length),
-        reuseViewport: true
-      });
-    }
-
-    if (command.type === "refine") {
-      this.tui.resetShortlistViewport();
-      const prompt = command.prompt || await this.chat.askFreeform(
-        this.recoveryHandler.buildShortlistRefinePrompt(conditions)
-      );
-      if (!prompt) {
-        return continueWith();
-      }
-
-      return { type: "done", result: { type: "refine", prompt } };
-    }
-
-    if (command.type === "sort") {
-      const nextSortMode = command.sortMode || "overall";
-      await this.sortCandidates(candidates, nextSortMode, conditions);
-      return continueWith({
-        sortMode: nextSortMode,
-        statusMessage: {
-          tone: "success",
-          text: `✓ 已按${this.getSortModeLabel(nextSortMode)}重排当前 shortlist（rerank-only，不会重新搜索）。`
-        },
-        reuseViewport: true
-      });
-    }
-
-    if (command.type === "togglePool") {
-      const targets = this.pickCandidates(candidates, command.indexes || []);
-      if (targets.length === 0) {
-        return continueWith({
-          statusMessage: {
-            tone: "warning",
-            text: "未找到要操作的候选人，请重新选择。"
-          },
-          reuseViewport: true
-        });
-      }
-
-      const target = targets[0];
-      const wasRemoved = this.removeCandidatesFromPool([target]);
-      if (wasRemoved > 0) {
-        return continueWith({
-          statusMessage: {
-            tone: "success",
-            text: `✓ ${target.name} 已移出对比池（当前 ${this.comparePool.length} 人）。`
-          },
-          reuseViewport: true
-        });
-      }
-
-      this.addCandidatesToPool([target]);
-      return continueWith({
-        statusMessage: {
-          tone: "success",
-          text: `✓ ${target.name} 已加入对比池（当前 ${this.comparePool.length} 人）。`
-        },
-        reuseViewport: true
-      });
-    }
-
-    if (command.type === "add") {
-      const targets = this.pickCandidates(candidates, command.indexes || []);
-      if (targets.length === 0) {
-        return continueWith({
-          statusMessage: {
-            tone: "warning",
-            text: "未找到要加入对比池的候选人，请重新选择。"
-          },
-          reuseViewport: true
-        });
-      }
-
-      const addedCount = this.addCandidatesToPool(targets);
-      if (addedCount === 0) {
-        return continueWith({
-          statusMessage: {
-            tone: "info",
-            text: `ℹ ${targets[0].name} 已经在对比池里了（当前 ${this.comparePool.length} 人）。`
-          },
-          reuseViewport: true
-        });
-      }
-
-      return continueWith({
-        statusMessage: {
-          tone: "success",
-          text: `✓ 已加入 ${addedCount} 位候选人到对比池（当前 ${this.comparePool.length} 人）。`
-        },
-        reuseViewport: true
-      });
-    }
-
-    if (command.type === "remove") {
-      const targets = this.pickCandidates(candidates, command.indexes || []);
-      if (targets.length === 0) {
-        return continueWith({
-          statusMessage: {
-            tone: "warning",
-            text: "未找到要移出的候选人，请重新选择。"
-          },
-          reuseViewport: true
-        });
-      }
-
-      const removedCount = this.removeCandidatesFromPool(targets);
-      if (removedCount === 0) {
-        return continueWith({
-          statusMessage: {
-            tone: "info",
-            text: "这些候选人当前不在对比池中。"
-          },
-          reuseViewport: true
-        });
-      }
-
-      return continueWith({
-        statusMessage: {
-          tone: "success",
-          text: `✓ 已从对比池移出 ${removedCount} 位候选人（当前 ${this.comparePool.length} 人）。`
-        },
-        reuseViewport: true
-      });
-    }
-
-    if (command.type === "pool") {
-      this.tui.resetShortlistViewport();
-      if (this.comparePool.length === 0) {
-        this.tui.displayPoolEmpty();
-      } else {
-        this.tui.displayPool(this.comparePool);
-      }
-      return continueWith();
-    }
-
-    if (command.type === "clear") {
-      this.applySessionState(clearCompareSet(this.sessionState));
-      return continueWith({
-        statusMessage: {
-          tone: "success",
-          text: "✓ 对比池已清空。"
-        },
-        reuseViewport: true
-      });
-    }
-
-    if (command.type === "history") {
-      this.tui.resetShortlistViewport();
-      this.tui.displayHistory(this.sessionState.searchHistory);
-      return continueWith();
-    }
-
-    if (command.type === "show") {
-      this.tui.resetShortlistViewport();
-      this.tui.displayFilters(conditions);
-      return continueWith();
-    }
-
-    if (command.type === "export") {
-      this.tui.resetShortlistViewport();
-      const exportTarget = command.exportTarget || "shortlist";
-      const exportFormat = command.exportFormat || "md";
-      const targets = exportTarget === "pool"
-        ? [...this.comparePool]
-        : candidates.slice(0, state.visibleCount);
-
-      if (targets.length === 0) {
-        this.tui.displayExportEmpty(exportTarget);
-        return continueWith();
-      }
-
-      for (const target of targets) {
-        this.searchExecutor.refreshCandidateQueryExplanation(target, conditions);
-      }
-
-      let comparisonEntries: ComparisonEntry[] = [];
-      if (exportTarget === "pool" && targets.length >= 2) {
-        await this.profileManager.ensureProfiles(targets, conditions, "正在准备对比池导出...");
-        const prepared = await this.tools.prepareComparison({
-          targets,
-          allCandidates: candidates
-        });
-        comparisonEntries = prepared.entries;
-      }
-
-      const artifact = await this.exporter.export({
-        format: exportFormat,
-        target: exportTarget,
-        querySummary: formatConditionsAsPrompt(conditions),
-        records: this.buildExportRecords(targets, candidates, comparisonEntries)
-      });
-
-      this.tui.displayExportSuccess(artifact);
-      return continueWith();
-    }
-
-    if (command.type === "undo") {
-      // Get previous conditions from history (skip current entry)
-      if (this.searchHistory.length < 2) {
-        this.tui.resetShortlistViewport();
-        this.tui.displayUndo(null);
-        return continueWith();
-      }
-
-      const previousEntry = this.searchHistory[this.searchHistory.length - 2];
-      this.tui.resetShortlistViewport();
-      this.tui.displayUndo(previousEntry.conditions);
-
-      this.applySessionState(rewindSearchHistory(this.sessionState, 2));
-
-      return {
-        type: "done",
-        result: {
-          type: "restore" as const,
-          conditions: previousEntry.conditions
-        }
-      };
-    }
-
-    if (command.type === "compare") {
-      // Use pool if indexes not provided
-      const usePool = !command.indexes || command.indexes.length < 2;
-      const targets = usePool
-        ? (this.comparePool.length >= 2 ? this.comparePool : [])
-        : this.pickCandidates(candidates, command.indexes || []);
-
-      if (targets.length < 2) {
-        return continueWith({
-          statusMessage: this.buildCompareNeedsMoreCandidatesMessage(
-            usePool ? this.comparePool.length : targets.length
-          ),
-          reuseViewport: true
-        });
-      }
-
-      const compareOutcome = await this.comparisonController.presentComparison(targets, candidates, conditions, {
-        clearProfilesBeforeCompare: usePool,
-        loadingMessage: "正在准备候选人对比..."
-      });
-      if (compareOutcome === "quit") {
-        return { type: "done", result: { type: "quit" } };
-      }
-      if (typeof compareOutcome !== "string" && compareOutcome.type === "refine") {
-        return { type: "done", result: compareOutcome };
-      }
-
-      return continueWith();
-    }
-
-    if (command.type === "view") {
-      const target = this.pickCandidates(candidates, command.indexes || [1])[0];
-      if (!target) {
-        return continueWith({
-          statusMessage: {
-            tone: "warning",
-            text: "未找到要查看的候选人，请重新选择。"
-          },
-          reuseViewport: true
-        });
-      }
-
-      this.tui.resetShortlistViewport();
-      const detailOutcome = await this.showCandidateDetail(target, conditions);
-      if (detailOutcome.type === "back") {
-        return continueWith();
-      }
-
-      if (detailOutcome.type === "quit") {
-        return { type: "done", result: { type: "quit" } };
-      }
-
-      return { type: "done", result: { type: "refine", prompt: detailOutcome.prompt } };
-    }
-
-    if (command.type === "open") {
-      const target = this.pickCandidates(candidates, command.indexes || [1])[0];
-      if (!target) {
-        return continueWith({
-          statusMessage: {
-            tone: "warning",
-            text: "未找到要打开的候选人，请重新选择。"
-          },
-          reuseViewport: true
-        });
-      }
-
-      return continueWith({
-        statusMessage: await this.openCandidateInBrowser(target),
-        reuseViewport: true
-      });
-    }
-
-    return continueWith({
-      statusMessage: {
-        tone: "warning",
-        text: `未识别的输入：${command.type}`
-      },
-      reuseViewport: true
-    });
-  }
-
-  private async showCandidateDetail(
-    selected: HydratedCandidate,
-    conditions: SearchConditions
-  ): Promise<DetailOutcome> {
-    this.searchExecutor.refreshCandidateQueryExplanation(selected, conditions);
-    console.log(chalk.blue(`\n🔍 正在加载 ${selected.name} 的深度画像...`));
-    const profile = await this.profileManager.loadProfileForCandidate(selected, conditions);
-    if (!profile) {
-      return { type: "back" };
-    }
-
-    console.log(
-      this.renderer.renderProfile(
-        selected._hydrated.person,
-        selected._hydrated.evidence,
-        profile,
-        selected.matchReason,
-        {
-          conditionAudit: selected.conditionAudit,
-          queryReasons: selected.queryReasons,
-          matchStrength: selected.matchStrength,
-          recoveryMode: this.sessionState.recoveryState.phase === "low_confidence_shortlist" ? "low-confidence" : undefined,
-          recoverySummary:
-            this.sessionState.recoveryState.phase === "low_confidence_shortlist"
-              ? this.sessionState.openUncertainties[0]
-              : undefined,
-          sources: selected.sources,
-          bonjourUrl: selected.bonjourUrl,
-          primaryLinks: selected.primaryLinks,
-          lastSyncedAt: selected.lastSyncedAt,
-          latestEvidenceAt: selected.latestEvidenceAt
-        }
-      )
-    );
-
-    while (true) {
-      const action = await this.tui.promptDetailAction(selected.name);
-      if (action === "back") {
-        return { type: "back" };
-      }
-
-      if (action === "quit") {
-        return { type: "quit" };
-      }
-
-      if (action === "open") {
-        const message = await this.openCandidateInBrowser(selected);
-        const colorize = message.tone === "success"
-          ? chalk.green
-          : message.tone === "warning"
-            ? chalk.yellow
-            : chalk.cyan;
-        console.log(colorize(`\n${message.text}`));
-        continue;
-      }
-
-      if (action === "why") {
-        console.log(this.renderer.renderWhyMatched(
-          selected,
-          profile,
-          conditions,
-          this.sessionState.recoveryState.phase === "low_confidence_shortlist"
-            ? {
-                recoveryMode: "low-confidence",
-                recoverySummary: this.sessionState.openUncertainties[0]
-              }
-            : undefined
-        ));
-        continue;
-      }
-
-      if (action === "refine") {
-        const prompt = await this.chat.askFreeform(
-          this.recoveryHandler.buildShortlistRefinePrompt(conditions, selected.name)
-        );
-        if (!prompt) {
-          continue;
-        }
-
-        return { type: "refine", prompt };
-      }
-    }
-  }
-
-  private getSortModeLabel(sortMode: SortMode): string {
-    const labels: Record<SortMode, string> = {
-      overall: "综合排序",
-      tech: "技术匹配",
-      project: "项目深度",
-      location: "地点匹配",
-      fresh: "新鲜度",
-      source: "来源优先级",
-      evidence: "证据强度"
-    };
-
-    return labels[sortMode];
-  }
-
-  private addCandidatesToPool(targets: HydratedCandidate[]): number {
-    const beforeCount = this.comparePool.length;
-    this.applySessionState(addCompareCandidates(this.sessionState, targets));
-    const addedCount = this.comparePool.length - beforeCount;
-    return addedCount;
-  }
-
-  private removeCandidatesFromPool(targets: HydratedCandidate[]): number {
-    const beforeCount = this.comparePool.length;
-    this.applySessionState(removeCompareCandidatesFromState(
-      this.sessionState,
-      targets.map((target) => target.personId)
-    ));
-    return beforeCount - this.comparePool.length;
-  }
-
-  private buildCompareNeedsMoreCandidatesMessage(poolCount: number): ShortlistStatusMessage {
-    if (poolCount <= 0) {
-      return {
-        tone: "warning",
-        text: "对比池为空，先按 space 把候选人加入对比池，再按 c 进入 compare。"
-      };
-    }
-
-    return {
-      tone: "warning",
-      text: `当前对比池只有 ${poolCount} 人，决策对比至少需要 2 人。继续按 space 再补一个候选人。`
-    };
-  }
-
-  private async openCandidateInBrowser(
-    candidate: Pick<ScoredCandidate, "name" | "bonjourUrl">
-  ): Promise<ShortlistStatusMessage> {
-    if (!candidate.bonjourUrl) {
-      return {
-        tone: "warning",
-        text: `${candidate.name} 没有 Bonjour 链接。`
-      };
-    }
-
-    const openCommand = process.platform === "darwin"
-      ? "open"
-      : process.platform === "win32"
-        ? "start"
-        : "xdg-open";
-
-    try {
-      const { spawn } = await import("node:child_process");
-      spawn(openCommand, [candidate.bonjourUrl], { stdio: "ignore", detached: true });
-      return {
-        tone: "success",
-        text: `✓ 已尝试在浏览器中打开 ${candidate.name} 的 Bonjour 页面。`
-      };
-    } catch {
-      return {
-        tone: "warning",
-        text: `无法自动打开 Bonjour，请手动访问：${candidate.bonjourUrl}`
-      };
-    }
-  }
 
   private async extractDraftFromQuery(query: string): Promise<SearchConditions> {
     this.spinner.start("正在分析你的需求...");
@@ -2371,145 +1787,10 @@ export class SearchWorkflow {
     return prepareComparisonResult(hydratedTargets, hydratedAllCandidates, conditions);
   }
 
-  private buildExportRecords(
-    targets: HydratedCandidate[],
-    allCandidates: HydratedCandidate[],
-    comparisonEntries: ComparisonEntry[] = []
-  ): ExportCandidateRecord[] {
-    const comparisonById = new Map(
-      comparisonEntries.map((entry) => [entry.candidate.personId, entry])
-    );
-
-    return targets.map((candidate) => {
-      const shortlistIndex = allCandidates.findIndex((item) => item.personId === candidate.personId);
-      const comparisonEntry = comparisonById.get(candidate.personId);
-      const freshnessDate = candidate.latestEvidenceAt ?? candidate.lastSyncedAt;
-
-      return {
-        shortlistIndex: shortlistIndex >= 0 ? shortlistIndex + 1 : undefined,
-        name: candidate.name,
-        headline: candidate.headline,
-        location: candidate.location,
-        company: candidate.company,
-        matchScore: candidate.matchScore,
-        source: this.formatExportSource(candidate.sources),
-        freshness: freshnessDate ? describeRelativeDate(freshnessDate) : "时间未知",
-        bonjourUrl: candidate.bonjourUrl,
-        whyMatched: buildFullMatchReason(candidate),
-        decisionTag: comparisonEntry?.decisionTag,
-        recommendation: comparisonEntry?.recommendation,
-        nextStep: comparisonEntry?.nextStep,
-        topEvidence: comparisonEntry?.topEvidence || buildComparisonEvidence(candidate._hydrated.evidence)
-      };
-    });
-  }
-
-  private pickCandidates(candidates: HydratedCandidate[], indexes: number[]): HydratedCandidate[] {
-    return indexes
-      .map((index) => candidates[index - 1])
-      .filter((candidate): candidate is HydratedCandidate => Boolean(candidate));
-  }
-
   private applySearchStateOrdering(
     candidates: HydratedCandidate[],
     conditions: SearchConditions
   ): HydratedCandidate[] {
     return this.searchExecutor.applySearchStateOrdering(candidates, conditions);
-  }
-
-  private async sortCandidates(
-    candidates: HydratedCandidate[],
-    sortMode: SortMode,
-    conditions: SearchConditions
-  ): Promise<void> {
-    if (sortMode === "overall") {
-      const ordered = this.applySearchStateOrdering(candidates, conditions);
-      candidates.splice(0, candidates.length, ...ordered);
-      this.applySessionState(setSessionShortlist(this.sessionState, candidates));
-      return;
-    }
-
-    if (this.isRerankOnlySortMode(sortMode)) {
-      candidates.sort((left, right) => this.compareRerankOnlyCandidates(left, right, sortMode));
-      this.applySessionState(setSessionShortlist(this.sessionState, candidates));
-      return;
-    }
-
-    await this.profileManager.ensureProfiles(candidates, conditions, `正在按 ${sortMode} 维度准备排序...`);
-    const scoreOf = (candidate: HydratedCandidate) => {
-      if (!candidate.profile) {
-        return -1;
-      }
-
-      if (sortMode === "tech") {
-        return candidate.profile.dimensions.techMatch;
-      }
-
-      if (sortMode === "project") {
-        return candidate.profile.dimensions.projectDepth;
-      }
-
-      return candidate.profile.dimensions.locationMatch;
-    };
-
-    candidates.sort((left, right) => scoreOf(right) - scoreOf(left));
-    this.applySessionState(setSessionShortlist(this.sessionState, candidates));
-  }
-
-  private isRerankOnlySortMode(
-    sortMode: SortMode
-  ): sortMode is Extract<SortMode, "fresh" | "source" | "evidence"> {
-    return sortMode === "fresh" || sortMode === "source" || sortMode === "evidence";
-  }
-
-  private compareRerankOnlyCandidates(
-    left: HydratedCandidate,
-    right: HydratedCandidate,
-    sortMode: Extract<SortMode, "fresh" | "source" | "evidence">
-  ): number {
-    const compositeDelta =
-      this.scorer.scoreRerankCandidate(sortMode, right, right._hydrated.evidence) -
-      this.scorer.scoreRerankCandidate(sortMode, left, left._hydrated.evidence);
-
-    if (Math.abs(compositeDelta) > 0.001) {
-      return compositeDelta;
-    }
-
-    const leftSignals = this.buildRerankSignals(left);
-    const rightSignals = this.buildRerankSignals(right);
-    const tieBreakerOrder: Record<
-      Extract<SortMode, "fresh" | "source" | "evidence">,
-      Array<keyof ReturnType<SearchWorkflow["buildRerankSignals"]>>
-    > = {
-      fresh: ["fresh", "evidence", "source", "match"],
-      source: ["source", "fresh", "evidence", "match"],
-      evidence: ["evidence", "fresh", "source", "match"]
-    };
-
-    for (const key of tieBreakerOrder[sortMode]) {
-      const delta = rightSignals[key] - leftSignals[key];
-      if (delta !== 0) {
-        return delta;
-      }
-    }
-
-    return 0;
-  }
-
-  private buildRerankSignals(candidate: HydratedCandidate) {
-    return {
-      fresh: this.scorer.scoreFreshness(candidate),
-      source: this.scorer.scoreSourcePriority(candidate),
-      evidence: this.scorer.scoreEvidenceStrength(candidate._hydrated.evidence),
-      match: this.scorer.normalizeMatchScore(candidate.matchScore)
-    };
-  }
-
-  private formatExportSource(sources: string[]): string {
-    if (!sources || sources.length === 0 || sources[0] === "Unknown") {
-      return "来源未知";
-    }
-
-    return sources.join(" / ");
   }
 }

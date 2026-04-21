@@ -11,6 +11,7 @@ import {
 } from "../workflow.js";
 import { RecoveryHandler } from "../recovery-handler.js";
 import { ComparisonController } from "../comparison-controller.js";
+import { ShortlistController } from "../shortlist-controller.js";
 import {
   computeComparisonDecisionScore,
   buildComparisonRecommendation
@@ -114,6 +115,7 @@ function createWorkflowHarness() {
   const mockTui = {
     displayInitialSearch: vi.fn(),
     displayClarifiedDraft: vi.fn(),
+    displayShortlist: vi.fn(),
     resetShortlistViewport: vi.fn(),
     displayNoResults: vi.fn(),
     displayHelp: vi.fn(),
@@ -126,6 +128,7 @@ function createWorkflowHarness() {
     displayUndo: vi.fn(),
     displayPoolCleared: vi.fn(),
     promptCompareAction: vi.fn(),
+    promptShortlistAction: vi.fn(),
     promptDetailAction: vi.fn()
   };
   const mockChat = {
@@ -155,7 +158,6 @@ function createWorkflowHarness() {
   (workflow as any).spinner = mockSpinner;
   (workflow as any).refreshCandidateQueryExplanation = vi.fn();
   (workflow as any).profileManager.ensureProfiles = vi.fn(async () => undefined);
-  (workflow as any).sortCandidates = vi.fn(async () => undefined);
   (workflow as any).formatConditionsAsPrompt = vi.fn(() => "杭州 python");
 
   // Re-create recoveryHandler so it uses the mock chat/spinner instead of
@@ -188,6 +190,23 @@ function createWorkflowHarness() {
     buildCompareRefinePrompt: (conditions: any) => (workflow as any).recoveryHandler.buildCompareRefinePrompt(conditions)
   });
 
+  // Re-create shortlistController so it uses mock instances.
+  (workflow as any).shortlistController = new ShortlistController({
+    tui: mockTui as any,
+    chat: mockChat as any,
+    renderer: mockRenderer as any,
+    exporter: mockExporter as any,
+    comparisonController: (workflow as any).comparisonController,
+    profileManager: (workflow as any).profileManager,
+    searchExecutor: (workflow as any).searchExecutor,
+    recoveryHandler: (workflow as any).recoveryHandler,
+    scorer: (workflow as any).scorer,
+    tools: (workflow as any).tools,
+    getSessionState: () => (workflow as any).sessionState,
+    applySessionState: (next: any) => (workflow as any).applySessionState(next)
+  });
+  vi.spyOn((workflow as any).shortlistController, "sortCandidates");
+
   return {
     workflow,
     mockTui,
@@ -201,7 +220,7 @@ function createWorkflowHarness() {
     runSearchLoop: (workflow as any).runSearchLoop.bind(workflow) as (
       initialConditions: SearchConditions
     ) => Promise<any>,
-    handleShortlistCommand: (workflow as any).handleShortlistCommand.bind(workflow) as (
+    handleShortlistCommand: (workflow as any).shortlistController.handleShortlistCommand.bind((workflow as any).shortlistController) as (
       command: any,
       candidates: any[],
       conditions: SearchConditions,
@@ -212,7 +231,7 @@ function createWorkflowHarness() {
       conditions: SearchConditions,
       effectiveQuery: string
     ) => Promise<any>,
-    showCandidateDetail: (workflow as any).showCandidateDetail.bind(workflow) as (
+    showCandidateDetail: (workflow as any).shortlistController.showCandidateDetail.bind((workflow as any).shortlistController) as (
       selected: any,
       conditions: SearchConditions
     ) => Promise<any>
@@ -289,7 +308,7 @@ describe("SearchWorkflow agent policy integration", () => {
       conditions: BASE_CONDITIONS,
       candidates: [first, second, third]
     }));
-    (workflow as any).runShortlistLoop = vi.fn(async () => ({ type: "quit" }));
+    (workflow as any).shortlistController.runShortlistLoop = vi.fn(async () => ({ type: "quit" }));
 
     const result = await runSearchLoop(BASE_CONDITIONS);
 
@@ -317,7 +336,7 @@ describe("SearchWorkflow agent policy integration", () => {
       conditions: BASE_CONDITIONS,
       candidates: [first, second]
     }));
-    (workflow as any).runShortlistLoop = shortlistSpy;
+    (workflow as any).shortlistController.runShortlistLoop = shortlistSpy;
 
     const result = await runSearchLoop(BASE_CONDITIONS);
 
@@ -360,7 +379,7 @@ describe("SearchWorkflow agent policy integration", () => {
         conditions: BASE_CONDITIONS,
         candidates: [strongCandidate]
       });
-    (workflow as any).runShortlistLoop = shortlistSpy;
+    (workflow as any).shortlistController.runShortlistLoop = shortlistSpy;
     mockChat.askFreeform.mockResolvedValue("更偏 Python 后端");
     mockChat.reviseConditions.mockResolvedValue(BASE_CONDITIONS);
 
@@ -414,7 +433,7 @@ describe("SearchWorkflow agent policy integration", () => {
         },
         candidates: [weakSecond]
       });
-    (workflow as any).runShortlistLoop = shortlistSpy;
+    (workflow as any).shortlistController.runShortlistLoop = shortlistSpy;
     mockChat.reviseConditions.mockResolvedValue({
       ...BASE_CONDITIONS,
       mustHave: ["python backend"]
@@ -691,7 +710,7 @@ describe("SearchWorkflow shortlist command handling", () => {
       { sortMode: "overall", visibleCount: 1, selectedIndex: 0 }
     );
 
-    expect((workflow as any).sortCandidates).toHaveBeenCalledWith(
+    expect((workflow as any).shortlistController.sortCandidates).toHaveBeenCalledWith(
       candidates,
       "fresh",
       BASE_CONDITIONS
@@ -1189,7 +1208,7 @@ describe("SearchWorkflow shortlist command handling", () => {
       ...BASE_CONDITIONS,
       mustHave: ["infra backend"]
     });
-    (workflow as any).runShortlistLoop = vi.fn(async () => ({ type: "quit" }));
+    (workflow as any).shortlistController.runShortlistLoop = vi.fn(async () => ({ type: "quit" }));
 
     const result = await runSearchLoop(BASE_CONDITIONS);
 
