@@ -212,7 +212,8 @@ export function serializeRecoveryState(
     rewriteCount: recoveryState.rewriteCount,
     lowConfidenceEmitted: recoveryState.lowConfidenceEmitted,
     lastRewrittenQuery: recoveryState.lastRewrittenQuery,
-    compareSuggestedRefinement: recoveryState.compareSuggestedRefinement
+    compareSuggestedRefinement: recoveryState.compareSuggestedRefinement,
+    boundaryDiagnosticCode: recoveryState.boundaryDiagnosticCode
   };
 }
 

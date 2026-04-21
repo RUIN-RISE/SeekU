@@ -71,7 +71,7 @@ describe("agent-policy", () => {
     });
 
     expect(decision.action).toBe("search");
-    expect(decision.rationale).toContain("上限");
+    expect(decision.rationale).toContain("不再追问");
   });
 
   it("picks the top compare-ready candidates before weaker tails", () => {
@@ -106,7 +106,7 @@ describe("agent-policy", () => {
     });
 
     expect(decision.action).toBe("narrow");
-    expect(decision.rationale).toContain("偏弱");
+    expect(decision.rationale).toContain("不够强");
   });
 
   it("routes anchor failure to clarification with anchor prompt kind", () => {
@@ -360,7 +360,7 @@ describe("agent-policy", () => {
     const decision = decideRecoveryActionV2({ attempt, failure });
 
     expect(decision.action).toBe("rewrite");
-    expect(decision.rationale).toContain("偏宽");
+    expect(decision.rationale).toContain("收紧一下再搜");
   });
 
   it("adds a source-coverage hint into rewrite rationale", () => {
@@ -410,6 +410,6 @@ describe("agent-policy", () => {
     const decision = decideRecoveryActionV2({ attempt, failure });
 
     expect(decision.action).toBe("rewrite");
-    expect(decision.rationale).toContain("覆盖边界");
+    expect(decision.rationale).toContain("换个方式再试一轮");
   });
 });

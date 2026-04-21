@@ -5,6 +5,10 @@ import type {
 } from "./types.js";
 import type { FailureCode, SearchAttemptReport } from "./search-attempt-report.js";
 import type { SearchFailureReport } from "./search-failure-report.js";
+import {
+  buildRecoveryBoundaryRewriteAction,
+  getRecoveryBoundaryDiagnosticCode,
+} from "./recovery-boundary.js";
 
 export type AgentLoopAction = "clarify" | "search" | "narrow" | "compare" | "decide";
 export type RecoveryAction = "clarify" | "rewrite" | "low_confidence_shortlist" | "stop";
@@ -44,27 +48,14 @@ interface RecoveryPolicyInputV2 {
   failure: SearchFailureReport;
 }
 
-function hasDiagnosticFailure(
-  failure: SearchFailureReport,
-  code: FailureCode
-): boolean {
-  return failure.summary.diagnosticFailures.includes(code);
-}
-
 function buildRewriteRecoveryRationale(failure: SearchFailureReport): string {
-  if (hasDiagnosticFailure(failure, "source_coverage_gap")) {
-    return "这轮也可能碰到数据覆盖边界，我先自动收敛检索表达再试一轮。";
+  const boundaryDiagnosticCode = getRecoveryBoundaryDiagnosticCode(failure);
+  const boundaryRewriteAction = buildRecoveryBoundaryRewriteAction(boundaryDiagnosticCode);
+  if (boundaryRewriteAction) {
+    return boundaryRewriteAction;
   }
 
-  if (hasDiagnosticFailure(failure, "query_too_broad")) {
-    return "目标已经基本清楚，但当前检索表达偏宽，我先自动收敛检索表达再试一轮。";
-  }
-
-  if (hasDiagnosticFailure(failure, "source_bias_conflict")) {
-    return "目标已经基本清楚，但来源偏好可能压掉了可召回结果，我先自动收敛检索表达再试一轮。";
-  }
-
-  return "目标已经基本清楚，先自动收敛检索表达再试一轮。";
+  return "我换个更精确的搜索方式再试一轮。";
 }
 
 function hasNonEmptyValue(value: string | undefined): boolean {
@@ -106,20 +97,20 @@ export function decideClarifyAction(input: ClarifyPolicyInput): ClarifyPolicyDec
   if (hasSearchReadySignal(input.conditions)) {
     return {
       action: "search",
-      rationale: "当前条件已经足够启动搜索，优先先跑出 shortlist。"
+      rationale: "条件够用了，我先跑一轮搜索看看结果。"
     };
   }
 
   if (input.clarificationCount >= 1) {
     return {
       action: "search",
-      rationale: "clarify 已达到上限，先搜索再根据结果收敛，避免反复追问。"
+      rationale: "不再追问了，先搜一轮看结果，之后可以再调整。"
     };
   }
 
   return {
     action: "clarify",
-    rationale: "当前还缺少角色或技能主轴，先补一句再搜索会更稳。",
+    rationale: "我还需要确认一个关键点才能开始搜索。你最重要的一项要求是什么？",
     prompt: buildClarifyPrompt(input.conditions)
   };
 }
@@ -147,7 +138,7 @@ export function decidePostSearchAction<TCandidate extends ScoredCandidate>(
   if (targets.length >= 2 && comparableCount >= 2) {
     return {
       action: "compare",
-      rationale: "当前已有 2-3 位可比候选人，优先进入 compare 收敛决策。",
+      rationale: "有几位比较合适的候选人，我帮你放在一起对比看看。",
       targets
     };
   }
@@ -155,14 +146,14 @@ export function decidePostSearchAction<TCandidate extends ScoredCandidate>(
   if (input.candidates.length === 1) {
     return {
       action: "narrow",
-      rationale: "当前只有 1 位候选人，不足以形成 compare，需要继续扩充或 refine。",
+      rationale: "目前只找到 1 位候选人，还不够做对比。你可以试试放宽条件或换方向。",
       targets
     };
   }
 
   return {
     action: "narrow",
-    rationale: "当前结果还偏弱，先保留 shortlist 继续 refine，再进入 compare。",
+    rationale: "当前结果还不够强，先看看 shortlist，你可以用 refine 调整方向。",
     targets
   };
 }
@@ -180,16 +171,16 @@ export function decideRecoveryActionV2(input: RecoveryPolicyInputV2): RecoveryPo
       return {
         action: "low_confidence_shortlist",
         rationale: exhausted
-          ? "recovery 预算已用完，但还有可供低置信参考的候选人。"
-          : "当前主恢复动作已用完，先给低置信 shortlist 作为 fallback。"
+          ? "我已经试了几轮，但结果还不够稳。先给你一份可以参考的候选人，但我不建议直接推荐。"
+          : "当前结果还不够稳，先给你一份可以参考的候选人。"
       };
     }
 
     return {
       action: "stop",
       rationale: exhausted
-        ? "recovery 预算已用完，且当前没有可用 fallback。"
-        : "当前主恢复动作已用完，且没有可用 fallback。"
+        ? "我试了几轮都没找到足够合适的候选人。你可以换个方向试试，或者告诉我更具体的需求。"
+        : "当前没有找到足够合适的候选人。你可以试试放宽条件或换一个方向。"
     };
   };
 
@@ -203,14 +194,14 @@ export function decideRecoveryActionV2(input: RecoveryPolicyInputV2): RecoveryPo
         return rewriteAvailable
           ? {
               action: "rewrite",
-              rationale: "参照锚点澄清机会已用完，先自动收敛检索表达再试一轮。",
+              rationale: "你提到的那位参照人我找不到匹配。我换个搜索方式再试一轮。",
               targetFailureCode: primary
             }
           : fallbackDecision();
       }
       return {
         action: "clarify",
-        rationale: "当前参照人失效，先换一个参照人或直接描述目标更稳。",
+        rationale: "你提到的那位参照人我找不到匹配。能换一个人名，或者直接描述你想找什么样的人吗？",
         targetFailureCode: primary,
         promptKind: "anchor"
       };
@@ -219,14 +210,14 @@ export function decideRecoveryActionV2(input: RecoveryPolicyInputV2): RecoveryPo
         return rewriteAvailable
           ? {
               action: "rewrite",
-              rationale: "角色澄清机会已用完，先自动收敛检索表达再试一轮。",
+              rationale: "我还没搞清楚你要找什么角色。我先按当前理解搜一轮，你再调整。",
               targetFailureCode: primary
             }
           : fallbackDecision();
       }
       return {
         action: "clarify",
-        rationale: "当前缺少角色主轴，先补角色方向再重试。",
+        rationale: "我还不知道你想找哪类人——比如后端、算法、前端？补一句角色方向我再搜。",
         targetFailureCode: primary,
         promptKind: "role"
       };
@@ -235,14 +226,14 @@ export function decideRecoveryActionV2(input: RecoveryPolicyInputV2): RecoveryPo
         return rewriteAvailable
           ? {
               action: "rewrite",
-              rationale: "技能澄清机会已用完，先自动收敛检索表达再试一轮。",
+              rationale: "我还没搞清楚你最看重什么技术。我先按当前理解搜一轮，你再调整。",
               targetFailureCode: primary
             }
           : fallbackDecision();
       }
       return {
         action: "clarify",
-        rationale: "当前缺少技能主轴，先补关键技能或方向再重试。",
+        rationale: "我还不知道你最看重什么技术或方向。补一句关键词，比如 CUDA / RAG / 搜索工程？",
         targetFailureCode: primary,
         promptKind: "skill"
       };

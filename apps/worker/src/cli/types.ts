@@ -21,6 +21,10 @@ export interface SearchCandidateAnchor {
 }
 
 export type RecoveryDiagnosis = "intent_missing" | "retrieval_failed";
+export type RecoveryBoundaryDiagnosticCode =
+  | "source_coverage_gap"
+  | "query_too_broad"
+  | "source_bias_conflict";
 export type RecoveryPhase =
   | "idle"
   | "diagnosing"
@@ -38,6 +42,7 @@ export interface SearchRecoveryState {
   lowConfidenceEmitted: boolean;
   lastRewrittenQuery?: string;
   compareSuggestedRefinement?: string;
+  boundaryDiagnosticCode?: RecoveryBoundaryDiagnosticCode;
 }
 
 export type { MatchStrength };

@@ -94,6 +94,12 @@ import {
   type SearchFailureReport
 } from "./search-failure-report.js";
 import {
+  buildRecoveryBoundaryHint,
+  buildRecoveryBoundaryRefinePrompt,
+  getRecoveryBoundaryDiagnosticCode,
+  type RecoveryBoundaryDiagnosticCode,
+} from "./recovery-boundary.js";
+import {
   CandidatePrimaryLink,
   ComparisonEntry,
   ComparisonEvidenceSummary,
@@ -229,17 +235,6 @@ function joinRecoveryMessages(...parts: Array<string | undefined>): string | und
 
 function getPrimaryUncertainty(openUncertainties: string[]): string | undefined {
   return openUncertainties.find((item) => item.trim().length > 0);
-}
-
-function isBoundaryUncertaintySummary(summary?: string): boolean {
-  return Boolean(
-    summary
-    && (
-      summary.includes("数据覆盖边界")
-      || summary.includes("检索表达偏宽")
-      || summary.includes("来源偏好")
-    )
-  );
 }
 
 function buildCompareSuggestedRefinement(
@@ -676,6 +671,7 @@ function createEmptyRecoveryState(overrides: Partial<SearchRecoveryState> = {}):
     rewriteCount: 0,
     lowConfidenceEmitted: false,
     lastRewrittenQuery: undefined,
+    boundaryDiagnosticCode: undefined,
     ...overrides
   };
 }
@@ -1499,7 +1495,7 @@ export class SearchWorkflow {
         conditions,
         clarificationCount: this.getClarificationTurnCount()
       });
-      console.log(chalk.dim(`Agent 决策：${decision.rationale}`));
+      console.log(chalk.dim(decision.rationale));
 
       if (decision.action === "search") {
         this.setSessionStatus("searching", "澄清完成，准备开始搜索。");
@@ -1711,42 +1707,16 @@ export class SearchWorkflow {
     return "补一句你这轮最不能妥协的必须项，我再重试一轮。";
   }
 
-  private buildFailureBoundaryHint(
-    failureReport: SearchFailureReport
-  ): string | undefined {
-    const diagnostics = failureReport.summary.diagnosticFailures;
-
-    if (diagnostics.includes("source_coverage_gap")) {
-      return "这轮还可能碰到数据覆盖边界，当前库里未必有满足条件的人。";
-    }
-
-    if (diagnostics.includes("query_too_broad")) {
-      return "这轮检索表达偏宽，候选分数没有拉开，建议补更硬的角色或技能。";
-    }
-
-    if (diagnostics.includes("source_bias_conflict")) {
-      return "来源偏好可能正在压掉原本可召回的人。";
-    }
-
-    return undefined;
-  }
-
   private buildRecoveryRefinePrompt(
     conditions: SearchConditions,
-    uncertaintySummary?: string
+    boundaryDiagnosticCode?: RecoveryBoundaryDiagnosticCode
   ): string {
-    if (uncertaintySummary?.includes("数据覆盖边界")) {
-      return "这轮可能碰到数据覆盖边界。想怎么调整搜索？例如：放宽地点 / 去掉 must-have / 改成更常见的角色或技能。";
-    }
-
-    if (uncertaintySummary?.includes("检索表达偏宽")) {
-      return "这轮检索表达还偏宽。补一句更硬的角色、技能或 must-have，我再重试。";
-    }
-
-    if (uncertaintySummary?.includes("来源偏好")) {
-      return conditions.sourceBias
-        ? `当前来源偏好可能太强。想怎么调整？例如：取消 ${conditions.sourceBias} 限制 / 保留来源但补硬技能。`
-        : "来源限制可能压掉了结果。想怎么调整？例如：去掉来源限制 / 补更硬的技能约束。";
+    const boundaryPrompt = buildRecoveryBoundaryRefinePrompt(
+      boundaryDiagnosticCode,
+      conditions
+    );
+    if (boundaryPrompt) {
+      return boundaryPrompt;
     }
 
     return "想怎么调整这轮搜索？例如：去掉销售 / 更看重最近活跃 / 更偏 Bonjour";
@@ -1763,12 +1733,12 @@ export class SearchWorkflow {
         : compareSuggestedRefinement;
     }
 
-    const uncertaintySummary = this.sessionState.recoveryState.phase === "low_confidence_shortlist"
-      ? getPrimaryUncertainty(this.sessionState.openUncertainties)
+    const boundaryDiagnosticCode = this.sessionState.recoveryState.phase === "low_confidence_shortlist"
+      ? this.sessionState.recoveryState.boundaryDiagnosticCode
       : undefined;
-    const basePrompt = this.buildRecoveryRefinePrompt(conditions, uncertaintySummary);
+    const basePrompt = this.buildRecoveryRefinePrompt(conditions, boundaryDiagnosticCode);
 
-    if (!subjectName || !uncertaintySummary) {
+    if (!subjectName || !boundaryDiagnosticCode) {
       return basePrompt;
     }
 
@@ -1785,7 +1755,7 @@ export class SearchWorkflow {
 
     return this.buildRecoveryRefinePrompt(
       conditions,
-      getPrimaryUncertainty(this.sessionState.openUncertainties)
+      this.sessionState.recoveryState.boundaryDiagnosticCode
     ) ?? "想怎么继续 refine？例如：去掉销售 / 更看重最近活跃 / 更偏后端。";
   }
 
@@ -1793,8 +1763,8 @@ export class SearchWorkflow {
     comparisonResult: ComparisonResult,
     conditions: SearchConditions
   ): ComparisonResult {
-    const boundaryHint = getPrimaryUncertainty(this.sessionState.openUncertainties);
-    if (!isBoundaryUncertaintySummary(boundaryHint)) {
+    const boundaryDiagnosticCode = this.sessionState.recoveryState.boundaryDiagnosticCode;
+    if (!boundaryDiagnosticCode) {
       return comparisonResult;
     }
 
@@ -1806,13 +1776,14 @@ export class SearchWorkflow {
       return comparisonResult;
     }
 
+    const boundaryHint = buildRecoveryBoundaryHint(boundaryDiagnosticCode);
     const largestUncertainty = joinRecoveryMessages(
       comparisonResult.outcome.largestUncertainty,
       boundaryHint
     ) ?? comparisonResult.outcome.largestUncertainty;
     const suggestedRefinement = joinRecoveryMessages(
       comparisonResult.outcome.suggestedRefinement,
-      this.buildRecoveryRefinePrompt(conditions, boundaryHint)
+      this.buildRecoveryRefinePrompt(conditions, boundaryDiagnosticCode)
     ) ?? comparisonResult.outcome.suggestedRefinement;
 
     return {
@@ -1906,12 +1877,14 @@ export class SearchWorkflow {
 
     const currentRecovery = this.sessionState.recoveryState;
     const diagnosis = assessment.diagnosis ?? "retrieval_failed";
-    const boundaryHint = this.buildFailureBoundaryHint(failureReport);
+    const boundaryDiagnosticCode = getRecoveryBoundaryDiagnosticCode(failureReport);
+    const boundaryHint = buildRecoveryBoundaryHint(boundaryDiagnosticCode);
     const diagnosisSummary = joinRecoveryMessages(assessment.rationale, boundaryHint);
     const diagnosingState = this.transitionRecoveryPhase("diagnosing", {
       overrides: {
         diagnosis,
-        rationale: diagnosisSummary ?? assessment.rationale
+        rationale: diagnosisSummary ?? assessment.rationale,
+        boundaryDiagnosticCode
       },
       uncertaintySummary: diagnosisSummary,
       summary: diagnosisSummary || "正在判断为什么这轮结果不够理想。"
@@ -1921,7 +1894,7 @@ export class SearchWorkflow {
       attempt: attemptReport,
       failure: failureReport
     });
-    console.log(chalk.dim(`Recovery 决策：${decision.rationale}`));
+    console.log(chalk.dim(decision.rationale));
 
     if (decision.action === "clarify") {
       const prompt = this.buildRecoveryClarificationPrompt(conditions, decision.promptKind);
@@ -2121,7 +2094,10 @@ export class SearchWorkflow {
         this.tui.displayNoResults(conditions);
         this.setSessionStatus("waiting-input", "等待你调整搜索方向。");
         const prompt = await this.chat.askFreeform(
-          this.buildRecoveryRefinePrompt(conditions, stopUncertainty)
+          this.buildRecoveryRefinePrompt(
+            conditions,
+            this.sessionState.recoveryState.boundaryDiagnosticCode
+          )
         );
         if (!prompt) {
           this.setSessionStatus("blocked", "未收到新的 refine 指令。");
@@ -2160,7 +2136,7 @@ export class SearchWorkflow {
         ? this.preloadProfiles(candidates, conditions)
         : undefined;
       const nextAction = decidePostSearchAction({ candidates });
-      console.log(chalk.dim(`Agent 决策：${nextAction.rationale}`));
+      console.log(chalk.dim(nextAction.rationale));
       if (!shortlistPresentation.lowConfidence && nextAction.action === "compare") {
         const compareOutcome = await this.presentComparison(
           nextAction.targets,

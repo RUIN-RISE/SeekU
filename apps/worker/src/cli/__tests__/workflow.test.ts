@@ -428,7 +428,7 @@ describe("SearchWorkflow agent policy integration", () => {
     );
 
     expect(result.type).toBe("retry");
-    expect(workflow.getSessionSnapshot().openUncertainties[0]).toContain("检索表达偏宽");
+    expect(workflow.getSessionSnapshot().openUncertainties[0]).toContain("搜索条件偏宽");
   });
 
   it("surfaces source-coverage-gap when recovery can no longer rewrite", async () => {
@@ -457,12 +457,12 @@ describe("SearchWorkflow agent policy integration", () => {
     const result = await handleSearchRecovery([], BASE_CONDITIONS, "杭州 python backend");
 
     expect(result).toEqual({ type: "stop" });
-    expect(workflow.getSessionSnapshot().openUncertainties[0]).toContain("数据覆盖边界");
+    expect(workflow.getSessionSnapshot().openUncertainties[0]).toContain("当前库里可能没有完全匹配的人");
   });
 
   it("preserves boundary uncertainty and uses a tailored refine prompt after stop", async () => {
     const { workflow, mockChat, runSearchLoop } = createWorkflowHarness();
-    const boundaryHint = "这轮还可能碰到数据覆盖边界，当前库里未必有满足条件的人。";
+    const boundaryHint = "当前库里可能没有完全匹配的人，这不一定是搜索条件的问题。";
 
     (workflow as any).shouldPreloadProfiles = vi.fn(() => false);
     (workflow as any).tools.searchCandidates = vi.fn(async () => ({
@@ -473,6 +473,10 @@ describe("SearchWorkflow agent policy integration", () => {
     (workflow as any).handleSearchRecovery = vi.fn(async () => {
       (workflow as any).sessionState = {
         ...(workflow as any).sessionState,
+        recoveryState: {
+          ...(workflow as any).sessionState.recoveryState,
+          boundaryDiagnosticCode: "source_coverage_gap"
+        },
         openUncertainties: [boundaryHint]
       };
       return { type: "stop" as const };
@@ -482,12 +486,12 @@ describe("SearchWorkflow agent policy integration", () => {
     const result = await runSearchLoop(BASE_CONDITIONS);
 
     expect(mockChat.askFreeform).toHaveBeenCalledWith(
-      expect.stringContaining("数据覆盖边界")
+      expect.stringContaining("当前库里可能没有完全匹配的人")
     );
     expect(mockChat.askFreeform).toHaveBeenCalledWith(
       expect.stringContaining("放宽地点 / 去掉 must-have")
     );
-    expect(workflow.getSessionSnapshot().openUncertainties[0]).toContain("数据覆盖边界");
+    expect(workflow.getSessionSnapshot().openUncertainties[0]).toContain("当前库里可能没有完全匹配的人");
     expect(result).toEqual({ type: "restart" });
   });
 });
@@ -533,10 +537,11 @@ describe("SearchWorkflow shortlist command handling", () => {
       ...(workflow as any).sessionState,
       recoveryState: {
         ...(workflow as any).sessionState.recoveryState,
-        phase: "low_confidence_shortlist"
+        phase: "low_confidence_shortlist",
+        boundaryDiagnosticCode: "source_coverage_gap"
       },
       openUncertainties: [
-        "这轮还可能碰到数据覆盖边界，当前库里未必有满足条件的人。"
+        "当前库里可能没有完全匹配的人，这不一定是搜索条件的问题。"
       ]
     };
     mockChat.askFreeform.mockResolvedValue("放宽地点");
@@ -549,7 +554,7 @@ describe("SearchWorkflow shortlist command handling", () => {
     );
 
     expect(mockChat.askFreeform).toHaveBeenCalledWith(
-      expect.stringContaining("数据覆盖边界")
+      expect.stringContaining("当前库里可能没有完全匹配的人")
     );
     expect(result).toEqual({
       type: "done",
@@ -818,10 +823,11 @@ describe("SearchWorkflow shortlist command handling", () => {
       ...(workflow as any).sessionState,
       recoveryState: {
         ...(workflow as any).sessionState.recoveryState,
-        phase: "low_confidence_shortlist"
+        phase: "low_confidence_shortlist",
+        boundaryDiagnosticCode: "query_too_broad"
       },
       openUncertainties: [
-        "这轮检索表达偏宽，候选分数没有拉开，建议补更硬的角色或技能。"
+        "搜索条件偏宽，候选人分数没有拉开。补一个更具体的角色或技能会更有帮助。"
       ]
     };
     (workflow as any).loadProfileForCandidate = vi.fn(async () => candidate.profile);
@@ -836,7 +842,7 @@ describe("SearchWorkflow shortlist command handling", () => {
       expect.stringContaining("想基于 Ada 继续收敛？")
     );
     expect(mockChat.askFreeform).toHaveBeenCalledWith(
-      expect.stringContaining("检索表达还偏宽")
+      expect.stringContaining("搜索条件偏宽")
     );
     expect(result).toEqual({
       type: "refine",
@@ -991,10 +997,11 @@ describe("SearchWorkflow shortlist command handling", () => {
       ...(workflow as any).sessionState,
       recoveryState: {
         ...(workflow as any).sessionState.recoveryState,
-        phase: "low_confidence_shortlist"
+        phase: "low_confidence_shortlist",
+        boundaryDiagnosticCode: "query_too_broad"
       },
       openUncertainties: [
-        "这轮检索表达偏宽，候选分数没有拉开，建议补更硬的角色或技能。"
+        "搜索条件偏宽，候选人分数没有拉开。补一个更具体的角色或技能会更有帮助。"
       ]
     };
     (workflow as any).tools.prepareComparison = vi.fn(async () => ({
@@ -1017,9 +1024,9 @@ describe("SearchWorkflow shortlist command handling", () => {
       throw new Error("expected renderComparison to be called");
     }
     const renderedComparison = (firstRenderCall as unknown[])[0] as any;
-    expect(renderedComparison.outcome.largestUncertainty).toContain("检索表达偏宽");
-    expect(renderedComparison.outcome.suggestedRefinement).toContain("检索表达还偏宽");
-    expect((workflow as any).sessionState.openUncertainties[0]).toContain("检索表达偏宽");
+    expect(renderedComparison.outcome.largestUncertainty).toContain("搜索条件偏宽");
+    expect(renderedComparison.outcome.suggestedRefinement).toContain("搜索条件偏宽");
+    expect((workflow as any).sessionState.openUncertainties[0]).toContain("搜索条件偏宽");
     expect(result.type).toBe("continue");
     logSpy.mockRestore();
   });
