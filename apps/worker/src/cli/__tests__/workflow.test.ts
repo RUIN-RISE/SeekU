@@ -13,6 +13,7 @@ import {
   computeComparisonDecisionScore,
   buildComparisonRecommendation
 } from "../agent-tools.js";
+import { ComparisonController } from "../comparison-controller.js";
 
 const BASE_CONDITIONS: SearchConditions = {
   skills: ["python"],
@@ -41,6 +42,24 @@ function createProfile(overrides: Partial<MultiDimensionProfile> = {}): MultiDim
     overallScore: 86,
     highlights: ["主导过搜索平台重构"],
     summary: "长期做搜索与自动化系统建设。",
+    ...overrides
+  };
+}
+
+function stubDimension(score: number, verdict: "strong" | "mixed" | "weak", summary: string) {
+  return { score, verdict, summary, evidenceTrace: [] as string[] };
+}
+
+function createComparisonEntry(overrides: Record<string, unknown> = {}) {
+  return {
+    goalFit: stubDimension(70, "mixed", "部分匹配"),
+    evidenceStrength: stubDimension(65, "mixed", "证据一般"),
+    technicalRelevance: stubDimension(70, "mixed", "技术相关"),
+    sourceQualityRecency: stubDimension(65, "mixed", "来源一般"),
+    uncertainty: { level: "low" as const, summary: "可控" },
+    whySelected: "",
+    whyNotSelected: "",
+    evidenceTrace: [] as string[],
     ...overrides
   };
 }
@@ -138,6 +157,21 @@ function createWorkflowHarness() {
   (workflow as any).sortCandidates = vi.fn(async () => undefined);
   (workflow as any).formatConditionsAsPrompt = vi.fn(() => "杭州 python");
 
+  (workflow as any).comparisonController = new ComparisonController({
+    profileManager: (workflow as any).profileManager,
+    tools: (workflow as any).tools,
+    renderer: mockRenderer as any,
+    tui: mockTui as any,
+    chat: mockChat as any,
+    getSessionState: () => (workflow as any).sessionState,
+    applySessionState: (next: any) => (workflow as any).applySessionState(next),
+    setSessionStatus: (status: string, summary?: string | null) => (workflow as any).setSessionStatus(status, summary),
+    emitSessionEvent: (type: string, summary: string, data: Record<string, unknown>) => (workflow as any).emitSessionEvent(type, summary, data),
+    refreshCandidateQueryExplanation: (candidate: any, conditions: any) => (workflow as any).refreshCandidateQueryExplanation(candidate, conditions),
+    decorateComparisonResult: (result: any, conditions: any) => (workflow as any).applyBoundaryContextToComparisonResult(result, conditions),
+    buildCompareRefinePrompt: (conditions: any) => (workflow as any).buildCompareRefinePrompt(conditions)
+  });
+
   return {
     workflow,
     mockTui,
@@ -231,8 +265,8 @@ describe("SearchWorkflow agent policy integration", () => {
     const first = createCandidate({ personId: "person-1", matchStrength: "strong" });
     const second = createCandidate({ personId: "person-2", name: "Lin", matchStrength: "medium" });
     const third = createCandidate({ personId: "person-3", name: "Grace", matchStrength: "medium" });
-    const compareSpy = vi.spyOn(workflow as any, "presentComparison").mockResolvedValue("back");
-    (workflow as any).shouldPreloadProfiles = vi.fn(() => false);
+    const compareSpy = vi.spyOn((workflow as any).comparisonController, "presentComparison").mockResolvedValue("back");
+    (workflow as any).profileManager.shouldPreloadProfiles = vi.fn(() => false);
 
     (workflow as any).tools.searchCandidates = vi.fn(async () => ({
       query: "杭州 python",
@@ -258,9 +292,9 @@ describe("SearchWorkflow agent policy integration", () => {
     const { workflow, runSearchLoop } = createWorkflowHarness();
     const first = createCandidate({ personId: "person-1", matchStrength: "medium" });
     const second = createCandidate({ personId: "person-2", name: "Lin", matchStrength: "weak" });
-    const compareSpy = vi.spyOn(workflow as any, "presentComparison").mockResolvedValue("back");
+    const compareSpy = vi.spyOn((workflow as any).comparisonController, "presentComparison").mockResolvedValue("back");
     const shortlistSpy = vi.fn(async () => ({ type: "quit" }));
-    (workflow as any).shouldPreloadProfiles = vi.fn(() => false);
+    (workflow as any).profileManager.shouldPreloadProfiles = vi.fn(() => false);
 
     (workflow as any).tools.searchCandidates = vi.fn(async () => ({
       query: "杭州 python",
@@ -292,7 +326,7 @@ describe("SearchWorkflow agent policy integration", () => {
     });
     const shortlistSpy = vi.fn(async () => ({ type: "quit" }));
 
-    (workflow as any).shouldPreloadProfiles = vi.fn(() => false);
+    (workflow as any).profileManager.shouldPreloadProfiles = vi.fn(() => false);
     (workflow as any).tools.searchCandidates = vi
       .fn()
       .mockResolvedValueOnce({
@@ -348,7 +382,7 @@ describe("SearchWorkflow agent policy integration", () => {
     });
     const shortlistSpy = vi.fn(async () => ({ type: "quit" }));
 
-    (workflow as any).shouldPreloadProfiles = vi.fn(() => false);
+    (workflow as any).profileManager.shouldPreloadProfiles = vi.fn(() => false);
     (workflow as any).tools.searchCandidates = vi
       .fn()
       .mockResolvedValueOnce({
@@ -468,7 +502,7 @@ describe("SearchWorkflow agent policy integration", () => {
     const { workflow, mockChat, runSearchLoop } = createWorkflowHarness();
     const boundaryHint = "当前库里可能没有完全匹配的人，这不一定是搜索条件的问题。";
 
-    (workflow as any).shouldPreloadProfiles = vi.fn(() => false);
+    (workflow as any).profileManager.shouldPreloadProfiles = vi.fn(() => false);
     (workflow as any).tools.searchCandidates = vi.fn(async () => ({
       query: "杭州 python backend",
       conditions: BASE_CONDITIONS,
@@ -502,7 +536,7 @@ describe("SearchWorkflow agent policy integration", () => {
   it("restarts when stop recovery receives no user input", async () => {
     const { workflow, mockChat, runSearchLoop } = createWorkflowHarness();
 
-    (workflow as any).shouldPreloadProfiles = vi.fn(() => false);
+    (workflow as any).profileManager.shouldPreloadProfiles = vi.fn(() => false);
     (workflow as any).tools.searchCandidates = vi.fn(async () => ({
       query: "obscure tech stack",
       conditions: BASE_CONDITIONS,
@@ -530,7 +564,7 @@ describe("SearchWorkflow agent policy integration", () => {
   it("uses boundary diagnostic code (not uncertainty text) to drive refine prompt after stop", async () => {
     const { workflow, mockChat, runSearchLoop } = createWorkflowHarness();
 
-    (workflow as any).shouldPreloadProfiles = vi.fn(() => false);
+    (workflow as any).profileManager.shouldPreloadProfiles = vi.fn(() => false);
     (workflow as any).tools.searchCandidates = vi.fn(async () => ({
       query: "python backend",
       conditions: BASE_CONDITIONS,
@@ -732,7 +766,7 @@ describe("SearchWorkflow shortlist command handling", () => {
       bonjourUrl: "https://bonjour.bio/lin"
     });
     const comparisonEntries = [
-      {
+      createComparisonEntry({
         shortlistIndex: 1,
         candidate: first,
         profile: first.profile,
@@ -748,8 +782,8 @@ describe("SearchWorkflow shortlist command handling", () => {
         decisionScore: 92,
         recommendation: "建议优先打开：地点完全匹配，资料也较新",
         nextStep: "返回 shortlist 后先执行 v 1，再用 o 1 打开 Bonjour"
-      },
-      {
+      }),
+      createComparisonEntry({
         shortlistIndex: 2,
         candidate: second,
         profile: second.profile,
@@ -758,7 +792,7 @@ describe("SearchWorkflow shortlist command handling", () => {
         decisionScore: 84,
         recommendation: "建议继续对照：信息还需要补充判断",
         nextStep: "返回 shortlist 后执行 v 2 补充判断"
-      }
+      })
     ];
     const comparisonResult = {
       entries: comparisonEntries,
@@ -818,7 +852,7 @@ describe("SearchWorkflow shortlist command handling", () => {
     });
     const comparisonResult = {
       entries: [
-        {
+        createComparisonEntry({
           shortlistIndex: 1,
           candidate: first,
           profile: first.profile,
@@ -827,8 +861,8 @@ describe("SearchWorkflow shortlist command handling", () => {
           decisionScore: 84,
           recommendation: "还需要更多证据判断",
           nextStep: "回到 shortlist 继续 refine"
-        },
-        {
+        }),
+        createComparisonEntry({
           shortlistIndex: 2,
           candidate: second,
           profile: second.profile,
@@ -837,7 +871,7 @@ describe("SearchWorkflow shortlist command handling", () => {
           decisionScore: 83,
           recommendation: "还需要更多证据判断",
           nextStep: "回到 shortlist 继续 refine"
-        }
+        })
       ],
       outcome: {
         confidence: "low-confidence" as const,
@@ -926,7 +960,7 @@ describe("SearchWorkflow shortlist command handling", () => {
       sources: ["GitHub"]
     });
     const comparisonEntries = [
-      {
+      createComparisonEntry({
         shortlistIndex: 1,
         candidate: first,
         profile: first.profile,
@@ -942,8 +976,8 @@ describe("SearchWorkflow shortlist command handling", () => {
         decisionScore: 93,
         recommendation: "建议优先打开：地点完全匹配，项目证据更扎实",
         nextStep: "返回 shortlist 后先执行 v 1，再用 o 1 打开 Bonjour"
-      },
-      {
+      }),
+      createComparisonEntry({
         shortlistIndex: 2,
         candidate: second,
         profile: second.profile,
@@ -959,7 +993,7 @@ describe("SearchWorkflow shortlist command handling", () => {
         decisionScore: 84,
         recommendation: "建议继续对照：还需要更多证据判断",
         nextStep: "返回 shortlist 后执行 v 2 补充判断"
-      }
+      })
     ];
     const comparisonResult = {
       entries: comparisonEntries,
@@ -1024,7 +1058,7 @@ describe("SearchWorkflow shortlist command handling", () => {
       sources: ["GitHub"]
     });
     const comparisonEntries = [
-      {
+      createComparisonEntry({
         shortlistIndex: 1,
         candidate: first,
         profile: first.profile,
@@ -1033,8 +1067,8 @@ describe("SearchWorkflow shortlist command handling", () => {
         decisionScore: 83,
         recommendation: "还需要更多证据判断",
         nextStep: "回到 shortlist 继续 refine"
-      },
-      {
+      }),
+      createComparisonEntry({
         shortlistIndex: 2,
         candidate: second,
         profile: second.profile,
@@ -1043,7 +1077,7 @@ describe("SearchWorkflow shortlist command handling", () => {
         decisionScore: 82,
         recommendation: "还需要更多证据判断",
         nextStep: "回到 shortlist 继续 refine"
-      }
+      })
     ];
     const comparisonResult = {
       entries: comparisonEntries,
@@ -1102,7 +1136,7 @@ describe("SearchWorkflow shortlist command handling", () => {
     const second = createCandidate({ personId: "person-2", name: "Lin", matchStrength: "medium", sources: ["GitHub"] });
     const refinedCandidate = createCandidate({ personId: "person-3", name: "Grace", matchStrength: "medium" });
 
-    (workflow as any).shouldPreloadProfiles = vi.fn(() => false);
+    (workflow as any).profileManager.shouldPreloadProfiles = vi.fn(() => false);
     (workflow as any).tools.searchCandidates = vi
       .fn()
       .mockResolvedValueOnce({
@@ -1166,7 +1200,7 @@ describe("SearchWorkflow shortlist command handling", () => {
     });
     const comparisonResult = {
       entries: [
-        {
+        createComparisonEntry({
           shortlistIndex: 1,
           candidate: first,
           profile: first.profile,
@@ -1175,8 +1209,8 @@ describe("SearchWorkflow shortlist command handling", () => {
           decisionScore: 83,
           recommendation: "还需要更多证据判断",
           nextStep: "回到 shortlist 继续 refine"
-        },
-        {
+        }),
+        createComparisonEntry({
           shortlistIndex: 2,
           candidate: second,
           profile: second.profile,
@@ -1185,7 +1219,7 @@ describe("SearchWorkflow shortlist command handling", () => {
           decisionScore: 82,
           recommendation: "还需要更多证据判断",
           nextStep: "回到 shortlist 继续 refine"
-        }
+        })
       ],
       outcome: {
         confidence: "low-confidence" as const,
@@ -1285,7 +1319,7 @@ describe("SearchWorkflow shortlist command handling", () => {
       matchReason: "技术命中：python"
     });
     const comparisonEntries = [
-      {
+      createComparisonEntry({
         shortlistIndex: 1,
         candidate: first,
         profile: first.profile,
@@ -1301,8 +1335,8 @@ describe("SearchWorkflow shortlist command handling", () => {
         decisionScore: 92,
         recommendation: "建议优先打开：地点完全匹配，资料也较新",
         nextStep: "返回 shortlist 后先执行 v 1，再用 o 1 打开 Bonjour"
-      },
-      {
+      }),
+      createComparisonEntry({
         shortlistIndex: 2,
         candidate: second,
         profile: second.profile,
@@ -1311,7 +1345,7 @@ describe("SearchWorkflow shortlist command handling", () => {
         decisionScore: 84,
         recommendation: "建议继续对照：信息还需要补充判断",
         nextStep: "返回 shortlist 后执行 v 2 补充判断"
-      }
+      })
     ];
     const artifact = {
       target: "pool",

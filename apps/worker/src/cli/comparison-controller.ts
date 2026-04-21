@@ -1,0 +1,163 @@
+import {
+  addCompareCandidates,
+  clearCompareSet,
+  setConfidenceStatus,
+  setOpenUncertainties,
+  setRecommendedCandidate,
+  setRecoveryState,
+  type AgentSessionState
+} from "./agent-state.js";
+import type { ComparisonResult, SearchConditions } from "./types.js";
+import type { ProfileManager } from "./profile-manager.js";
+import type { SearchAgentTools } from "./agent-tools.js";
+import type { TerminalRenderer } from "./renderer.js";
+import type { TerminalUI } from "./tui.js";
+import type { ChatInterface } from "./chat.js";
+
+export type CompareLoopOutcome =
+  | "back"
+  | "clear"
+  | "quit"
+  | { type: "refine"; prompt: string };
+
+export interface ComparisonControllerDependencies {
+  profileManager: ProfileManager;
+  tools: any;
+  renderer: TerminalRenderer;
+  tui: TerminalUI;
+  chat: ChatInterface;
+  getSessionState: () => AgentSessionState;
+  applySessionState: (next: AgentSessionState) => void;
+  setSessionStatus: (status: string, summary?: string | null) => void;
+  emitSessionEvent: (type: string, summary: string, data: Record<string, unknown>) => void;
+  refreshCandidateQueryExplanation: (candidate: any, conditions: SearchConditions) => void;
+  decorateComparisonResult: (result: ComparisonResult, conditions: SearchConditions) => ComparisonResult;
+  buildCompareRefinePrompt: (conditions: SearchConditions) => string;
+}
+
+function buildCompareSuggestedRefinement(
+  comparisonResult: ComparisonResult,
+  conditions: SearchConditions
+): string | undefined {
+  const suggestedRefinement = comparisonResult.outcome.suggestedRefinement?.trim();
+  if (suggestedRefinement) {
+    return suggestedRefinement;
+  }
+
+  if (comparisonResult.outcome.recommendationMode === "no-recommendation") {
+    return conditions.sourceBias
+      ? `先保留当前来源偏好，再补更硬的角色、技能或 must-have。`
+      : `先补更硬的角色、技能或 must-have，再回到 compare。`;
+  }
+
+  return undefined;
+}
+
+export class ComparisonController {
+  constructor(private deps: ComparisonControllerDependencies) {}
+
+  async presentComparison(
+    targets: any[],
+    allCandidates: any[],
+    conditions: SearchConditions,
+    options: {
+      clearProfilesBeforeCompare: boolean;
+      loadingMessage: string;
+    }
+  ): Promise<CompareLoopOutcome> {
+    this.deps.tui.resetShortlistViewport();
+    for (const target of targets) {
+      this.deps.refreshCandidateQueryExplanation(target, conditions);
+    }
+
+    if (options.clearProfilesBeforeCompare) {
+      for (const target of targets) {
+        delete target.profile;
+      }
+    }
+
+    this.deps.setSessionStatus("comparing", `正在比较 ${targets.length} 位候选人。`);
+    this.deps.emitSessionEvent("compare_started", `开始 compare ${targets.length} 位候选人。`, {
+      candidateIds: targets.map((target: any) => target.personId),
+      total: targets.length
+    });
+
+    this.deps.applySessionState(addCompareCandidates(this.deps.getSessionState(), targets));
+    await this.deps.profileManager.ensureProfiles(targets, conditions, options.loadingMessage);
+    const prepared = await this.deps.tools.prepareComparison({
+      targets,
+      allCandidates
+    });
+    const comparisonEntries = prepared.entries;
+    const comparisonResult = this.deps.decorateComparisonResult((prepared.result ?? {
+      entries: comparisonEntries,
+      outcome: {
+        confidence: "low-confidence" as const,
+        recommendationMode: "no-recommendation" as const,
+        recommendation: "我还没有足够证据推荐单一候选人。",
+        rationale: "当前 compare 结果缺少结构化 outcome。",
+        largestUncertainty: "compare outcome 缺失。"
+      }
+    }) as ComparisonResult, conditions);
+
+    const sessionState = this.deps.getSessionState();
+    this.deps.applySessionState(setRecoveryState(sessionState, {
+      ...sessionState.recoveryState,
+      compareSuggestedRefinement: buildCompareSuggestedRefinement(comparisonResult, conditions)
+    }));
+    this.deps.applySessionState(setConfidenceStatus(
+      this.deps.getSessionState(),
+      comparisonResult.outcome.confidence
+    ));
+    this.deps.applySessionState(setOpenUncertainties(this.deps.getSessionState(), [
+      comparisonResult.outcome.largestUncertainty
+    ]));
+    if (
+      comparisonResult.outcome.recommendedCandidateId
+      && comparisonResult.outcome.recommendationMode !== "no-recommendation"
+    ) {
+      const targetRecommendation = targets.find(
+        (candidate: any) => candidate.personId === comparisonResult.outcome.recommendedCandidateId
+      );
+      if (targetRecommendation) {
+        const recommendation = setRecommendedCandidate(this.deps.getSessionState(), targetRecommendation, {
+          rationale: comparisonResult.outcome.rationale
+        });
+        this.deps.applySessionState(recommendation.state);
+      }
+    }
+    console.log(this.deps.renderer.renderComparison(comparisonResult, conditions));
+    this.deps.setSessionStatus("waiting-input", "compare 已完成，等待下一步操作。");
+
+    while (true) {
+      const action = await this.deps.tui.promptCompareAction();
+      if (action === "back") {
+        return "back";
+      }
+
+      if (action === "clear") {
+        this.deps.applySessionState(clearCompareSet(this.deps.getSessionState()));
+        this.deps.tui.displayPoolCleared();
+        return "clear";
+      }
+
+      if (action === "quit") {
+        return "quit";
+      }
+
+      if (action === "refine") {
+        const prompt = await this.deps.chat.askFreeform(
+          this.deps.buildCompareRefinePrompt(conditions)
+        );
+        if (!prompt) {
+          continue;
+        }
+
+        return {
+          type: "refine",
+          prompt
+        };
+      }
+    }
+  }
+}
