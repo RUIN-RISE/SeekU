@@ -3,6 +3,7 @@ import type {
   ComparisonConfidenceLevel,
   ComparisonDimensionAssessment,
   ComparisonDimensionVerdict,
+  ComparisonEvidenceSummary,
   ComparisonOutcome,
   ComparisonResult,
   ComparisonUncertainty,

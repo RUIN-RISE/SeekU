@@ -1,5 +1,12 @@
-import type { EvidenceItem } from "@seeku/db";
 import type { ComparisonEvidenceSummary } from "./types.js";
+
+export interface ComparisonEvidenceLike {
+  evidenceType: string;
+  title?: string | null;
+  description?: string | null;
+  source: string;
+  occurredAt?: Date | null;
+}
 
 export function describeRelativeDate(date: Date): string {
   const ageInDays = Math.floor(
@@ -23,7 +30,7 @@ export function truncateForDisplay(value: string, maxLength: number): string {
   return `${chars.slice(0, maxLength - 3).join("")}...`;
 }
 
-export function buildEvidenceHeadline(item: EvidenceItem): string {
+export function buildEvidenceHeadline(item: ComparisonEvidenceLike): string {
   const title = item.title?.trim();
   const description = item.description?.trim();
 
@@ -38,7 +45,9 @@ export function buildEvidenceHeadline(item: EvidenceItem): string {
   return truncateForDisplay(description || "未命名证据", 54);
 }
 
-export function buildComparisonEvidence(evidence: EvidenceItem[]): ComparisonEvidenceSummary[] {
+export function buildComparisonEvidence(
+  evidence: ComparisonEvidenceLike[]
+): ComparisonEvidenceSummary[] {
   const priority: Record<string, number> = {
     project: 0,
     repository: 1,
