@@ -888,7 +888,6 @@ export class SearchWorkflow {
     AgentInspectCandidateOutput<HydratedCandidate>,
     ComparisonEntry
   >;
-  private processingProfiles = new Map<string, Promise<MultiDimensionProfile>>();
   private profileManager: ProfileManager;
   private lastSearchDiagnostics?: SearchExecutionDiagnostics;
 
@@ -3759,7 +3758,7 @@ export class SearchWorkflow {
       return;
     }
 
-    await this.ensureProfiles(candidates, conditions, `正在按 ${sortMode} 维度准备排序...`);
+    await this.profileManager.ensureProfiles(candidates, conditions, `正在按 ${sortMode} 维度准备排序...`);
     const scoreOf = (candidate: HydratedCandidate) => {
       if (!candidate.profile) {
         return -1;

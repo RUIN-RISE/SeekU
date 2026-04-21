@@ -9,6 +9,16 @@ import { HybridScoringEngine } from "./scorer.js";
 import { ProfileGenerator } from "./profile-generator.js";
 import { withRetry } from "./retry.js";
 
+export interface ProfileLoadableCandidate {
+  personId: string;
+  name: string;
+  profile?: MultiDimensionProfile;
+  _hydrated: {
+    person: Person;
+    evidence: EvidenceItem[];
+  };
+}
+
 export interface ProfileManagerDependencies {
   cacheRepo: ProfileCacheRepository;
   scorer: HybridScoringEngine;
@@ -49,7 +59,7 @@ export class ProfileManager {
   }
 
   async ensureProfiles(
-    candidates: Array<{ personId: string; name: string; profile?: MultiDimensionProfile; _hydrated: { person: Person; evidence: EvidenceItem[] } }>,
+    candidates: ProfileLoadableCandidate[],
     conditions: SearchConditions,
     loadingText: string
   ): Promise<void> {
@@ -61,7 +71,7 @@ export class ProfileManager {
     const spinner = this.deps.getSpinner();
     spinner.start(loadingText);
     try {
-      await Promise.all(targets.map((candidate) => this.loadProfileForCandidate(candidate as any, conditions)));
+      await Promise.all(targets.map((candidate) => this.loadProfileForCandidate(candidate, conditions)));
       spinner.stop();
     } catch (error) {
       spinner.fail("画像准备失败。");
@@ -70,7 +80,7 @@ export class ProfileManager {
   }
 
   async loadProfileForCandidate(
-    candidate: { personId: string; name: string; profile?: MultiDimensionProfile; _hydrated: { person: Person; evidence: EvidenceItem[] } },
+    candidate: ProfileLoadableCandidate,
     conditions: SearchConditions
   ): Promise<MultiDimensionProfile | null> {
     const { person, evidence } = candidate._hydrated;
@@ -183,7 +193,7 @@ export class ProfileManager {
   }
 
   async preloadProfiles(
-    candidates: Array<{ personId: string; profile?: MultiDimensionProfile; _hydrated: { person: Person; evidence: EvidenceItem[] } }>,
+    candidates: ProfileLoadableCandidate[],
     conditions: SearchConditions
   ): Promise<void> {
     const tasks: Array<() => Promise<void>> = [];
