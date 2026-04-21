@@ -1273,7 +1273,7 @@ describe("SearchWorkflow shortlist command handling", () => {
       embed: vi.fn(async () => ({ embedding: [0.1, 0.2, 0.3] }))
     } as any);
     const retrieve = vi.fn(async () => []);
-    const fallbackSearch = vi.fn(async () => []);
+    const fallbackSearch = vi.fn(async () => ({ candidates: [], diagnostics: undefined }));
 
     (workflow as any).planner = {
       parse: vi.fn(async () => ({
@@ -1289,8 +1289,20 @@ describe("SearchWorkflow shortlist command handling", () => {
     (workflow as any).retriever = {
       retrieve
     };
-    (workflow as any).performFallbackSearch = fallbackSearch;
-    (workflow as any).mergeIntentWithConditions = vi.fn((intent: any) => intent);
+    (workflow as any).searchExecutor.deps.retriever = { retrieve };
+    (workflow as any).searchExecutor.deps.planner = {
+      parse: vi.fn(async () => ({
+        rawQuery: "github python",
+        roles: [],
+        skills: ["python"],
+        locations: [],
+        mustHaves: [],
+        niceToHaves: [],
+        sourceBias: "github"
+      }))
+    };
+    (workflow as any).searchExecutor.performFallbackSearch = fallbackSearch;
+    (workflow as any).searchExecutor.mergeIntentWithConditions = vi.fn((intent: any) => intent);
 
     const result = await (workflow as any).performSearch("github python", {
       ...BASE_CONDITIONS,
@@ -1302,8 +1314,11 @@ describe("SearchWorkflow shortlist command handling", () => {
       expect.objectContaining({ sourceBias: "github" }),
       expect.objectContaining({ embedding: [0.1, 0.2, 0.3] })
     );
-    expect(fallbackSearch).toHaveBeenCalledWith(expect.objectContaining({ sourceBias: "github" }));
-    expect(result).toEqual([]);
+    expect(fallbackSearch).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceBias: "github" }),
+      expect.anything()
+    );
+    expect(result.candidates).toEqual([]);
   });
 
   it("exports pool records with comparison metadata", async () => {
@@ -1390,7 +1405,7 @@ describe("SearchWorkflow shortlist command handling", () => {
     expect(exportRequest.records[0]).toMatchObject({
       shortlistIndex: 1,
       source: "Bonjour",
-      whyMatched: "地点命中：杭州；技术命中：python；相关证据：Built Hangzhou automation stack",
+      whyMatched: "地点命中：杭州；角色贴合：backend；技术命中：python；来源过滤命中：Bonjour；近期活跃：2天前；相关证据：Built Hangzhou automation stack",
       decisionTag: "优先深看",
       recommendation: "建议优先打开：地点完全匹配，资料也较新",
       nextStep: "返回 shortlist 后先执行 v 1，再用 o 1 打开 Bonjour"
@@ -1778,7 +1793,7 @@ describe("search recovery signals", () => {
 
   it("attributes post-retrieval hard-filter dropoff by filter type", () => {
     const { workflow } = createWorkflowHarness();
-    const evaluation = (workflow as any).evaluateSearchStateFilters(
+    const evaluation = (workflow as any).searchExecutor.evaluateSearchStateFilters(
       {
         id: "person-1",
         primaryName: "Ada",
@@ -1802,7 +1817,7 @@ describe("search recovery signals", () => {
       }
     );
 
-    const diagnostics = (workflow as any).buildFilterDropoffDiagnostics({
+    const diagnostics = (workflow as any).searchExecutor.buildFilterDropoffDiagnostics({
       must_have: evaluation.failedFilters.filter((item: string) => item === "must_have").length,
       source_bias: evaluation.failedFilters.filter((item: string) => item === "source_bias").length
     });
