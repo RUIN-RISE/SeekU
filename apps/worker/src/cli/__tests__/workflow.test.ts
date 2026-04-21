@@ -134,7 +134,7 @@ function createWorkflowHarness() {
   (workflow as any).exporter = mockExporter;
   (workflow as any).spinner = mockSpinner;
   (workflow as any).refreshCandidateQueryExplanation = vi.fn();
-  (workflow as any).ensureProfiles = vi.fn(async () => undefined);
+  (workflow as any).profileManager.ensureProfiles = vi.fn(async () => undefined);
   (workflow as any).sortCandidates = vi.fn(async () => undefined);
   (workflow as any).formatConditionsAsPrompt = vi.fn(() => "杭州 python");
 
@@ -714,7 +714,7 @@ describe("SearchWorkflow shortlist command handling", () => {
     });
 
     try {
-      expect((workflow as any).shouldPreloadProfiles()).toBe(false);
+      expect((workflow as any).profileManager.shouldPreloadProfiles()).toBe(false);
     } finally {
       Object.defineProperty(process.stdin, "isTTY", {
         configurable: true,
@@ -788,7 +788,7 @@ describe("SearchWorkflow shortlist command handling", () => {
       { sortMode: "overall", visibleCount: 2, selectedIndex: 0 }
     );
 
-    expect((workflow as any).ensureProfiles).toHaveBeenCalledWith(
+    expect((workflow as any).profileManager.ensureProfiles).toHaveBeenCalledWith(
       [first, second],
       BASE_CONDITIONS,
       "正在准备候选人对比..."
@@ -895,7 +895,7 @@ describe("SearchWorkflow shortlist command handling", () => {
         "搜索条件偏宽，候选人分数没有拉开。补一个更具体的角色或技能会更有帮助。"
       ]
     };
-    (workflow as any).loadProfileForCandidate = vi.fn(async () => candidate.profile);
+    (workflow as any).profileManager.loadProfileForCandidate = vi.fn(async () => candidate.profile);
     mockTui.promptDetailAction
       .mockResolvedValueOnce("refine");
     mockChat.askFreeform.mockResolvedValue("更偏 infra backend");
@@ -1338,7 +1338,7 @@ describe("SearchWorkflow shortlist command handling", () => {
       { sortMode: "overall", visibleCount: 2, selectedIndex: 0 }
     );
 
-    expect((workflow as any).ensureProfiles).toHaveBeenCalledWith(
+    expect((workflow as any).profileManager.ensureProfiles).toHaveBeenCalledWith(
       [first, second],
       BASE_CONDITIONS,
       "正在准备对比池导出..."

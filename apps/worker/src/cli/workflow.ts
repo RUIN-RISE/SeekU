@@ -63,11 +63,11 @@ import {
   formatConditionsAsPrompt
 } from "./search-conditions.js";
 import {
-  describeRelativeDate,
   truncateForDisplay,
   buildEvidenceHeadline,
   buildComparisonEvidence
 } from "./comparison-formatters.js";
+import { ProfileManager } from "./profile-manager.js";
 import {
   type AgentInterventionResult,
   buildAgentSessionSnapshot,
@@ -889,6 +889,7 @@ export class SearchWorkflow {
     ComparisonEntry
   >;
   private processingProfiles = new Map<string, Promise<MultiDimensionProfile>>();
+  private profileManager: ProfileManager;
   private lastSearchDiagnostics?: SearchExecutionDiagnostics;
 
   constructor(
@@ -914,6 +915,12 @@ export class SearchWorkflow {
     this.reranker = new Reranker();
     this.spinner = ora({ isEnabled: CLI_CONFIG.ui.spinnerEnabled });
     this.sessionState = createSearchSessionState();
+    this.profileManager = new ProfileManager({
+      cacheRepo: this.cacheRepo,
+      scorer: this.scorer,
+      generator: this.generator,
+      getSpinner: () => this.spinner
+    });
     this.tools = createSearchAgentTools({
       searchCandidates: async ({ query, conditions }) => ({
         query,
@@ -2142,8 +2149,8 @@ export class SearchWorkflow {
         this.setSessionStatus("shortlist", `当前 shortlist 有 ${candidates.length} 位候选人。`);
       }
 
-      const preloadPromise = this.shouldPreloadProfiles()
-        ? this.preloadProfiles(candidates, conditions)
+      const preloadPromise = this.profileManager.shouldPreloadProfiles()
+        ? this.profileManager.preloadProfiles(candidates, conditions)
         : undefined;
       const nextAction = decidePostSearchAction({ candidates });
       console.log(chalk.dim(nextAction.rationale));
@@ -2511,7 +2518,7 @@ export class SearchWorkflow {
 
       let comparisonEntries: ComparisonEntry[] = [];
       if (exportTarget === "pool" && targets.length >= 2) {
-        await this.ensureProfiles(targets, conditions, "正在准备对比池导出...");
+        await this.profileManager.ensureProfiles(targets, conditions, "正在准备对比池导出...");
         const prepared = await this.tools.prepareComparison({
           targets,
           allCandidates: candidates
@@ -2641,7 +2648,7 @@ export class SearchWorkflow {
   ): Promise<DetailOutcome> {
     this.refreshCandidateQueryExplanation(selected, conditions);
     console.log(chalk.blue(`\n🔍 正在加载 ${selected.name} 的深度画像...`));
-    const profile = await this.loadProfileForCandidate(selected, conditions);
+    const profile = await this.profileManager.loadProfileForCandidate(selected, conditions);
     if (!profile) {
       return { type: "back" };
     }
@@ -2831,7 +2838,7 @@ export class SearchWorkflow {
       total: targets.length
     });
     this.applySessionState(addCompareCandidates(this.sessionState, targets));
-    await this.ensureProfiles(targets, conditions, options.loadingMessage);
+    await this.profileManager.ensureProfiles(targets, conditions, options.loadingMessage);
     const prepared = await this.tools.prepareComparison({
       targets,
       allCandidates
@@ -2912,33 +2919,6 @@ export class SearchWorkflow {
       conditions,
       missing: this.chat.detectMissing(conditions)
     };
-  }
-
-  private buildProfileCacheKey(conditions: SearchConditions): string {
-    const normalizeArray = (items: string[]) =>
-      items
-        .map((item) => item.trim().toLowerCase())
-        .filter(Boolean)
-        .sort();
-
-    const payload = {
-      skills: normalizeArray(conditions.skills),
-      locations: normalizeArray(conditions.locations),
-      experience: conditions.experience?.trim().toLowerCase() ?? "",
-      role: conditions.role?.trim().toLowerCase() ?? "",
-      sourceBias: conditions.sourceBias ?? "",
-      mustHave: normalizeArray(conditions.mustHave),
-      niceToHave: normalizeArray(conditions.niceToHave),
-      exclude: normalizeArray(conditions.exclude),
-      preferFresh: conditions.preferFresh,
-      candidateAnchor: {
-        shortlistIndex: conditions.candidateAnchor?.shortlistIndex ?? "",
-        personId: conditions.candidateAnchor?.personId?.trim().toLowerCase() ?? "",
-        name: conditions.candidateAnchor?.name?.trim().toLowerCase() ?? ""
-      }
-    };
-
-    return createHash("sha1").update(JSON.stringify(payload)).digest("hex");
   }
 
   private async performSearch(query: string, conditions: SearchConditions): Promise<HydratedCandidate[]> {
@@ -3847,192 +3827,6 @@ export class SearchWorkflow {
       evidence: this.scorer.scoreEvidenceStrength(candidate._hydrated.evidence),
       match: this.scorer.normalizeMatchScore(candidate.matchScore)
     };
-  }
-
-  private async ensureProfiles(
-    candidates: HydratedCandidate[],
-    conditions: SearchConditions,
-    loadingText: string
-  ): Promise<void> {
-    const targets = candidates.filter((candidate) => !candidate.profile);
-    if (targets.length === 0) {
-      return;
-    }
-
-    this.spinner.start(loadingText);
-    try {
-      await Promise.all(targets.map((candidate) => this.loadProfileForCandidate(candidate, conditions)));
-      this.spinner.stop();
-    } catch (error) {
-      this.spinner.fail("画像准备失败。");
-      throw error;
-    }
-  }
-
-  private async loadProfileForCandidate(
-    candidate: HydratedCandidate,
-    conditions: SearchConditions
-  ): Promise<MultiDimensionProfile | null> {
-    const { person, evidence } = candidate._hydrated;
-    const profileCacheKey = this.buildProfileCacheKey(conditions);
-    const processingKey = `${candidate.personId}:${profileCacheKey}`;
-
-    try {
-      const isCached = await this.cacheRepo.getProfile(candidate.personId, profileCacheKey);
-      const isPreloading = this.processingProfiles.has(processingKey);
-
-      if (!isCached && !isPreloading && !this.spinner.isSpinning) {
-        this.spinner.start(`正在分析 ${candidate.name}...`);
-      } else if (isPreloading && !this.spinner.isSpinning) {
-        this.spinner.start(`等待后台完成 ${candidate.name} 的分析...`);
-      }
-
-      const profile = await this.getOrGenerateProfile(candidate.personId, person, evidence, conditions);
-      candidate.profile = profile;
-
-      if (this.spinner.isSpinning && !isCached && !isPreloading) {
-        this.spinner.succeed("画像分析完成。");
-      } else if (this.spinner.isSpinning) {
-        this.spinner.stop();
-      }
-
-      return profile;
-    } catch (error) {
-      if (this.spinner.isSpinning) {
-        this.spinner.fail("画像分析失败。");
-      }
-      console.error(chalk.red("   Error detail:"), error instanceof Error ? error.message : "Analysis failed");
-      return null;
-    }
-  }
-
-  private async getOrGenerateProfile(
-    personId: string,
-    person: Person,
-    evidence: EvidenceItem[],
-    conditions: SearchConditions,
-    options: {
-      quiet?: boolean;
-      maxRetries?: number;
-    } = {}
-  ): Promise<MultiDimensionProfile> {
-    const profileCacheKey = this.buildProfileCacheKey(conditions);
-    const processingKey = `${personId}:${profileCacheKey}`;
-
-    let profile = await this.cacheRepo.getProfile(personId, profileCacheKey);
-    if (profile) {
-      return profile;
-    }
-
-    if (this.processingProfiles.has(processingKey)) {
-      const existing = this.processingProfiles.get(processingKey);
-      if (existing) {
-        const isRejected = await existing.then(
-          () => false,
-          () => true
-        );
-        if (!isRejected) {
-          return existing;
-        }
-      }
-
-      this.processingProfiles.delete(processingKey);
-    }
-
-    const generateTask = async () =>
-      withRetry(async () => {
-        let innerProfile = await this.cacheRepo.getProfile(personId, profileCacheKey);
-        if (innerProfile) {
-          return innerProfile;
-        }
-
-        const rules = this.scorer.scoreByRules(person, evidence, conditions);
-        const llm = await this.scorer.scoreByLLM(person, evidence, {
-          quiet: options.quiet,
-          maxRetries: options.maxRetries
-        });
-        const experienceBonus = this.scorer.calculateExperienceMatch(person, evidence, conditions);
-        innerProfile = this.scorer.aggregate(rules, llm, experienceBonus);
-
-        innerProfile = await this.generator.generate(person, evidence, innerProfile, conditions, {
-          quiet: options.quiet,
-          maxRetries: options.maxRetries
-        });
-        await this.cacheRepo.setProfile(personId, profileCacheKey, innerProfile, innerProfile.overallScore);
-
-        return innerProfile;
-      }, { maxRetries: CLI_CONFIG.llm.maxRetries, baseDelay: 2000 });
-
-    const promise = generateTask().finally(() => {
-      this.processingProfiles.delete(processingKey);
-    });
-
-    const timeoutId = setTimeout(() => {
-      if (this.processingProfiles.get(processingKey) === promise) {
-        this.processingProfiles.delete(processingKey);
-      }
-    }, 30 * 60 * 1000);
-
-    if (typeof timeoutId.unref === "function") {
-      timeoutId.unref();
-    }
-
-    this.processingProfiles.set(processingKey, promise);
-    return promise;
-  }
-
-  private async preloadProfiles(candidates: HydratedCandidate[], conditions: SearchConditions): Promise<void> {
-    const tasks: Array<() => Promise<void>> = [];
-
-    for (const candidate of candidates) {
-      tasks.push(async () => {
-        const { person, evidence } = candidate._hydrated;
-        const profile = await this.getOrGenerateProfile(candidate.personId, person, evidence, conditions, {
-          quiet: true,
-          maxRetries: 0
-        });
-        candidate.profile = profile;
-      });
-    }
-
-    if (tasks.length > 0) {
-      await this.promisePool(tasks, CLI_CONFIG.llm.parallelLimit);
-    }
-  }
-
-  private async promisePool<T>(tasks: Array<() => Promise<T>>, limit: number): Promise<T[]> {
-    type PoolResult = T | { error: Error };
-    const results: PoolResult[] = new Array(tasks.length);
-
-    const runWorker = async (startIndex: number): Promise<void> => {
-      for (let index = startIndex; index < tasks.length; index += limit) {
-        try {
-          results[index] = await tasks[index]();
-        } catch (error) {
-          results[index] = { error: error instanceof Error ? error : new Error(String(error)) };
-        }
-      }
-    };
-
-    const workers = Array.from({ length: Math.min(limit, tasks.length) }, (_, index) => runWorker(index));
-    await Promise.all(workers);
-
-    const successful = results.filter(
-      (result): result is T => !(result && typeof result === "object" && "error" in result)
-    );
-    const failed = results.filter(
-      (result): result is { error: Error } => Boolean(result && typeof result === "object" && "error" in result)
-    );
-
-    if (failed.length > 0) {
-      console.warn(chalk.dim(`\n[Pool Warning] ${failed.length} analysis tasks failed. Results may be incomplete.`));
-    }
-
-    return successful;
-  }
-
-  private shouldPreloadProfiles(): boolean {
-    return !process.stdin.isTTY;
   }
 
   private formatExportSource(sources: string[]): string {
