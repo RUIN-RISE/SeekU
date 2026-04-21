@@ -412,4 +412,116 @@ describe("agent-policy", () => {
     expect(decision.action).toBe("rewrite");
     expect(decision.rationale).toContain("换个方式再试一轮");
   });
+
+  it("stops when budget is exhausted and no fallback candidates exist", () => {
+    const attempt = buildSearchAttemptReport({
+      sessionId: "session-exhausted-no-fallback",
+      attemptId: "attempt-ex-1",
+      attemptOrdinal: 3,
+      trigger: "post_rewrite",
+      startedAt: new Date("2026-04-21T00:00:00.000Z"),
+      completedAt: new Date("2026-04-21T00:00:01.000Z"),
+      effectiveQuery: "obscure tech stack",
+      conditions: {
+        ...BASE_CONDITIONS,
+        role: "engineer",
+        skills: ["obscure-framework"]
+      },
+      candidates: [],
+      recoveryState: {
+        clarificationCount: 1,
+        rewriteCount: 1
+      },
+      previousFailureCodes: ["retrieval_zero_hits"],
+      limits: {
+        clarifyLimit: 1,
+        rewriteLimit: 1
+      }
+    });
+    const failure = buildSearchFailureReport({ attempt });
+
+    const decision = decideRecoveryActionV2({ attempt, failure });
+
+    expect(decision.action).toBe("stop");
+    expect(decision.rationale).toContain("换个方向");
+  });
+
+  it("stops when budget is exhausted with retrieval-all-weak and weak candidates", () => {
+    const attempt = buildSearchAttemptReport({
+      sessionId: "session-exhausted-weak",
+      attemptId: "attempt-ex-2",
+      attemptOrdinal: 3,
+      trigger: "post_rewrite",
+      startedAt: new Date("2026-04-21T00:00:00.000Z"),
+      completedAt: new Date("2026-04-21T00:00:01.000Z"),
+      effectiveQuery: "backend",
+      conditions: {
+        ...BASE_CONDITIONS,
+        role: "backend",
+        skills: ["python"]
+      },
+      candidates: [
+        {
+          personId: "person-1",
+          name: "Ada",
+          matchScore: 0.45,
+          matchStrength: "weak",
+          queryReasons: ["命中 backend"],
+          conditionAudit: [{ label: "Backend", status: "unmet", detail: "只命中一次" }],
+          sources: ["Bonjour"]
+        }
+      ],
+      recoveryState: {
+        clarificationCount: 1,
+        rewriteCount: 1
+      },
+      previousFailureCodes: ["retrieval_all_weak"],
+      limits: {
+        clarifyLimit: 1,
+        rewriteLimit: 1
+      }
+    });
+    const failure = buildSearchFailureReport({ attempt });
+
+    const decision = decideRecoveryActionV2({ attempt, failure });
+
+    expect(decision.action).toBe("low_confidence_shortlist");
+  });
+
+  it("falls back to rewrite when clarify is exhausted but rewrite remains", () => {
+    const attempt = buildSearchAttemptReport({
+      sessionId: "session-clarify-exhausted",
+      attemptId: "attempt-ce-1",
+      attemptOrdinal: 2,
+      trigger: "post_clarification",
+      startedAt: new Date("2026-04-21T00:00:00.000Z"),
+      completedAt: new Date("2026-04-21T00:00:01.000Z"),
+      effectiveQuery: "python backend",
+      conditions: {
+        ...BASE_CONDITIONS,
+        skills: ["python"],
+        locations: ["杭州"]
+      },
+      candidates: [],
+      recoveryState: {
+        clarificationCount: 1,
+        rewriteCount: 0
+      },
+      previousFailureCodes: [],
+      limits: {
+        clarifyLimit: 1,
+        rewriteLimit: 1
+      },
+      anchorResolution: {
+        status: "not_found",
+        failureReason: "anchor not found"
+      }
+    });
+    const failure = buildSearchFailureReport({ attempt });
+
+    const decision = decideRecoveryActionV2({ attempt, failure });
+
+    expect(decision.action).toBe("rewrite");
+    expect(decision.targetFailureCode).toBe("intent_anchor_missing");
+  });
 });

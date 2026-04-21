@@ -494,6 +494,67 @@ describe("SearchWorkflow agent policy integration", () => {
     expect(workflow.getSessionSnapshot().openUncertainties[0]).toContain("当前库里可能没有完全匹配的人");
     expect(result).toEqual({ type: "restart" });
   });
+
+  it("restarts when stop recovery receives no user input", async () => {
+    const { workflow, mockChat, runSearchLoop } = createWorkflowHarness();
+
+    (workflow as any).shouldPreloadProfiles = vi.fn(() => false);
+    (workflow as any).tools.searchCandidates = vi.fn(async () => ({
+      query: "obscure tech stack",
+      conditions: BASE_CONDITIONS,
+      candidates: []
+    }));
+    (workflow as any).handleSearchRecovery = vi.fn(async () => {
+      (workflow as any).sessionState = {
+        ...(workflow as any).sessionState,
+        recoveryState: {
+          ...(workflow as any).sessionState.recoveryState,
+          boundaryDiagnosticCode: undefined
+        },
+        openUncertainties: ["这轮没有找到足够合适的候选人。"]
+      };
+      return { type: "stop" as const };
+    });
+    mockChat.askFreeform.mockResolvedValue(undefined);
+
+    const result = await runSearchLoop(BASE_CONDITIONS);
+
+    expect(result).toEqual({ type: "restart" });
+    expect(mockChat.askFreeform).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses boundary diagnostic code (not uncertainty text) to drive refine prompt after stop", async () => {
+    const { workflow, mockChat, runSearchLoop } = createWorkflowHarness();
+
+    (workflow as any).shouldPreloadProfiles = vi.fn(() => false);
+    (workflow as any).tools.searchCandidates = vi.fn(async () => ({
+      query: "python backend",
+      conditions: BASE_CONDITIONS,
+      candidates: []
+    }));
+    (workflow as any).handleSearchRecovery = vi.fn(async () => {
+      (workflow as any).sessionState = {
+        ...(workflow as any).sessionState,
+        recoveryState: {
+          ...(workflow as any).sessionState.recoveryState,
+          boundaryDiagnosticCode: "query_too_broad"
+        },
+        openUncertainties: ["其他原因，和搜索条件无关。"]
+      };
+      return { type: "stop" as const };
+    });
+    mockChat.askFreeform.mockResolvedValue(undefined);
+
+    const result = await runSearchLoop(BASE_CONDITIONS);
+
+    expect(mockChat.askFreeform).toHaveBeenCalledWith(
+      expect.stringContaining("搜索条件偏宽")
+    );
+    expect(mockChat.askFreeform).not.toHaveBeenCalledWith(
+      expect.stringContaining("其他原因")
+    );
+    expect(result).toEqual({ type: "restart" });
+  });
 });
 
 describe("SearchWorkflow shortlist command handling", () => {
