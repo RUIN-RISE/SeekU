@@ -1342,7 +1342,7 @@ describe("SearchWorkflow shortlist command handling", () => {
     expect(mockExporter.export).toHaveBeenCalledWith(expect.objectContaining({
       target: "pool",
       format: "md",
-      querySummary: "杭州 python"
+      querySummary: "角色 backend，技术栈 python，地点 杭州，来源 bonjour，偏好最近活跃"
     }));
     expect((workflow as any).tools.prepareComparison).toHaveBeenCalledWith({
       targets: [first, second],

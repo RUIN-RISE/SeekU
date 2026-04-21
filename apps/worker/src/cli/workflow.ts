@@ -48,8 +48,7 @@ import {
   decideRecoveryActionV2,
   type RecoveryPromptKind
 } from "./agent-policy.js";
-import {
-  buildRefineContextCandidates,
+import { buildRefineContextCandidates,
   createSearchAgentTools,
   inspectCandidateFromState,
   prepareComparisonEntries,
@@ -58,6 +57,11 @@ import {
   type AgentInspectCandidateOutput,
   type SearchAgentTools
 } from "./agent-tools.js";
+import {
+  normalizeConditions,
+  buildEffectiveQuery,
+  formatConditionsAsPrompt
+} from "./search-conditions.js";
 import {
   type AgentInterventionResult,
   buildAgentSessionSnapshot,
@@ -199,8 +203,6 @@ interface QueryMatchExplanationOptions {
   referenceDate?: Date;
   experienceMatched?: boolean;
 }
-
-const SKIPPED_QUERY_VALUES = new Set(["不限", "skip", "none"]);
 
 function truncateDisplayValue(value: string, maxLength: number): string {
   const normalized = value.replace(/\s+/g, " ").trim();
@@ -925,7 +927,7 @@ export class SearchWorkflow {
         );
         this.spinner.stop();
         return {
-          conditions: this.normalizeConditions(
+          conditions: normalizeConditions(
             resolveCandidateAnchorWithContext(prompt, updated, context)
           ),
           context
@@ -1344,28 +1346,28 @@ export class SearchWorkflow {
     tag: string
   ): SearchConditions | null {
     if (tag === "more_engineering_manager") {
-      return this.normalizeConditions({
+      return normalizeConditions({
         ...conditions,
         role: "engineering manager"
       });
     }
 
     if (tag === "less_academic") {
-      return this.normalizeConditions({
+      return normalizeConditions({
         ...conditions,
         exclude: [...conditions.exclude, "academic"]
       });
     }
 
     if (tag === "more_hands_on_builder") {
-      return this.normalizeConditions({
+      return normalizeConditions({
         ...conditions,
         mustHave: [...conditions.mustHave, "builder"]
       });
     }
 
     if (tag === "prefer_recent_execution") {
-      return this.normalizeConditions({
+      return normalizeConditions({
         ...conditions,
         preferFresh: true
       });
@@ -1432,7 +1434,7 @@ export class SearchWorkflow {
       clarificationCount: this.sessionState.clarificationHistory.length
     });
 
-    const effectiveQuery = this.buildEffectiveQuery(conditions);
+    const effectiveQuery = buildEffectiveQuery(conditions);
     if (!effectiveQuery) {
       this.setSessionStatus("blocked", "当前条件不足以形成有效搜索。");
       return;
@@ -1515,7 +1517,7 @@ export class SearchWorkflow {
 
       this.setSessionStatus("clarifying", "正在补充搜索条件。");
       this.spinner.start("正在补充搜索条件...");
-      conditions = this.normalizeConditions(
+      conditions = normalizeConditions(
         await this.chat.reviseConditions(conditions, instruction, "edit")
       );
       this.spinner.stop();
@@ -1543,7 +1545,7 @@ export class SearchWorkflow {
       startedAt: now,
       completedAt: now,
       rawUserGoal: this.sessionState.userGoal ?? undefined,
-      effectiveQuery: this.buildEffectiveQuery(conditions) || this.formatConditionsAsPrompt(conditions),
+      effectiveQuery: buildEffectiveQuery(conditions) || formatConditionsAsPrompt(conditions),
       rewrittenFromQuery: currentRecovery.lastRewrittenQuery,
       conditions,
       candidates,
@@ -1802,7 +1804,7 @@ export class SearchWorkflow {
   ): Promise<SearchConditions> {
     this.spinner.start("正在自动收敛检索表达...");
     try {
-      return this.normalizeConditions(
+      return normalizeConditions(
         await this.chat.reviseConditions(
           conditions,
           "不要改变用户显式 must-have / exclude / sourceBias 的前提下，把这轮搜索条件改写成更利于召回正确候选人的版本。收紧角色主轴，补全显式技能表述，去掉空泛表述，但不要发明新的用户约束。",
@@ -1974,7 +1976,7 @@ export class SearchWorkflow {
         summary: decision.rationale
       });
       const rewrittenConditions = await this.rewriteConditionsForRecovery(conditions, candidates);
-      const rewrittenQuery = this.buildEffectiveQuery(rewrittenConditions) || effectiveQuery;
+      const rewrittenQuery = buildEffectiveQuery(rewrittenConditions) || effectiveQuery;
       this.transitionRecoveryPhase("idle", {
         overrides: {
           ...diagnosingState,
@@ -2035,7 +2037,7 @@ export class SearchWorkflow {
   }
 
   private async runSearchLoop(initialConditions: SearchConditions): Promise<SearchLoopOutcome> {
-    let conditions = this.normalizeConditions(initialConditions);
+    let conditions = normalizeConditions(initialConditions);
     let sortMode: SortMode = "overall";
     let shortlistPresentation:
       | {
@@ -2047,7 +2049,7 @@ export class SearchWorkflow {
     this.applySessionState(resetRecoveryState(setSessionConditions(this.sessionState, conditions)));
 
     while (true) {
-      const effectiveQuery = this.buildEffectiveQuery(conditions);
+      const effectiveQuery = buildEffectiveQuery(conditions);
       if (!effectiveQuery) {
         console.log(chalk.yellow("\n当前没有可搜索的条件，请重新描述需求。"));
         this.setSessionStatus("blocked", "当前条件不足以形成有效搜索。");
@@ -2181,7 +2183,7 @@ export class SearchWorkflow {
 
       if (result.type === "restore" && result.conditions) {
         // Undo: directly restore previous conditions without LLM round-trip
-        conditions = this.normalizeConditions(result.conditions);
+        conditions = normalizeConditions(result.conditions);
         shortlistPresentation = undefined;
         sortMode = "overall";
         continue;
@@ -2514,7 +2516,7 @@ export class SearchWorkflow {
       const artifact = await this.exporter.export({
         format: exportFormat,
         target: exportTarget,
-        querySummary: this.formatConditionsAsPrompt(conditions),
+        querySummary: formatConditionsAsPrompt(conditions),
         records: this.buildExportRecords(targets, candidates, comparisonEntries)
       });
 
@@ -2790,7 +2792,7 @@ export class SearchWorkflow {
     this.spinner.start("正在分析你的需求...");
     const extracted = await this.chat.extractConditions(query);
     this.spinner.stop();
-    return this.normalizeConditions(extracted);
+    return normalizeConditions(extracted);
   }
 
   private getClarificationTurnCount(): number {
@@ -2904,74 +2906,6 @@ export class SearchWorkflow {
       conditions,
       missing: this.chat.detectMissing(conditions)
     };
-  }
-
-  private normalizeConditions(conditions: Partial<SearchConditions>): SearchConditions {
-    const dedupe = (values: string[] | undefined) => {
-      const seen = new Set<string>();
-      return (values || []).filter((value) => {
-        const normalized = value.trim();
-        if (!normalized) {
-          return false;
-        }
-        const key = normalized.toLowerCase();
-        if (seen.has(key)) {
-          return false;
-        }
-        seen.add(key);
-        return true;
-      });
-    };
-
-    const candidateAnchor = conditions.candidateAnchor
-      ? {
-          shortlistIndex:
-            typeof conditions.candidateAnchor.shortlistIndex === "number" &&
-            conditions.candidateAnchor.shortlistIndex > 0
-              ? conditions.candidateAnchor.shortlistIndex
-              : undefined,
-          personId: conditions.candidateAnchor.personId?.trim() || undefined,
-          name: conditions.candidateAnchor.name?.trim() || undefined
-        }
-      : undefined;
-
-    return {
-      skills: dedupe(conditions.skills),
-      locations: dedupe(conditions.locations),
-      experience: conditions.experience?.trim() || undefined,
-      role: conditions.role?.trim() || undefined,
-      sourceBias: conditions.sourceBias,
-      mustHave: dedupe(conditions.mustHave),
-      niceToHave: dedupe(conditions.niceToHave),
-      exclude: dedupe(conditions.exclude),
-      preferFresh: Boolean(conditions.preferFresh),
-      candidateAnchor:
-        candidateAnchor?.shortlistIndex || candidateAnchor?.personId || candidateAnchor?.name
-          ? candidateAnchor
-          : undefined,
-      limit: conditions.limit || CLI_CONFIG.ui.defaultLimit
-    };
-  }
-
-  private buildEffectiveQuery(conditions: SearchConditions): string {
-    return [
-      ...conditions.skills,
-      ...conditions.locations,
-      conditions.experience ?? "",
-      conditions.role ?? "",
-      conditions.sourceBias ?? "",
-      ...conditions.mustHave.map((value) => `must have ${value}`),
-      ...conditions.niceToHave.map((value) => `prefer ${value}`),
-      ...conditions.exclude.map((value) => `exclude ${value}`),
-      conditions.preferFresh ? "prefer recent active profiles" : "",
-      conditions.candidateAnchor?.name ? `similar to ${conditions.candidateAnchor.name}` : "",
-      conditions.candidateAnchor?.shortlistIndex
-        ? `similar to shortlist ${conditions.candidateAnchor.shortlistIndex}`
-        : ""
-    ]
-      .map((value) => value.trim())
-      .filter((value) => value.length > 0 && !SKIPPED_QUERY_VALUES.has(value.toLowerCase()))
-      .join(" ");
   }
 
   private buildProfileCacheKey(conditions: SearchConditions): string {
@@ -3169,7 +3103,7 @@ export class SearchWorkflow {
     });
 
     const disambiguationNotes = buildDisambiguationNotes(
-      this.buildEffectiveQuery(conditions),
+      buildEffectiveQuery(conditions),
       hydrated.map((candidate) => ({
         personId: candidate.personId,
         name: candidate.name,
@@ -3377,7 +3311,7 @@ export class SearchWorkflow {
       .slice(0, conditions.limit);
 
     const disambiguationNotes = buildDisambiguationNotes(
-      this.buildEffectiveQuery(conditions),
+      buildEffectiveQuery(conditions),
       scored.map((candidate) => ({
         personId: candidate.personId,
         name: candidate.name,
@@ -4264,53 +4198,5 @@ export class SearchWorkflow {
     }
 
     return sources.join(" / ");
-  }
-
-  private formatConditionsAsPrompt(conditions: SearchConditions): string {
-    const parts: string[] = [];
-
-    if (conditions.role) {
-      parts.push(`角色 ${conditions.role}`);
-    }
-
-    if (conditions.skills.length > 0) {
-      parts.push(`技术栈 ${conditions.skills.join(" / ")}`);
-    }
-
-    if (conditions.locations.length > 0) {
-      parts.push(`地点 ${conditions.locations.join(" / ")}`);
-    }
-
-    if (conditions.experience) {
-      parts.push(`经验 ${conditions.experience}`);
-    }
-
-    if (conditions.sourceBias) {
-      parts.push(`来源 ${conditions.sourceBias}`);
-    }
-
-    if (conditions.mustHave.length > 0) {
-      parts.push(`必须项 ${conditions.mustHave.join(" / ")}`);
-    }
-
-    if (conditions.niceToHave.length > 0) {
-      parts.push(`优先项 ${conditions.niceToHave.join(" / ")}`);
-    }
-
-    if (conditions.exclude.length > 0) {
-      parts.push(`排除项 ${conditions.exclude.join(" / ")}`);
-    }
-
-    if (conditions.preferFresh) {
-      parts.push("偏好最近活跃");
-    }
-
-    if (conditions.candidateAnchor?.name) {
-      parts.push(`参考候选 ${conditions.candidateAnchor.name}`);
-    } else if (conditions.candidateAnchor?.shortlistIndex) {
-      parts.push(`参考 shortlist #${conditions.candidateAnchor.shortlistIndex}`);
-    }
-
-    return parts.length > 0 ? parts.join("，") : "不限条件";
   }
 }
