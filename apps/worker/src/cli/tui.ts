@@ -21,7 +21,7 @@ import {
 } from "./types.js";
 
 const { Input } = enquirer as unknown as { Input: any };
-type CompareAction = "back" | "clear" | "quit";
+type CompareAction = "back" | "clear" | "quit" | "refine";
 
 interface ShortlistViewOptions {
   sortMode: SortMode;
@@ -439,7 +439,7 @@ export class TerminalUI {
   }
 
   async promptCompareAction(): Promise<CompareAction> {
-    console.log(chalk.dim("动作：back 返回 shortlist | clear 清空对比池 | q 退出"));
+    console.log(chalk.dim("动作：back 返回 shortlist | refine 直接收敛 | clear 清空对比池 | q 退出"));
     const raw = await this.promptLine("compare>", "back");
     const normalized = raw.trim().toLowerCase();
 
@@ -449,6 +449,10 @@ export class TerminalUI {
 
     if (normalized === "clear") {
       return "clear";
+    }
+
+    if (normalized === "refine" || normalized === "r") {
+      return "refine";
     }
 
     if (normalized === "q" || normalized === "quit" || normalized === "exit") {

@@ -66,3 +66,37 @@ describe("TerminalUI banner", () => {
     expect(output).toContain("为什么我还不能直接推荐");
   });
 });
+
+describe("TerminalUI compare prompt", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("accepts refine and short aliases in compare prompt", async () => {
+    const ui = new TerminalUI();
+    const promptLine = vi.spyOn(ui as any, "promptLine")
+      .mockResolvedValueOnce("refine")
+      .mockResolvedValueOnce("r");
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await expect(ui.promptCompareAction()).resolves.toBe("refine");
+    await expect(ui.promptCompareAction()).resolves.toBe("refine");
+
+    expect(promptLine).toHaveBeenNthCalledWith(1, "compare>", "back");
+    expect(promptLine).toHaveBeenNthCalledWith(2, "compare>", "back");
+    expect(logSpy).toHaveBeenCalled();
+  });
+
+  it("keeps back, clear, and quit behavior stable", async () => {
+    const ui = new TerminalUI();
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.spyOn(ui as any, "promptLine")
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("clear")
+      .mockResolvedValueOnce("q");
+
+    await expect(ui.promptCompareAction()).resolves.toBe("back");
+    await expect(ui.promptCompareAction()).resolves.toBe("clear");
+    await expect(ui.promptCompareAction()).resolves.toBe("quit");
+  });
+});

@@ -37,6 +37,7 @@ export interface SearchRecoveryState {
   rewriteCount: number;
   lowConfidenceEmitted: boolean;
   lastRewrittenQuery?: string;
+  compareSuggestedRefinement?: string;
 }
 
 export type { MatchStrength };

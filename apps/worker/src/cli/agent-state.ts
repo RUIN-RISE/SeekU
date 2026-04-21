@@ -125,7 +125,8 @@ function createDefaultRecoveryState(): SearchRecoveryState {
     clarificationCount: 0,
     rewriteCount: 0,
     lowConfidenceEmitted: false,
-    lastRewrittenQuery: undefined
+    lastRewrittenQuery: undefined,
+    compareSuggestedRefinement: undefined
   };
 }
 

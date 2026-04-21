@@ -139,7 +139,7 @@ describe("SearchWorkflow session events", () => {
 
   it("builds a snapshot that can reconstruct the current session state after search", async () => {
     const { workflow, mockChat, runClarifyLoop, runSearchLoop } = createWorkflowHarness();
-    const first = createCandidate({ personId: "person-1", matchStrength: "weak" });
+    const first = createCandidate({ personId: "person-1", matchStrength: "medium" });
     const second = createCandidate({ personId: "person-2", name: "Lin", matchStrength: "weak" });
 
     mockChat.extractConditions.mockResolvedValue(BASE_CONDITIONS);
@@ -221,5 +221,85 @@ describe("SearchWorkflow session events", () => {
         }
       }
     });
+  });
+
+  it("emits compare-to-refine events in order and clears compare suggestion after rerun", async () => {
+    const { workflow, mockChat, mockTui, runSearchLoop } = createWorkflowHarness();
+    const first = createCandidate({ personId: "person-1", matchStrength: "strong" });
+    const second = createCandidate({
+      personId: "person-2",
+      name: "Lin",
+      matchStrength: "medium",
+      sources: ["GitHub"]
+    });
+    const refined = createCandidate({
+      personId: "person-3",
+      name: "Grace",
+      matchStrength: "medium"
+    });
+
+    (workflow as any).shouldPreloadProfiles = vi.fn(() => false);
+    (workflow as any).tools.searchCandidates = vi
+      .fn()
+      .mockResolvedValueOnce({
+        query: "杭州 python backend",
+        conditions: BASE_CONDITIONS,
+        candidates: [first, second]
+      })
+      .mockResolvedValueOnce({
+        query: "杭州 infra backend",
+        conditions: {
+          ...BASE_CONDITIONS,
+          mustHave: ["infra backend"]
+        },
+        candidates: [refined]
+      });
+    (workflow as any).tools.prepareComparison = vi.fn(async () => ({
+      targets: [first, second],
+      entries: [],
+      result: {
+        entries: [],
+        outcome: {
+          confidence: "low-confidence",
+          recommendationMode: "no-recommendation",
+          recommendation: "我还没有足够证据推荐单一候选人。",
+          rationale: "需要更聚焦的检索条件。",
+          largestUncertainty: "当前 compare 还不够稳。",
+          suggestedRefinement: "先把角色收敛到 infra backend 再重试。"
+        }
+      }
+    }));
+    mockTui.promptCompareAction.mockResolvedValue("refine");
+    mockChat.askFreeform.mockResolvedValue("更偏 infra backend");
+    mockChat.reviseConditions.mockResolvedValue({
+      ...BASE_CONDITIONS,
+      mustHave: ["infra backend"]
+    });
+    (workflow as any).runShortlistLoop = vi.fn(async () => ({ type: "quit" }));
+
+    await runSearchLoop(BASE_CONDITIONS);
+
+    const eventTypes = workflow.getSessionEvents().map((event) => event.type);
+    const firstSearchStarted = eventTypes.indexOf("search_started");
+    const compareStarted = eventTypes.indexOf("compare_started");
+    const conditionsUpdatedIndexes = eventTypes
+      .map((type, index) => ({ type, index }))
+      .filter((entry) => entry.type === "conditions_updated")
+      .map((entry) => entry.index);
+    const searchStartedIndexes = eventTypes
+      .map((type, index) => ({ type, index }))
+      .filter((entry) => entry.type === "search_started")
+      .map((entry) => entry.index);
+
+    expect(firstSearchStarted).toBeGreaterThanOrEqual(0);
+    expect(compareStarted).toBeGreaterThan(firstSearchStarted);
+    expect(searchStartedIndexes).toHaveLength(2);
+    expect(searchStartedIndexes[1]).toBeGreaterThan(compareStarted);
+    expect(conditionsUpdatedIndexes.length).toBeGreaterThanOrEqual(2);
+    expect(conditionsUpdatedIndexes[conditionsUpdatedIndexes.length - 1]).toBeGreaterThan(compareStarted);
+
+    const snapshot = workflow.getSessionSnapshot();
+    expect(snapshot.currentConditions.mustHave).toEqual(["infra backend"]);
+    expect(snapshot.recoveryState.compareSuggestedRefinement).toBeUndefined();
   });
 });

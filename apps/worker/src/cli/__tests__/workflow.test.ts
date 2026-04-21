@@ -91,6 +91,7 @@ function createWorkflowHarness() {
     displayInitialSearch: vi.fn(),
     displayClarifiedDraft: vi.fn(),
     resetShortlistViewport: vi.fn(),
+    displayNoResults: vi.fn(),
     displayHelp: vi.fn(),
     displayPoolEmpty: vi.fn(),
     displayPool: vi.fn(),
@@ -151,6 +152,15 @@ function createWorkflowHarness() {
       candidates: any[],
       conditions: SearchConditions,
       state: { sortMode: string; visibleCount: number; selectedIndex: number }
+    ) => Promise<any>,
+    handleSearchRecovery: (workflow as any).handleSearchRecovery.bind(workflow) as (
+      candidates: any[],
+      conditions: SearchConditions,
+      effectiveQuery: string
+    ) => Promise<any>,
+    showCandidateDetail: (workflow as any).showCandidateDetail.bind(workflow) as (
+      selected: any,
+      conditions: SearchConditions
     ) => Promise<any>
   };
 }
@@ -375,6 +385,111 @@ describe("SearchWorkflow agent policy integration", () => {
     );
     expect(result).toEqual({ type: "quit" });
   });
+
+  it("surfaces query-too-broad as a boundary hint during rewrite recovery", async () => {
+    const { workflow, mockChat, handleSearchRecovery } = createWorkflowHarness();
+    const metAudit = [{ label: "Python", status: "met", detail: "命中技能" }] as const;
+
+    (workflow as any).setSessionStatus("searching", "准备执行 recovery。");
+    mockChat.reviseConditions.mockResolvedValue({
+      ...BASE_CONDITIONS,
+      mustHave: ["python backend"]
+    });
+
+    const result = await handleSearchRecovery(
+      [
+        createCandidate({
+          personId: "person-1",
+          matchStrength: "weak",
+          matchScore: 0.56,
+          queryReasons: ["命中 python", "命中 backend"],
+          conditionAudit: [...metAudit]
+        }),
+        createCandidate({
+          personId: "person-2",
+          name: "Lin",
+          matchStrength: "weak",
+          matchScore: 0.55,
+          queryReasons: ["命中 python", "命中 backend"],
+          conditionAudit: [...metAudit]
+        }),
+        createCandidate({
+          personId: "person-3",
+          name: "Grace",
+          matchStrength: "weak",
+          matchScore: 0.53,
+          queryReasons: ["命中 python", "命中 backend"],
+          conditionAudit: [...metAudit],
+          sources: ["GitHub"]
+        })
+      ],
+      BASE_CONDITIONS,
+      "杭州 python backend"
+    );
+
+    expect(result.type).toBe("retry");
+    expect(workflow.getSessionSnapshot().openUncertainties[0]).toContain("检索表达偏宽");
+  });
+
+  it("surfaces source-coverage-gap when recovery can no longer rewrite", async () => {
+    const { workflow, handleSearchRecovery } = createWorkflowHarness();
+    (workflow as any).setSessionStatus("searching", "准备执行 recovery。");
+    (workflow as any).sessionState = {
+      ...(workflow as any).sessionState,
+      recoveryState: {
+        ...(workflow as any).sessionState.recoveryState,
+        rewriteCount: 1
+      }
+    };
+    (workflow as any).lastSearchDiagnostics = {
+      filterDropoff: {
+        status: "available",
+        dominantFilter: "unknown",
+        dropoffByFilter: {}
+      },
+      sourceCounterfactual: {
+        status: "available",
+        restrictedSource: "bonjour",
+        unrestrictedRetrievedCount: 0
+      }
+    };
+
+    const result = await handleSearchRecovery([], BASE_CONDITIONS, "杭州 python backend");
+
+    expect(result).toEqual({ type: "stop" });
+    expect(workflow.getSessionSnapshot().openUncertainties[0]).toContain("数据覆盖边界");
+  });
+
+  it("preserves boundary uncertainty and uses a tailored refine prompt after stop", async () => {
+    const { workflow, mockChat, runSearchLoop } = createWorkflowHarness();
+    const boundaryHint = "这轮还可能碰到数据覆盖边界，当前库里未必有满足条件的人。";
+
+    (workflow as any).shouldPreloadProfiles = vi.fn(() => false);
+    (workflow as any).tools.searchCandidates = vi.fn(async () => ({
+      query: "杭州 python backend",
+      conditions: BASE_CONDITIONS,
+      candidates: []
+    }));
+    (workflow as any).handleSearchRecovery = vi.fn(async () => {
+      (workflow as any).sessionState = {
+        ...(workflow as any).sessionState,
+        openUncertainties: [boundaryHint]
+      };
+      return { type: "stop" as const };
+    });
+    mockChat.askFreeform.mockResolvedValue(undefined);
+
+    const result = await runSearchLoop(BASE_CONDITIONS);
+
+    expect(mockChat.askFreeform).toHaveBeenCalledWith(
+      expect.stringContaining("数据覆盖边界")
+    );
+    expect(mockChat.askFreeform).toHaveBeenCalledWith(
+      expect.stringContaining("放宽地点 / 去掉 must-have")
+    );
+    expect(workflow.getSessionSnapshot().openUncertainties[0]).toContain("数据覆盖边界");
+    expect(result).toEqual({ type: "restart" });
+  });
 });
 
 describe("SearchWorkflow shortlist command handling", () => {
@@ -407,6 +522,40 @@ describe("SearchWorkflow shortlist command handling", () => {
       result: {
         type: "refine",
         prompt: "去掉销售"
+      }
+    });
+  });
+
+  it("uses a boundary-aware refine prompt for low-confidence shortlist", async () => {
+    const { workflow, handleShortlistCommand, mockChat } = createWorkflowHarness();
+    const candidates = [createCandidate()];
+    (workflow as any).sessionState = {
+      ...(workflow as any).sessionState,
+      recoveryState: {
+        ...(workflow as any).sessionState.recoveryState,
+        phase: "low_confidence_shortlist"
+      },
+      openUncertainties: [
+        "这轮还可能碰到数据覆盖边界，当前库里未必有满足条件的人。"
+      ]
+    };
+    mockChat.askFreeform.mockResolvedValue("放宽地点");
+
+    const result = await handleShortlistCommand(
+      { type: "refine" },
+      candidates,
+      BASE_CONDITIONS,
+      { sortMode: "overall", visibleCount: 1, selectedIndex: 0 }
+    );
+
+    expect(mockChat.askFreeform).toHaveBeenCalledWith(
+      expect.stringContaining("数据覆盖边界")
+    );
+    expect(result).toEqual({
+      type: "done",
+      result: {
+        type: "refine",
+        prompt: "放宽地点"
       }
     });
   });
@@ -589,6 +738,113 @@ describe("SearchWorkflow shortlist command handling", () => {
     expect(result.type).toBe("continue");
   });
 
+  it("returns a refine outcome directly from compare view", async () => {
+    const { workflow, handleShortlistCommand, mockTui, mockChat } = createWorkflowHarness();
+    const first = createCandidate();
+    const second = createCandidate({
+      personId: "person-2",
+      name: "Lin",
+      sources: ["GitHub"]
+    });
+    const comparisonResult = {
+      entries: [
+        {
+          shortlistIndex: 1,
+          candidate: first,
+          profile: first.profile,
+          topEvidence: [],
+          decisionTag: "继续比较",
+          decisionScore: 84,
+          recommendation: "还需要更多证据判断",
+          nextStep: "回到 shortlist 继续 refine"
+        },
+        {
+          shortlistIndex: 2,
+          candidate: second,
+          profile: second.profile,
+          topEvidence: [],
+          decisionTag: "继续比较",
+          decisionScore: 83,
+          recommendation: "还需要更多证据判断",
+          nextStep: "回到 shortlist 继续 refine"
+        }
+      ],
+      outcome: {
+        confidence: "low-confidence" as const,
+        recommendationMode: "no-recommendation" as const,
+        recommendation: "我还没有足够证据推荐单一候选人。",
+        rationale: "当前 compare 结果缺少结构化 outcome。",
+        largestUncertainty: "compare outcome 缺失。",
+        suggestedRefinement: "先补一位更接近目标的候选人进入 compare。"
+      }
+    };
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    (workflow as any).comparePool = [first, second];
+    (workflow as any).tools.prepareComparison = vi.fn(async () => ({
+      targets: [first, second],
+      entries: comparisonResult.entries,
+      result: comparisonResult
+    }));
+    mockTui.promptCompareAction.mockResolvedValue("refine");
+    mockChat.askFreeform.mockResolvedValue("补一位 infra backend");
+
+    const result = await handleShortlistCommand(
+      { type: "compare" },
+      [first, second],
+      BASE_CONDITIONS,
+      { sortMode: "overall", visibleCount: 2, selectedIndex: 0 }
+    );
+
+    expect(mockChat.askFreeform).toHaveBeenCalledWith(
+      expect.stringContaining("先补一位更接近目标的候选人进入 compare")
+    );
+    expect(result).toEqual({
+      type: "done",
+      result: {
+        type: "refine",
+        prompt: "补一位 infra backend"
+      }
+    });
+    logSpy.mockRestore();
+  });
+
+  it("uses a candidate-scoped boundary prompt in detail refine mode", async () => {
+    const { workflow, showCandidateDetail, mockChat, mockTui, mockRenderer } = createWorkflowHarness();
+    const candidate = createCandidate({ name: "Ada" });
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    (workflow as any).sessionState = {
+      ...(workflow as any).sessionState,
+      recoveryState: {
+        ...(workflow as any).sessionState.recoveryState,
+        phase: "low_confidence_shortlist"
+      },
+      openUncertainties: [
+        "这轮检索表达偏宽，候选分数没有拉开，建议补更硬的角色或技能。"
+      ]
+    };
+    (workflow as any).loadProfileForCandidate = vi.fn(async () => candidate.profile);
+    mockTui.promptDetailAction
+      .mockResolvedValueOnce("refine");
+    mockChat.askFreeform.mockResolvedValue("更偏 infra backend");
+
+    const result = await showCandidateDetail(candidate, BASE_CONDITIONS);
+
+    expect(mockRenderer.renderProfile).toHaveBeenCalled();
+    expect(mockChat.askFreeform).toHaveBeenCalledWith(
+      expect.stringContaining("想基于 Ada 继续收敛？")
+    );
+    expect(mockChat.askFreeform).toHaveBeenCalledWith(
+      expect.stringContaining("检索表达还偏宽")
+    );
+    expect(result).toEqual({
+      type: "refine",
+      prompt: "更偏 infra backend"
+    });
+    logSpy.mockRestore();
+  });
+
   it("clears any stale recommendation and stays in low-confidence compare mode until evidence is assessed", async () => {
     const { workflow, handleShortlistCommand, mockRenderer, mockTui } = createWorkflowHarness();
     const first = createCandidate();
@@ -642,6 +898,8 @@ describe("SearchWorkflow shortlist command handling", () => {
         recommendation: "我还没有足够证据推荐单一候选人。",
         rationale: "当前 compare 结果缺少结构化 outcome。",
         largestUncertainty: "compare outcome 缺失。"
+        ,
+        suggestedRefinement: "先补一位更接近目标的候选人进入 compare。"
       }
     };
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
@@ -683,6 +941,225 @@ describe("SearchWorkflow shortlist command handling", () => {
       "compare outcome 缺失。"
     ]);
     expect(result.type).toBe("continue");
+  });
+
+  it("preserves boundary hints in compare no-recommendation output", async () => {
+    const { workflow, handleShortlistCommand, mockRenderer, mockTui } = createWorkflowHarness();
+    const first = createCandidate();
+    const second = createCandidate({
+      personId: "person-2",
+      name: "Grace",
+      bonjourUrl: undefined,
+      sources: ["GitHub"]
+    });
+    const comparisonEntries = [
+      {
+        shortlistIndex: 1,
+        candidate: first,
+        profile: first.profile,
+        topEvidence: [],
+        decisionTag: "继续比较",
+        decisionScore: 83,
+        recommendation: "还需要更多证据判断",
+        nextStep: "回到 shortlist 继续 refine"
+      },
+      {
+        shortlistIndex: 2,
+        candidate: second,
+        profile: second.profile,
+        topEvidence: [],
+        decisionTag: "继续比较",
+        decisionScore: 82,
+        recommendation: "还需要更多证据判断",
+        nextStep: "回到 shortlist 继续 refine"
+      }
+    ];
+    const comparisonResult = {
+      entries: comparisonEntries,
+      outcome: {
+        confidence: "low-confidence" as const,
+        recommendationMode: "no-recommendation" as const,
+        recommendation: "我还没有足够证据推荐单一候选人。",
+        rationale: "当前 compare 结果缺少结构化 outcome。",
+        largestUncertainty: "compare outcome 缺失。"
+      }
+    };
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    (workflow as any).comparePool = [first, second];
+    (workflow as any).sessionState = {
+      ...(workflow as any).sessionState,
+      recoveryState: {
+        ...(workflow as any).sessionState.recoveryState,
+        phase: "low_confidence_shortlist"
+      },
+      openUncertainties: [
+        "这轮检索表达偏宽，候选分数没有拉开，建议补更硬的角色或技能。"
+      ]
+    };
+    (workflow as any).tools.prepareComparison = vi.fn(async () => ({
+      targets: [first, second],
+      entries: comparisonEntries,
+      result: comparisonResult
+    }));
+    mockTui.promptCompareAction.mockResolvedValue("back");
+
+    const result = await handleShortlistCommand(
+      { type: "compare" },
+      [first, second],
+      BASE_CONDITIONS,
+      { sortMode: "overall", visibleCount: 2, selectedIndex: 0 }
+    );
+
+    expect(mockRenderer.renderComparison).toHaveBeenCalledTimes(1);
+    const firstRenderCall = mockRenderer.renderComparison.mock.calls.at(0);
+    if (!firstRenderCall) {
+      throw new Error("expected renderComparison to be called");
+    }
+    const renderedComparison = (firstRenderCall as unknown[])[0] as any;
+    expect(renderedComparison.outcome.largestUncertainty).toContain("检索表达偏宽");
+    expect(renderedComparison.outcome.suggestedRefinement).toContain("检索表达还偏宽");
+    expect((workflow as any).sessionState.openUncertainties[0]).toContain("检索表达偏宽");
+    expect(result.type).toBe("continue");
+    logSpy.mockRestore();
+  });
+
+  it("reruns search immediately when auto-compare chooses refine", async () => {
+    const { workflow, runSearchLoop, mockChat, mockTui } = createWorkflowHarness();
+    const first = createCandidate({ personId: "person-1", matchStrength: "strong" });
+    const second = createCandidate({ personId: "person-2", name: "Lin", matchStrength: "medium", sources: ["GitHub"] });
+    const refinedCandidate = createCandidate({ personId: "person-3", name: "Grace", matchStrength: "medium" });
+
+    (workflow as any).shouldPreloadProfiles = vi.fn(() => false);
+    (workflow as any).tools.searchCandidates = vi
+      .fn()
+      .mockResolvedValueOnce({
+        query: "杭州 python backend",
+        conditions: BASE_CONDITIONS,
+        candidates: [first, second]
+      })
+      .mockResolvedValueOnce({
+        query: "杭州 infra backend",
+        conditions: {
+          ...BASE_CONDITIONS,
+          mustHave: ["infra backend"]
+        },
+        candidates: [refinedCandidate]
+      });
+    (workflow as any).tools.prepareComparison = vi.fn(async () => ({
+      targets: [first, second],
+      entries: [],
+      result: {
+        entries: [],
+        outcome: {
+          confidence: "low-confidence" as const,
+          recommendationMode: "no-recommendation" as const,
+          recommendation: "我还没有足够证据推荐单一候选人。",
+          rationale: "需要更聚焦的检索条件。",
+          largestUncertainty: "当前 compare 还不够稳。",
+          suggestedRefinement: "先把角色收敛到 infra backend 再重试。"
+        }
+      }
+    }));
+    mockTui.promptCompareAction.mockResolvedValue("refine");
+    mockChat.askFreeform.mockResolvedValue("更偏 infra backend");
+    mockChat.reviseConditions.mockResolvedValue({
+      ...BASE_CONDITIONS,
+      mustHave: ["infra backend"]
+    });
+    (workflow as any).runShortlistLoop = vi.fn(async () => ({ type: "quit" }));
+
+    const result = await runSearchLoop(BASE_CONDITIONS);
+
+    expect(mockChat.askFreeform).toHaveBeenCalledWith(
+      expect.stringContaining("先把角色收敛到 infra backend 再重试")
+    );
+    expect(mockChat.reviseConditions).toHaveBeenCalledWith(
+      BASE_CONDITIONS,
+      "更偏 infra backend",
+      "edit",
+      expect.any(Object)
+    );
+    expect((workflow as any).tools.searchCandidates).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ type: "quit" });
+  });
+
+  it("reuses compare suggested refinement for shortlist refine after compare", async () => {
+    const { workflow, handleShortlistCommand, mockRenderer, mockTui, mockChat } = createWorkflowHarness();
+    const first = createCandidate();
+    const second = createCandidate({
+      personId: "person-2",
+      name: "Grace",
+      sources: ["GitHub"]
+    });
+    const comparisonResult = {
+      entries: [
+        {
+          shortlistIndex: 1,
+          candidate: first,
+          profile: first.profile,
+          topEvidence: [],
+          decisionTag: "继续比较",
+          decisionScore: 83,
+          recommendation: "还需要更多证据判断",
+          nextStep: "回到 shortlist 继续 refine"
+        },
+        {
+          shortlistIndex: 2,
+          candidate: second,
+          profile: second.profile,
+          topEvidence: [],
+          decisionTag: "继续比较",
+          decisionScore: 82,
+          recommendation: "还需要更多证据判断",
+          nextStep: "回到 shortlist 继续 refine"
+        }
+      ],
+      outcome: {
+        confidence: "low-confidence" as const,
+        recommendationMode: "no-recommendation" as const,
+        recommendation: "我还没有足够证据推荐单一候选人。",
+        rationale: "当前 compare 结果缺少结构化 outcome。",
+        largestUncertainty: "compare outcome 缺失。",
+        suggestedRefinement: "先补一位更接近目标的候选人进入 compare。"
+      }
+    };
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    (workflow as any).comparePool = [first, second];
+    (workflow as any).tools.prepareComparison = vi.fn(async () => ({
+      targets: [first, second],
+      entries: comparisonResult.entries,
+      result: comparisonResult
+    }));
+    mockTui.promptCompareAction.mockResolvedValue("back");
+    mockChat.askFreeform.mockResolvedValue("补一位更接近目标的候选人");
+
+    await handleShortlistCommand(
+      { type: "compare" },
+      [first, second],
+      BASE_CONDITIONS,
+      { sortMode: "overall", visibleCount: 2, selectedIndex: 0 }
+    );
+
+    const refineResult = await handleShortlistCommand(
+      { type: "refine" },
+      [first, second],
+      BASE_CONDITIONS,
+      { sortMode: "overall", visibleCount: 2, selectedIndex: 0 }
+    );
+
+    expect(mockChat.askFreeform).toHaveBeenCalledWith(
+      expect.stringContaining("先补一位更接近目标的候选人进入 compare")
+    );
+    expect(refineResult).toEqual({
+      type: "done",
+      result: {
+        type: "refine",
+        prompt: "补一位更接近目标的候选人"
+      }
+    });
+    logSpy.mockRestore();
   });
 
   it("does not relax source filtering after an empty retrieval", async () => {
@@ -1156,5 +1633,79 @@ describe("buildConditionAudit", () => {
         expect.objectContaining({ label: "技能 AI", status: "met" })
       ])
     );
+  });
+});
+
+describe("search recovery signals", () => {
+  it("resolves candidate anchor from current shortlist context before recovery diagnosis", () => {
+    const { workflow } = createWorkflowHarness();
+    const shortlist = [
+      createCandidate({ personId: "person-1", name: "Ada" }),
+      createCandidate({ personId: "person-2", name: "Lin" })
+    ];
+
+    (workflow as any).sessionState = {
+      ...(workflow as any).sessionState,
+      currentShortlist: shortlist,
+      activeCompareSet: []
+    };
+
+    const resolution = (workflow as any).resolveAnchorResolution(
+      {
+        ...BASE_CONDITIONS,
+        candidateAnchor: { shortlistIndex: 2, name: "Lin" }
+      },
+      []
+    );
+
+    expect(resolution).toEqual({
+      status: "resolved",
+      resolvedPersonId: "person-2"
+    });
+  });
+
+  it("attributes post-retrieval hard-filter dropoff by filter type", () => {
+    const { workflow } = createWorkflowHarness();
+    const evaluation = (workflow as any).evaluateSearchStateFilters(
+      {
+        id: "person-1",
+        primaryName: "Ada",
+        primaryHeadline: "Backend Engineer",
+        primaryLocation: "杭州",
+        summary: "做过 python 服务端"
+      },
+      {
+        personId: "person-1",
+        facetSource: ["GitHub"],
+        facetRole: [],
+        facetTags: ["python"],
+        facetLocation: ["杭州"],
+        docText: "python backend engineer"
+      },
+      [],
+      {
+        ...BASE_CONDITIONS,
+        mustHave: ["distributed systems"],
+        sourceBias: "bonjour"
+      }
+    );
+
+    const diagnostics = (workflow as any).buildFilterDropoffDiagnostics({
+      must_have: evaluation.failedFilters.filter((item: string) => item === "must_have").length,
+      source_bias: evaluation.failedFilters.filter((item: string) => item === "source_bias").length
+    });
+
+    expect(evaluation).toEqual({
+      matches: false,
+      failedFilters: ["must_have", "source_bias"]
+    });
+    expect(diagnostics).toEqual({
+      status: "available",
+      dominantFilter: "must_have",
+      dropoffByFilter: {
+        must_have: 1,
+        source_bias: 1
+      }
+    });
   });
 });

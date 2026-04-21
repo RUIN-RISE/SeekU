@@ -211,7 +211,8 @@ export function serializeRecoveryState(
     clarificationCount: recoveryState.clarificationCount,
     rewriteCount: recoveryState.rewriteCount,
     lowConfidenceEmitted: recoveryState.lowConfidenceEmitted,
-    lastRewrittenQuery: recoveryState.lastRewrittenQuery
+    lastRewrittenQuery: recoveryState.lastRewrittenQuery,
+    compareSuggestedRefinement: recoveryState.compareSuggestedRefinement
   };
 }
 
