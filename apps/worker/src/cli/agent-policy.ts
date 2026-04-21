@@ -1,6 +1,5 @@
 import type {
   MatchStrength,
-  RecoveryDiagnosis,
   ScoredCandidate,
   SearchConditions
 } from "./types.js";
@@ -22,11 +21,6 @@ export interface PostSearchPolicyDecision<TCandidate extends ScoredCandidate = S
   targets: TCandidate[];
 }
 
-export interface RecoveryPolicyDecision {
-  action: RecoveryAction;
-  rationale: string;
-}
-
 export type RecoveryPromptKind = "anchor" | "role" | "skill" | "generic";
 
 export interface RecoveryPolicyDecisionV2 {
@@ -43,13 +37,6 @@ interface ClarifyPolicyInput {
 
 interface PostSearchPolicyInput<TCandidate extends ScoredCandidate = ScoredCandidate> {
   candidates: TCandidate[];
-}
-
-interface RecoveryPolicyInput {
-  diagnosis: RecoveryDiagnosis;
-  clarificationCount: number;
-  rewriteCount: number;
-  hasFallbackCandidates: boolean;
 }
 
 interface RecoveryPolicyInputV2 {
@@ -177,34 +164,6 @@ export function decidePostSearchAction<TCandidate extends ScoredCandidate>(
     action: "narrow",
     rationale: "当前结果还偏弱，先保留 shortlist 继续 refine，再进入 compare。",
     targets
-  };
-}
-
-export function decideRecoveryAction(input: RecoveryPolicyInput): RecoveryPolicyDecision {
-  if (input.diagnosis === "intent_missing" && input.clarificationCount < 1) {
-    return {
-      action: "clarify",
-      rationale: "当前更像目标约束缺失，先补一个高价值约束再重试。"
-    };
-  }
-
-  if (input.rewriteCount < 1) {
-    return {
-      action: "rewrite",
-      rationale: "当前目标已经足够清楚，先自动收敛检索表达再重试。"
-    };
-  }
-
-  if (input.hasFallbackCandidates) {
-    return {
-      action: "low_confidence_shortlist",
-      rationale: "恢复预算已用完，但还有弱相关候选人，先给低置信 shortlist。"
-    };
-  }
-
-  return {
-    action: "stop",
-    rationale: "恢复预算已用完，且当前没有可用的低置信候选池。"
   };
 }
 
