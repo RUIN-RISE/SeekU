@@ -63,6 +63,12 @@ import {
   formatConditionsAsPrompt
 } from "./search-conditions.js";
 import {
+  describeRelativeDate,
+  truncateForDisplay,
+  buildEvidenceHeadline,
+  buildComparisonEvidence
+} from "./comparison-formatters.js";
+import {
   type AgentInterventionResult,
   buildAgentSessionSnapshot,
   createAgentSessionEvent,
@@ -3563,7 +3569,7 @@ export class SearchWorkflow {
 
     const projectMatch = normalized.match(/^project:\s*(.+)$/i);
     if (projectMatch?.[1]) {
-      return `相关项目：${this.truncateForDisplay(projectMatch[1].trim(), 36)}`;
+      return `相关项目：${truncateForDisplay(projectMatch[1].trim(), 36)}`;
     }
 
     if (normalized === "strong semantic similarity") {
@@ -3604,7 +3610,7 @@ export class SearchWorkflow {
       return undefined;
     }
 
-    return `相关证据：${this.buildEvidenceHeadline(fallbackEvidence)}`;
+    return `相关证据：${buildEvidenceHeadline(fallbackEvidence)}`;
   }
 
   private buildComparisonEntries(
@@ -3663,178 +3669,15 @@ export class SearchWorkflow {
         company: candidate.company,
         matchScore: candidate.matchScore,
         source: this.formatExportSource(candidate.sources),
-        freshness: freshnessDate ? this.describeRelativeDate(freshnessDate) : "时间未知",
+        freshness: freshnessDate ? describeRelativeDate(freshnessDate) : "时间未知",
         bonjourUrl: candidate.bonjourUrl,
         whyMatched: buildFullMatchReason(candidate),
         decisionTag: comparisonEntry?.decisionTag,
         recommendation: comparisonEntry?.recommendation,
         nextStep: comparisonEntry?.nextStep,
-        topEvidence: comparisonEntry?.topEvidence || this.buildComparisonEvidence(candidate._hydrated.evidence)
+        topEvidence: comparisonEntry?.topEvidence || buildComparisonEvidence(candidate._hydrated.evidence)
       };
     });
-  }
-
-  private computeComparisonDecisionScore(
-    candidate: HydratedCandidate,
-    profile: MultiDimensionProfile
-  ): number {
-    let score = profile.overallScore * 0.7 + candidate.matchScore * 100 * 0.2;
-
-    const freshnessDate = candidate.latestEvidenceAt ?? candidate.lastSyncedAt;
-    if (freshnessDate) {
-      const ageInDays = Math.floor(
-        (Date.now() - freshnessDate.getTime()) / (1000 * 60 * 60 * 24)
-      );
-      if (ageInDays <= 7) {
-        score += 8;
-      } else if (ageInDays <= 30) {
-        score += 5;
-      } else if (ageInDays <= 90) {
-        score += 2;
-      }
-    }
-
-    if (profile.dimensions.techMatch >= 80) {
-      score += 3;
-    }
-
-    if (profile.dimensions.projectDepth >= 70) {
-      score += 2;
-    }
-
-    return score;
-  }
-
-  private buildComparisonEvidence(evidence: EvidenceItem[]): ComparisonEvidenceSummary[] {
-    const priority: Record<string, number> = {
-      project: 0,
-      repository: 1,
-      experience: 2,
-      job_signal: 3,
-      profile_field: 4,
-      social: 5
-    };
-
-    return evidence
-      .map((item) => ({
-        item,
-        priority: priority[item.evidenceType] ?? 99
-      }))
-      .filter(({ item }) => Boolean(item.title?.trim() || item.description?.trim()))
-      .sort((left, right) => {
-        if (left.priority !== right.priority) {
-          return left.priority - right.priority;
-        }
-
-        const leftTime = left.item.occurredAt?.getTime() ?? 0;
-        const rightTime = right.item.occurredAt?.getTime() ?? 0;
-        return rightTime - leftTime;
-      })
-      .slice(0, 3)
-      .map(({ item }) => ({
-        evidenceType: item.evidenceType,
-        title: this.buildEvidenceHeadline(item),
-        sourceLabel: item.source === "bonjour" ? "Bonjour" : item.source === "github" ? "GitHub" : item.source,
-        freshnessLabel: item.occurredAt ? this.describeRelativeDate(item.occurredAt) : undefined
-      }));
-  }
-
-  private buildEvidenceHeadline(item: EvidenceItem): string {
-    const title = item.title?.trim();
-    const description = item.description?.trim();
-
-    if (item.evidenceType === "profile_field" && title && description) {
-      return this.truncateForDisplay(`${title}: ${description}`, 54);
-    }
-
-    if (title) {
-      return this.truncateForDisplay(title, 54);
-    }
-
-    return this.truncateForDisplay(description || "未命名证据", 54);
-  }
-
-  private buildComparisonRecommendation(
-    candidate: HydratedCandidate,
-    profile: MultiDimensionProfile,
-    decisionTag: ComparisonEntry["decisionTag"],
-    conditions?: SearchConditions
-  ): string {
-    const reasons: string[] = [];
-
-    if (candidate.queryReasons && candidate.queryReasons.length > 0) {
-      reasons.push(...candidate.queryReasons.slice(0, 2));
-    }
-
-    if (profile.dimensions.techMatch >= 75) {
-      reasons.push("技术相关性强");
-    }
-
-    if (profile.dimensions.projectDepth >= 65) {
-      reasons.push("项目证据更扎实");
-    }
-
-    if (profile.dimensions.locationMatch >= 90) {
-      reasons.push("地点完全匹配");
-    }
-
-    if (conditions?.sourceBias && candidate.sources.includes(conditions.sourceBias === "bonjour" ? "Bonjour" : "GitHub")) {
-      reasons.push("满足当前来源过滤");
-    }
-
-    if (candidate.latestEvidenceAt || candidate.lastSyncedAt) {
-      const freshnessDate = candidate.latestEvidenceAt ?? candidate.lastSyncedAt;
-      const freshnessText = freshnessDate ? this.describeRelativeDate(freshnessDate) : undefined;
-      if (freshnessText && freshnessText !== "时间未知") {
-        reasons.push(`资料${freshnessText}`);
-      }
-    }
-
-    const prefix =
-      decisionTag === "优先深看"
-        ? "建议优先打开"
-        : decisionTag === "继续比较"
-          ? "建议继续对照"
-          : "建议作为备选";
-
-    const dedupedReasons = [...new Set(reasons)];
-    return `${prefix}：${dedupedReasons.slice(0, 2).join("，") || "信息完整，可继续判断"}`;
-  }
-
-  private buildComparisonNextStep(
-    candidate: HydratedCandidate,
-    shortlistIndex: number | undefined,
-    decisionTag: ComparisonEntry["decisionTag"]
-  ): string {
-    if (!shortlistIndex) {
-      return candidate.bonjourUrl ? "返回 shortlist 后打开 Bonjour 深看" : "返回 shortlist 后查看详情";
-    }
-
-    if (decisionTag === "优先深看") {
-      return candidate.bonjourUrl
-        ? `返回 shortlist 后先执行 v ${shortlistIndex}，再用 o ${shortlistIndex} 打开 Bonjour`
-        : `返回 shortlist 后先执行 v ${shortlistIndex} 深看细节`;
-    }
-
-    if (decisionTag === "继续比较") {
-      return `返回 shortlist 后执行 v ${shortlistIndex} 补充判断`;
-    }
-
-    return `保留在 pool 中，必要时再查看 #${shortlistIndex}`;
-  }
-
-  private describeRelativeDate(date: Date): string {
-    return describeRelativeDate(date);
-  }
-
-  private truncateForDisplay(value: string, maxLength: number): string {
-    const normalized = value.replace(/\s+/g, " ").trim();
-    const chars = Array.from(normalized);
-    if (chars.length <= maxLength) {
-      return normalized;
-    }
-
-    return `${chars.slice(0, maxLength - 3).join("")}...`;
   }
 
   private pickCandidates(candidates: HydratedCandidate[], indexes: number[]): HydratedCandidate[] {

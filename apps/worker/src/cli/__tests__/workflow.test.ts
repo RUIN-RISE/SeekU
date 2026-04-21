@@ -9,6 +9,10 @@ import {
   buildResultWarning,
   classifyMatchStrength
 } from "../workflow.js";
+import {
+  computeComparisonDecisionScore,
+  buildComparisonRecommendation
+} from "../agent-tools.js";
 
 const BASE_CONDITIONS: SearchConditions = {
   skills: ["python"],
@@ -1532,7 +1536,6 @@ describe("buildCandidateSourceMetadata", () => {
 
 describe("compare source visibility", () => {
   it("lets a stronger github/web candidate outrank a bonjour-only candidate without hardcoded bonuses", () => {
-    const workflow = new SearchWorkflow({} as any, {} as any);
     const bonjourProfile = createProfile({
       dimensions: {
         techMatch: 79,
@@ -1556,14 +1559,14 @@ describe("compare source visibility", () => {
       overallScore: 77
     });
 
-    const bonjourCandidate = createCandidate({
+    const bonjourCandidate = { ...createCandidate({
       matchScore: 0.69,
       sources: ["Bonjour"],
       bonjourUrl: "https://bonjour.bio/ada",
       lastSyncedAt: undefined,
       latestEvidenceAt: undefined
-    });
-    const githubCandidate = createCandidate({
+    }), profile: bonjourProfile };
+    const githubCandidate = { ...createCandidate({
       personId: "person-2",
       name: "Lin",
       matchScore: 0.7,
@@ -1571,18 +1574,17 @@ describe("compare source visibility", () => {
       bonjourUrl: undefined,
       lastSyncedAt: undefined,
       latestEvidenceAt: undefined
-    });
+    }), profile: githubProfile };
 
-    const bonjourScore = (workflow as any).computeComparisonDecisionScore(bonjourCandidate, bonjourProfile);
-    const githubScore = (workflow as any).computeComparisonDecisionScore(githubCandidate, githubProfile);
+    const bonjourScore = computeComparisonDecisionScore(bonjourCandidate as any);
+    const githubScore = computeComparisonDecisionScore(githubCandidate as any);
 
     expect(githubScore).toBeGreaterThan(bonjourScore);
   });
 
   it("uses source-neutral fallback recommendation text", () => {
-    const workflow = new SearchWorkflow({} as any, {} as any);
-    const recommendation = (workflow as any).buildComparisonRecommendation(
-      createCandidate({
+    const candidate = {
+      ...createCandidate({
         queryReasons: [],
         matchReason: undefined,
         sources: ["Bonjour"],
@@ -1590,7 +1592,7 @@ describe("compare source visibility", () => {
         lastSyncedAt: undefined,
         latestEvidenceAt: undefined
       }),
-      createProfile({
+      profile: createProfile({
         dimensions: {
           techMatch: 40,
           locationMatch: 50,
@@ -1600,12 +1602,20 @@ describe("compare source visibility", () => {
           communityReputation: 25
         },
         overallScore: 42
-      }),
+      })
+    };
+    const okAssessment = { score: 70, verdict: "mixed" as const, summary: "一般", evidenceTrace: [] };
+    const recommendation = buildComparisonRecommendation(
+      candidate as any,
       "继续比较",
-      undefined
+      undefined,
+      okAssessment,
+      okAssessment,
+      okAssessment,
+      { level: "low", summary: "可控" }
     );
 
-    expect(recommendation).toContain("信息完整，可继续判断");
+    expect(recommendation).toContain("建议继续对照");
     expect(recommendation).not.toContain("Bonjour 资料完整");
   });
 });

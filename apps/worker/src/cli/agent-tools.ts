@@ -1,6 +1,5 @@
 import type {
   ComparisonEntry,
-  ComparisonEvidenceSummary,
   ComparisonConfidenceLevel,
   ComparisonDimensionAssessment,
   ComparisonDimensionVerdict,
@@ -12,6 +11,11 @@ import type {
   ScoredCandidate,
   SearchConditions
 } from "./types.js";
+import {
+  describeRelativeDate,
+  buildEvidenceHeadline,
+  buildComparisonEvidence
+} from "./comparison-formatters.js";
 
 interface CandidateEvidenceItem {
   evidenceType: string;
@@ -331,77 +335,6 @@ export function prepareComparisonCandidates<TCandidate extends ScoredCandidate>(
   });
 }
 
-function describeRelativeDate(date: Date): string {
-  const ageInDays = Math.floor(
-    (Date.now() - date.getTime()) / (1000 * 60 * 60 * 24)
-  );
-
-  if (ageInDays <= 0) {
-    return "今天";
-  }
-
-  return `${ageInDays}天前`;
-}
-
-function truncate(value: string, maxLength: number): string {
-  const normalized = value.replace(/\s+/g, " ").trim();
-  const chars = Array.from(normalized);
-  if (chars.length <= maxLength) {
-    return normalized;
-  }
-
-  return `${chars.slice(0, maxLength - 3).join("")}...`;
-}
-
-function buildEvidenceHeadline(item: CandidateEvidenceItem): string {
-  const title = item.title?.trim();
-  const description = item.description?.trim();
-
-  if (item.evidenceType === "profile_field" && title && description) {
-    return truncate(`${title}: ${description}`, 54);
-  }
-
-  if (title) {
-    return truncate(title, 54);
-  }
-
-  return truncate(description || "未命名证据", 54);
-}
-
-function buildComparisonEvidence(evidence: CandidateEvidenceItem[]): ComparisonEvidenceSummary[] {
-  const priority: Record<string, number> = {
-    project: 0,
-    repository: 1,
-    experience: 2,
-    job_signal: 3,
-    profile_field: 4,
-    social: 5
-  };
-
-  return evidence
-    .map((item) => ({
-      item,
-      priority: priority[item.evidenceType] ?? 99
-    }))
-    .filter(({ item }) => Boolean(item.title?.trim() || item.description?.trim()))
-    .sort((left, right) => {
-      if (left.priority !== right.priority) {
-        return left.priority - right.priority;
-      }
-
-      const leftTime = left.item.occurredAt?.getTime() ?? 0;
-      const rightTime = right.item.occurredAt?.getTime() ?? 0;
-      return rightTime - leftTime;
-    })
-    .slice(0, 3)
-    .map(({ item }) => ({
-      evidenceType: item.evidenceType,
-      title: buildEvidenceHeadline(item),
-      sourceLabel: item.source === "bonjour" ? "Bonjour" : item.source === "github" ? "GitHub" : item.source,
-      freshnessLabel: item.occurredAt ? describeRelativeDate(item.occurredAt) : undefined
-    }));
-}
-
 function dedupeStrings(values: string[]): string[] {
   const seen = new Set<string>();
   const deduped: string[] = [];
@@ -445,7 +378,7 @@ function buildDimensionAssessment(
   };
 }
 
-function computeComparisonDecisionScore(
+export function computeComparisonDecisionScore(
   candidate: ComparisonHydratedCandidate
 ): number {
   let score = candidate.profile.overallScore * 0.7 + candidate.matchScore * 100 * 0.2;
@@ -592,7 +525,7 @@ function buildUncertainty(
   };
 }
 
-function buildComparisonRecommendation(
+export function buildComparisonRecommendation(
   candidate: ComparisonHydratedCandidate,
   decisionTag: ComparisonEntry["decisionTag"],
   conditions: SearchConditions | undefined,
