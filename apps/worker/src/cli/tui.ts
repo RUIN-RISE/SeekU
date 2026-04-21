@@ -262,9 +262,12 @@ export class TerminalUI {
     lines.push(chalk.dim("=".repeat(72)));
 
     if (options.lowConfidence) {
-      lines.push(chalk.yellow("低置信 shortlist"));
-      lines.push(chalk.dim("可先看的人：先从下面这些候选人开始，这不是最终推荐。"));
-      lines.push(chalk.dim(`为什么我还不能直接推荐：${options.uncertaintySummary || "当前结果还不够稳。继续 refine 后再做 compare 更合适。"} `));
+      lines.push(chalk.yellow("参考 shortlist（不够推荐，但可以先看）"));
+      lines.push(chalk.dim("下面这些人有部分匹配，但我还不敢直接推荐。"));
+      if (options.uncertaintySummary) {
+        lines.push(chalk.dim(`原因：${options.uncertaintySummary}`));
+      }
+      lines.push(chalk.dim("你可以先浏览，用 refine 调整方向，或直接退出。"));
       lines.push(chalk.dim("-".repeat(72)));
     }
 
@@ -463,9 +466,15 @@ export class TerminalUI {
   }
 
   displayNoResults(conditions: SearchConditions) {
-    console.log(chalk.yellow("\n这一轮没有找到合适候选人。"));
+    console.log(chalk.yellow("\n这轮没找到合适的人。"));
     console.log(chalk.dim(`当前条件：${this.formatConditionsSummary(conditions)}`));
-    console.log(chalk.dim("可以试试放宽地点、经验，或者补充更明确的技术栈。"));
+    console.log(chalk.dim(""));
+    console.log(chalk.dim("你可以："));
+    console.log(chalk.dim("  1. 放宽地点或经验要求"));
+    console.log(chalk.dim("  2. 换一个更常见的角色或技能"));
+    console.log(chalk.dim("  3. 去掉 must-have 或来源限制"));
+    console.log(chalk.dim(""));
+    console.log(chalk.dim("或者直接告诉我你想换什么方向。"));
   }
 
   displayInvalidCommand(input: string) {

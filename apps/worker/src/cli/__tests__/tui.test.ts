@@ -61,9 +61,9 @@ describe("TerminalUI banner", () => {
     );
 
     const output = stdoutSpy.mock.calls.map((call) => call.join("")).join("\n");
-    expect(output).toContain("低置信 shortlist");
-    expect(output).toContain("可先看的人");
-    expect(output).toContain("为什么我还不能直接推荐");
+    expect(output).toContain("参考 shortlist");
+    expect(output).toContain("有部分匹配");
+    expect(output).toContain("原因");
   });
 });
 

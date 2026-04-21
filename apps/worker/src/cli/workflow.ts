@@ -2083,7 +2083,7 @@ export class SearchWorkflow {
 
       if (recoveryOutcome.type === "stop") {
         const stopUncertainty = getPrimaryUncertainty(this.sessionState.openUncertainties)
-          || "这轮 recovery 已经用完，但仍没有形成可用 shortlist。";
+          || "这轮没有找到足够合适的候选人。";
         let nextState = setSessionShortlist(this.sessionState, []);
         nextState = setOpenUncertainties(nextState, [stopUncertainty]);
         this.applySessionState(nextState);
@@ -2092,6 +2092,7 @@ export class SearchWorkflow {
           resultCount: 0
         });
         this.tui.displayNoResults(conditions);
+        console.log(chalk.dim(stopUncertainty));
         this.setSessionStatus("waiting-input", "等待你调整搜索方向。");
         const prompt = await this.chat.askFreeform(
           this.buildRecoveryRefinePrompt(
@@ -2100,6 +2101,7 @@ export class SearchWorkflow {
           )
         );
         if (!prompt) {
+          console.log(chalk.dim("没有收到新指令，你可以稍后再来继续。"));
           this.setSessionStatus("blocked", "未收到新的 refine 指令。");
           return { type: "restart" };
         }
