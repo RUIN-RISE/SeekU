@@ -71,6 +71,7 @@ import { ProfileManager } from "./profile-manager.js";
 import { ComparisonController, type CompareLoopOutcome } from "./comparison-controller.js";
 import { SearchExecutor, type SearchExecutionResult, type SearchExecutionDiagnostics, type HydratedCandidate } from "./search-executor.js";
 import { ConditionRevisionService } from "./condition-revision-service.js";
+import { RecoveryHandler, type SearchRecoveryHandlingResult } from "./recovery-handler.js";
 import { contextHasTermValue, buildSearchStateContextValue, findMatchedTermsValue } from "./search-context-helpers.js";
 import {
   type AgentInterventionResult,
@@ -137,28 +138,6 @@ interface SearchLoopOutcome {
   type: "refine" | "restart" | "quit" | "restore";
   prompt?: string;
   conditions?: SearchConditions;  // For undo: directly restore conditions
-}
-
-interface SearchRecoveryAssessment {
-  usable: boolean;
-  diagnosis?: RecoveryDiagnosis;
-  rationale?: string;
-  weakCandidateCount: number;
-  canEmitLowConfidenceShortlist: boolean;
-}
-
-interface SearchRecoveryAnalysis {
-  attemptReport: SearchAttemptReport;
-  failureReport: SearchFailureReport;
-  assessment: SearchRecoveryAssessment;
-}
-
-interface SearchRecoveryHandlingResult {
-  type: "continue" | "retry" | "low_confidence_shortlist" | "stop";
-  conditions?: SearchConditions;
-  candidates?: HydratedCandidate[];
-  resultWarning?: string;
-  uncertaintySummary?: string;
 }
 
 interface DetailOutcome {
@@ -791,6 +770,7 @@ export class SearchWorkflow {
   private comparisonController: ComparisonController;
   private searchExecutor: SearchExecutor;
   private conditionRevisionService: ConditionRevisionService;
+  private recoveryHandler: RecoveryHandler;
 
   constructor(
     private db: SeekuDatabase,
@@ -845,6 +825,18 @@ export class SearchWorkflow {
       getSessionState: () => this.sessionState,
       applySessionState: (next) => this.applySessionState(next)
     });
+    this.recoveryHandler = new RecoveryHandler({
+      conditionRevisionService: this.conditionRevisionService,
+      chat: this.chat,
+      spinner: this.spinner,
+      scorer: this.scorer,
+      getSessionState: () => this.sessionState,
+      applySessionState: (next) => this.applySessionState(next),
+      setSessionStatus: (status, summary) => this.setSessionStatus(status as any, summary),
+      appendTranscriptEntry: (role, content) => this.appendTranscriptEntry(role as any, content),
+      getLastSearchDiagnostics: () => this.lastSearchDiagnostics,
+      getSessionId: () => this.sessionId
+    });
     this.tools = createSearchAgentTools({
       searchCandidates: async ({ query, conditions }) => {
         const result = await this.performSearch(query, conditions);
@@ -893,8 +885,8 @@ export class SearchWorkflow {
       setSessionStatus: (status, summary) => this.setSessionStatus(status as any, summary),
       emitSessionEvent: (type, summary, data) => this.emitSessionEvent(type as any, summary, data),
       refreshCandidateQueryExplanation: (candidate, conditions) => this.searchExecutor.refreshCandidateQueryExplanation(candidate as any, conditions),
-      decorateComparisonResult: (result, conditions) => this.applyBoundaryContextToComparisonResult(result, conditions),
-      buildCompareRefinePrompt: (conditions) => this.buildCompareRefinePrompt(conditions)
+      decorateComparisonResult: (result, conditions) => this.recoveryHandler.applyBoundaryContextToComparisonResult(result, conditions),
+      buildCompareRefinePrompt: (conditions) => this.recoveryHandler.buildCompareRefinePrompt(conditions)
     });
     this.emitSessionEvent(
       "session_started",
@@ -1475,517 +1467,6 @@ export class SearchWorkflow {
     }
   }
 
-  private analyzeSearchRecovery(
-    candidates: HydratedCandidate[],
-    conditions: SearchConditions
-  ): SearchRecoveryAnalysis {
-    const currentRecovery = this.sessionState.recoveryState;
-    const now = new Date();
-    const retrievalDiagnostics = this.buildAttemptRetrievalDiagnostics(candidates.length);
-    const attemptReport = buildSearchAttemptReport({
-      sessionId: this.sessionId,
-      attemptId: randomUUID(),
-      attemptOrdinal: this.sessionState.searchHistory.length + 1,
-      trigger:
-        currentRecovery.rewriteCount > 0
-          ? "post_rewrite"
-          : currentRecovery.clarificationCount > 0
-            ? "post_clarification"
-            : "initial_search",
-      startedAt: now,
-      completedAt: now,
-      rawUserGoal: this.sessionState.userGoal ?? undefined,
-      effectiveQuery: buildEffectiveQuery(conditions) || formatConditionsAsPrompt(conditions),
-      rewrittenFromQuery: currentRecovery.lastRewrittenQuery,
-      conditions,
-      candidates,
-      recoveryState: {
-        clarificationCount: currentRecovery.clarificationCount,
-        rewriteCount: currentRecovery.rewriteCount
-      },
-      previousFailureCodes: [],
-      limits: {
-        clarifyLimit: 1,
-        rewriteLimit: 1
-      },
-      anchorResolution: this.resolveAnchorResolution(conditions, candidates),
-      retrievalDiagnostics
-    });
-    const failureReport = buildSearchFailureReport({
-      attempt: attemptReport,
-      generatedAt: now
-    });
-
-    return {
-      attemptReport,
-      failureReport,
-      assessment: toLegacyRecoveryAssessment(attemptReport, failureReport)
-    };
-  }
-
-  private buildAttemptRetrievalDiagnostics(
-    candidateCount: number
-  ): SearchExecutionDiagnostics | undefined {
-    const baseDiagnostics = this.lastSearchDiagnostics;
-    if (!baseDiagnostics) {
-      return undefined;
-    }
-
-    const dropoff = baseDiagnostics.filterDropoff;
-    const dropoffValues = Object.values(dropoff?.dropoffByFilter ?? {});
-    const hasDropoff = dropoffValues.some((count) => (count ?? 0) > 0);
-    const unrestrictedRetrievedCount = baseDiagnostics.sourceCounterfactual?.unrestrictedRetrievedCount;
-    const supportingSignals: string[] = [];
-
-    if (candidateCount === 0) {
-      if (!hasDropoff) {
-        supportingSignals.push("no dominant hard-filter dropoff detected");
-      }
-      if (unrestrictedRetrievedCount === 0) {
-        supportingSignals.push("unrestricted retrieval also returned zero candidates");
-      }
-      if (dropoff?.status === "unavailable") {
-        supportingSignals.push("post-retrieval dropoff attribution unavailable");
-      }
-    }
-
-    return {
-      ...baseDiagnostics,
-      corpusCoverage: {
-        status: "available",
-        suspectedGap:
-          candidateCount === 0
-          && !hasDropoff
-          && (unrestrictedRetrievedCount === undefined || unrestrictedRetrievedCount === 0),
-        supportingSignals,
-      }
-    };
-  }
-
-  private resolveAnchorResolution(
-    conditions: SearchConditions,
-    candidates: HydratedCandidate[]
-  ): {
-    status: "resolved" | "not_found" | "ambiguous" | "not_attempted";
-    resolvedPersonId?: string;
-    failureReason?: string;
-  } | undefined {
-    const anchor = conditions.candidateAnchor;
-    if (!anchor) {
-      return undefined;
-    }
-
-    if (anchor.personId?.trim()) {
-      return {
-        status: "resolved",
-        resolvedPersonId: anchor.personId.trim()
-      };
-    }
-
-    const pools = [
-      ...this.sessionState.currentShortlist,
-      ...this.sessionState.activeCompareSet,
-      ...candidates
-    ];
-
-    if (typeof anchor.shortlistIndex === "number" && anchor.shortlistIndex > 0) {
-      const shortlistCandidate = this.sessionState.currentShortlist[anchor.shortlistIndex - 1] as HydratedCandidate | undefined;
-      if (shortlistCandidate) {
-        return {
-          status: "resolved",
-          resolvedPersonId: shortlistCandidate.personId
-        };
-      }
-    }
-
-    if (anchor.name?.trim()) {
-      const normalizedName = anchor.name.trim().toLowerCase();
-      const matches = pools.filter((candidate) => candidate.name.trim().toLowerCase() === normalizedName);
-      if (matches.length === 1) {
-        return {
-          status: "resolved",
-          resolvedPersonId: matches[0].personId
-        };
-      }
-
-      if (matches.length > 1) {
-        return {
-          status: "ambiguous",
-          failureReason: `multiple candidates matched anchor name: ${anchor.name.trim()}`
-        };
-      }
-
-      return {
-        status: "not_found",
-        failureReason: `anchor name not found in available candidate context: ${anchor.name.trim()}`
-      };
-    }
-
-    return {
-      status: "not_found",
-      failureReason: "anchor was provided without a resolvable personId, shortlist index, or name"
-    };
-  }
-
-  private buildRecoveryClarificationPrompt(
-    conditions: SearchConditions,
-    promptKind: RecoveryPromptKind = "generic"
-  ): string {
-    if (promptKind === "anchor") {
-      const anchorName = conditions.candidateAnchor?.name || conditions.candidateAnchor?.personId || "这个参照人";
-      return `你提到的参照对象“${anchorName}”我没法稳定识别。换一个参照人，或者直接描述你要找的人。`;
-    }
-
-    if (promptKind === "role") {
-      return "我现在缺少最核心的角色方向。补一句：你最想找的是哪类人？";
-    }
-
-    if (promptKind === "skill") {
-      return "我现在缺少必须技术或领域主轴。补一句你最不能妥协的技术/方向。";
-    }
-
-    if (!conditions.role && !conditions.candidateAnchor?.personId && !conditions.candidateAnchor?.name) {
-      return "我现在缺少最核心的角色方向。补一句：你最想找的是哪类人？";
-    }
-
-    if (conditions.skills.length === 0 && conditions.mustHave.length === 0) {
-      return "我现在缺少必须技术或领域主轴。补一句你最不能妥协的技术/方向。";
-    }
-
-    if (conditions.locations.length === 0) {
-      return "如果地点是硬约束，补一句目标地点；如果不是，回我“不限”。";
-    }
-
-    return "补一句你这轮最不能妥协的必须项，我再重试一轮。";
-  }
-
-  private buildRecoveryRefinePrompt(
-    conditions: SearchConditions,
-    boundaryDiagnosticCode?: RecoveryBoundaryDiagnosticCode
-  ): string {
-    const boundaryPrompt = buildRecoveryBoundaryRefinePrompt(
-      boundaryDiagnosticCode,
-      conditions
-    );
-    if (boundaryPrompt) {
-      return boundaryPrompt;
-    }
-
-    return "想怎么调整这轮搜索？例如：去掉销售 / 更看重最近活跃 / 更偏 Bonjour";
-  }
-
-  private buildShortlistRefinePrompt(
-    conditions: SearchConditions,
-    subjectName?: string
-  ): string {
-    const compareSuggestedRefinement = this.sessionState.recoveryState.compareSuggestedRefinement?.trim();
-    if (compareSuggestedRefinement) {
-      return subjectName
-        ? `想基于 ${subjectName} 继续收敛？${compareSuggestedRefinement}`
-        : compareSuggestedRefinement;
-    }
-
-    const boundaryDiagnosticCode = this.sessionState.recoveryState.phase === "low_confidence_shortlist"
-      ? this.sessionState.recoveryState.boundaryDiagnosticCode
-      : undefined;
-    const basePrompt = this.buildRecoveryRefinePrompt(conditions, boundaryDiagnosticCode);
-
-    if (!subjectName || !boundaryDiagnosticCode) {
-      return basePrompt;
-    }
-
-    return `想基于 ${subjectName} 继续收敛？${basePrompt}`;
-  }
-
-  private buildCompareRefinePrompt(
-    conditions: SearchConditions
-  ): string {
-    const compareSuggestedRefinement = this.sessionState.recoveryState.compareSuggestedRefinement?.trim();
-    if (compareSuggestedRefinement) {
-      return `当前 compare 还不够稳。${compareSuggestedRefinement}`;
-    }
-
-    return this.buildRecoveryRefinePrompt(
-      conditions,
-      this.sessionState.recoveryState.boundaryDiagnosticCode
-    ) ?? "想怎么继续 refine？例如：去掉销售 / 更看重最近活跃 / 更偏后端。";
-  }
-
-  private applyBoundaryContextToComparisonResult(
-    comparisonResult: ComparisonResult,
-    conditions: SearchConditions
-  ): ComparisonResult {
-    const boundaryDiagnosticCode = this.sessionState.recoveryState.boundaryDiagnosticCode;
-    if (!boundaryDiagnosticCode) {
-      return comparisonResult;
-    }
-
-    const shouldAugment =
-      comparisonResult.outcome.confidence === "low-confidence"
-      || comparisonResult.outcome.recommendationMode === "no-recommendation";
-
-    if (!shouldAugment) {
-      return comparisonResult;
-    }
-
-    const boundaryHint = buildRecoveryBoundaryHint(boundaryDiagnosticCode);
-    const largestUncertainty = joinRecoveryMessages(
-      comparisonResult.outcome.largestUncertainty,
-      boundaryHint
-    ) ?? comparisonResult.outcome.largestUncertainty;
-    const suggestedRefinement = joinRecoveryMessages(
-      comparisonResult.outcome.suggestedRefinement,
-      this.buildRecoveryRefinePrompt(conditions, boundaryDiagnosticCode)
-    ) ?? comparisonResult.outcome.suggestedRefinement;
-
-    return {
-      ...comparisonResult,
-      outcome: {
-        ...comparisonResult.outcome,
-        largestUncertainty,
-        suggestedRefinement
-      }
-    };
-  }
-
-  private async rewriteConditionsForRecovery(
-    conditions: SearchConditions,
-    candidates: HydratedCandidate[] = []
-  ): Promise<SearchConditions> {
-    this.spinner.start("正在自动收敛检索表达...");
-    try {
-      return normalizeConditions(
-        await this.chat.reviseConditions(
-          conditions,
-          "不要改变用户显式 must-have / exclude / sourceBias 的前提下，把这轮搜索条件改写成更利于召回正确候选人的版本。收紧角色主轴，补全显式技能表述，去掉空泛表述，但不要发明新的用户约束。",
-          "tighten",
-          {
-            shortlist: buildRefineContextCandidates(candidates)
-          }
-        )
-      );
-    } finally {
-      this.spinner.stop();
-    }
-  }
-
-  private applyRecoveryStateWithUncertainty(
-    recoveryState: SearchRecoveryState,
-    uncertaintySummary?: string
-  ): void {
-    let nextState = setRecoveryState(this.sessionState, recoveryState);
-    if (typeof uncertaintySummary === "string") {
-      nextState = setOpenUncertainties(nextState, [uncertaintySummary]);
-    }
-    this.applySessionState(nextState);
-  }
-
-  private transitionRecoveryPhase(
-    phase: SearchRecoveryState["phase"],
-    options: {
-      summary?: string;
-      uncertaintySummary?: string;
-      overrides?: Partial<SearchRecoveryState>;
-      status?: AgentSessionStatus;
-    } = {}
-  ): SearchRecoveryState {
-    const currentRecovery = this.sessionState.recoveryState;
-    assertAllowedRecoveryPhaseTransition(currentRecovery.phase, phase);
-
-    const nextRecoveryState = createEmptyRecoveryState({
-      ...currentRecovery,
-      compareSuggestedRefinement: undefined,
-      ...options.overrides,
-      phase
-    });
-
-    this.applyRecoveryStateWithUncertainty(nextRecoveryState, options.uncertaintySummary);
-
-    const nextStatus = options.status ?? getSessionStatusForRecoveryPhase(phase);
-    if (nextStatus) {
-      this.setSessionStatus(nextStatus, options.summary ?? null);
-    }
-
-    return nextRecoveryState;
-  }
-
-  private async handleSearchRecovery(
-    candidates: HydratedCandidate[],
-    conditions: SearchConditions,
-    effectiveQuery: string
-  ): Promise<SearchRecoveryHandlingResult> {
-    const analysis = this.analyzeSearchRecovery(candidates, conditions);
-    const { assessment, failureReport, attemptReport } = analysis;
-    if (assessment.usable) {
-      let nextState = resetRecoveryState(this.sessionState);
-      nextState = setOpenUncertainties(nextState, []);
-      this.applySessionState(nextState);
-      return {
-        type: "continue",
-        candidates,
-        resultWarning: buildResultWarning(candidates)
-      };
-    }
-
-    const currentRecovery = this.sessionState.recoveryState;
-    const diagnosis = assessment.diagnosis ?? "retrieval_failed";
-    const boundaryDiagnosticCode = getRecoveryBoundaryDiagnosticCode(failureReport);
-    const boundaryHint = buildRecoveryBoundaryHint(boundaryDiagnosticCode);
-    const diagnosisSummary = joinRecoveryMessages(assessment.rationale, boundaryHint);
-    const diagnosingState = this.transitionRecoveryPhase("diagnosing", {
-      overrides: {
-        diagnosis,
-        rationale: diagnosisSummary ?? assessment.rationale,
-        boundaryDiagnosticCode
-      },
-      uncertaintySummary: diagnosisSummary,
-      summary: diagnosisSummary || "正在判断为什么这轮结果不够理想。"
-    });
-
-    const decision = decideRecoveryActionV2({
-      attempt: attemptReport,
-      failure: failureReport
-    });
-    console.log(chalk.dim(decision.rationale));
-
-    if (decision.action === "clarify") {
-      const prompt = this.buildRecoveryClarificationPrompt(conditions, decision.promptKind);
-      this.transitionRecoveryPhase("clarifying", {
-        overrides: {
-          ...diagnosingState
-        },
-        uncertaintySummary: joinRecoveryMessages("我还缺一个关键约束，先补一句再重试。", boundaryHint),
-        summary: "我还缺一个关键约束，先问你一句。"
-      });
-      const instruction = await this.chat.askFreeform(prompt);
-
-      if (!instruction) {
-        if (assessment.canEmitLowConfidenceShortlist) {
-          this.transitionRecoveryPhase("low_confidence_shortlist", {
-            overrides: {
-              ...diagnosingState,
-              lowConfidenceEmitted: true
-            },
-            uncertaintySummary: joinRecoveryMessages(
-              "没有补充新的关键约束，因此当前只能提供低置信 shortlist。",
-              boundaryHint
-            ),
-            summary: "当前是低置信 shortlist，只适合先看，不适合直接推荐。"
-          });
-          this.applySessionState(setConfidenceStatus(this.sessionState, {
-            level: "low",
-            rationale: "recovery clarification skipped",
-            updatedAt: new Date()
-          }));
-          return {
-            type: "low_confidence_shortlist",
-            candidates,
-            resultWarning: "这是低置信 shortlist：先给你一组可先看的人，但我还不能直接推荐。",
-            uncertaintySummary: joinRecoveryMessages(
-              "我还缺一个关键约束，所以这轮只能给低置信 shortlist。",
-              boundaryHint
-            )
-          };
-        }
-
-        this.transitionRecoveryPhase("exhausted", {
-          overrides: {
-            ...diagnosingState
-          },
-          uncertaintySummary: joinRecoveryMessages(
-            "没有补充新的关键约束，因此当前无法继续恢复。",
-            boundaryHint
-          ),
-          summary: "没有补充新的关键约束，因此当前无法继续恢复。"
-        });
-        return { type: "stop" };
-      }
-
-      this.appendTranscriptEntry("user", instruction);
-      const revisedConditions = await this.conditionRevisionService.revise(conditions, instruction, candidates);
-      this.transitionRecoveryPhase("idle", {
-        overrides: {
-          ...diagnosingState,
-          clarificationCount: currentRecovery.clarificationCount + 1
-        },
-        uncertaintySummary: "已补充关键约束，重新搜索。"
-      });
-      this.setSessionStatus("searching", "已补充关键约束，正在重新搜索。");
-      return {
-        type: "retry",
-        conditions: revisedConditions
-      };
-    }
-
-    if (decision.action === "rewrite") {
-      this.transitionRecoveryPhase("rewriting", {
-        overrides: {
-          ...diagnosingState
-        },
-        uncertaintySummary: joinRecoveryMessages(decision.rationale, boundaryHint),
-        summary: decision.rationale
-      });
-      const rewrittenConditions = await this.rewriteConditionsForRecovery(conditions, candidates);
-      const rewrittenQuery = buildEffectiveQuery(rewrittenConditions) || effectiveQuery;
-      this.transitionRecoveryPhase("idle", {
-        overrides: {
-          ...diagnosingState,
-          rewriteCount: currentRecovery.rewriteCount + 1,
-          lastRewrittenQuery: rewrittenQuery
-        },
-        uncertaintySummary: joinRecoveryMessages(
-          `我把检索表达收敛成更明确的版本后再试一轮：${truncateDisplayValue(rewrittenQuery, 48)}`,
-          boundaryHint
-        )
-      });
-      this.setSessionStatus("searching", "已收敛检索表达，正在重新搜索。");
-      return {
-        type: "retry",
-        conditions: rewrittenConditions
-      };
-    }
-
-    if (decision.action === "low_confidence_shortlist" && assessment.canEmitLowConfidenceShortlist) {
-      const uncertaintySummary = joinRecoveryMessages(
-        decision.targetFailureCode?.startsWith("intent_")
-          ? "当前还有关键约束没补全，所以这份 shortlist 只能低置信参考。"
-          : "我已经自动重试过一轮，但这批人仍然只够低置信参考。",
-        boundaryHint
-      );
-      this.transitionRecoveryPhase("low_confidence_shortlist", {
-        overrides: {
-          ...diagnosingState,
-          lowConfidenceEmitted: true
-        },
-        uncertaintySummary,
-        summary: "当前是低置信 shortlist，只适合先看，不适合直接推荐。"
-      });
-      this.applySessionState(setConfidenceStatus(this.sessionState, {
-        level: "low",
-        rationale: diagnosis,
-        updatedAt: new Date()
-      }));
-      return {
-        type: "low_confidence_shortlist",
-        candidates,
-        resultWarning: "这是低置信 shortlist：先给你一组可先看的人，但我还不能直接推荐。",
-        uncertaintySummary
-      };
-    }
-
-    this.transitionRecoveryPhase("exhausted", {
-      overrides: {
-        ...diagnosingState
-      },
-      uncertaintySummary: joinRecoveryMessages(
-        "这轮 recovery 已经用完，但仍没有形成可用 shortlist。",
-        boundaryHint
-      ),
-      summary: "这轮 recovery 已用完，但仍没有形成可用 shortlist。"
-    });
-    return { type: "stop" };
-  }
-
   private async runSearchLoop(initialConditions: SearchConditions): Promise<SearchLoopOutcome> {
     let conditions = normalizeConditions(initialConditions);
     let sortMode: SortMode = "overall";
@@ -2025,7 +1506,7 @@ export class SearchWorkflow {
         throw error;
       }
 
-      const recoveryOutcome = await this.handleSearchRecovery(candidates, conditions, effectiveQuery);
+      const recoveryOutcome = await this.recoveryHandler.handleSearchRecovery(candidates, conditions, effectiveQuery);
       if (recoveryOutcome.type === "retry" && recoveryOutcome.conditions) {
         conditions = recoveryOutcome.conditions;
         shortlistPresentation = undefined;
@@ -2047,7 +1528,7 @@ export class SearchWorkflow {
         console.log(chalk.dim(stopUncertainty));
         this.setSessionStatus("waiting-input", "等待你调整搜索方向。");
         const prompt = await this.chat.askFreeform(
-          this.buildRecoveryRefinePrompt(
+          this.recoveryHandler.buildRecoveryRefinePrompt(
             conditions,
             this.sessionState.recoveryState.boundaryDiagnosticCode
           )
@@ -2283,7 +1764,7 @@ export class SearchWorkflow {
     if (command.type === "refine") {
       this.tui.resetShortlistViewport();
       const prompt = command.prompt || await this.chat.askFreeform(
-        this.buildShortlistRefinePrompt(conditions)
+        this.recoveryHandler.buildShortlistRefinePrompt(conditions)
       );
       if (!prompt) {
         return continueWith();
@@ -2652,7 +2133,7 @@ export class SearchWorkflow {
 
       if (action === "refine") {
         const prompt = await this.chat.askFreeform(
-          this.buildShortlistRefinePrompt(conditions, selected.name)
+          this.recoveryHandler.buildShortlistRefinePrompt(conditions, selected.name)
         );
         if (!prompt) {
           continue;

@@ -9,11 +9,12 @@ import {
   buildResultWarning,
   classifyMatchStrength
 } from "../workflow.js";
+import { RecoveryHandler } from "../recovery-handler.js";
+import { ComparisonController } from "../comparison-controller.js";
 import {
   computeComparisonDecisionScore,
   buildComparisonRecommendation
 } from "../agent-tools.js";
-import { ComparisonController } from "../comparison-controller.js";
 
 const BASE_CONDITIONS: SearchConditions = {
   skills: ["python"],
@@ -157,6 +158,21 @@ function createWorkflowHarness() {
   (workflow as any).sortCandidates = vi.fn(async () => undefined);
   (workflow as any).formatConditionsAsPrompt = vi.fn(() => "杭州 python");
 
+  // Re-create recoveryHandler so it uses the mock chat/spinner instead of
+  // the broken instances created during SearchWorkflow construction with {} deps.
+  (workflow as any).recoveryHandler = new RecoveryHandler({
+    conditionRevisionService: (workflow as any).conditionRevisionService,
+    chat: mockChat,
+    spinner: mockSpinner,
+    scorer: (workflow as any).scorer,
+    getSessionState: () => (workflow as any).sessionState,
+    applySessionState: (next: any) => (workflow as any).applySessionState(next),
+    setSessionStatus: (status: string, summary?: string | null) => (workflow as any).setSessionStatus(status, summary),
+    appendTranscriptEntry: (role: string, content: string) => (workflow as any).appendTranscriptEntry(role as any, content),
+    getLastSearchDiagnostics: () => (workflow as any).lastSearchDiagnostics,
+    getSessionId: () => (workflow as any).sessionId
+  });
+
   (workflow as any).comparisonController = new ComparisonController({
     profileManager: (workflow as any).profileManager,
     tools: (workflow as any).tools,
@@ -168,8 +184,8 @@ function createWorkflowHarness() {
     setSessionStatus: (status: string, summary?: string | null) => (workflow as any).setSessionStatus(status, summary),
     emitSessionEvent: (type: string, summary: string, data: Record<string, unknown>) => (workflow as any).emitSessionEvent(type, summary, data),
     refreshCandidateQueryExplanation: (candidate: any, conditions: any) => (workflow as any).refreshCandidateQueryExplanation(candidate, conditions),
-    decorateComparisonResult: (result: any, conditions: any) => (workflow as any).applyBoundaryContextToComparisonResult(result, conditions),
-    buildCompareRefinePrompt: (conditions: any) => (workflow as any).buildCompareRefinePrompt(conditions)
+    decorateComparisonResult: (result: any, conditions: any) => (workflow as any).recoveryHandler.applyBoundaryContextToComparisonResult(result, conditions),
+    buildCompareRefinePrompt: (conditions: any) => (workflow as any).recoveryHandler.buildCompareRefinePrompt(conditions)
   });
 
   return {
@@ -191,7 +207,7 @@ function createWorkflowHarness() {
       conditions: SearchConditions,
       state: { sortMode: string; visibleCount: number; selectedIndex: number }
     ) => Promise<any>,
-    handleSearchRecovery: (workflow as any).handleSearchRecovery.bind(workflow) as (
+    handleSearchRecovery: (workflow as any).recoveryHandler.handleSearchRecovery.bind((workflow as any).recoveryHandler) as (
       candidates: any[],
       conditions: SearchConditions,
       effectiveQuery: string
@@ -508,7 +524,7 @@ describe("SearchWorkflow agent policy integration", () => {
       conditions: BASE_CONDITIONS,
       candidates: []
     }));
-    (workflow as any).handleSearchRecovery = vi.fn(async () => {
+    (workflow as any).recoveryHandler.handleSearchRecovery = vi.fn(async () => {
       (workflow as any).sessionState = {
         ...(workflow as any).sessionState,
         recoveryState: {
@@ -542,7 +558,7 @@ describe("SearchWorkflow agent policy integration", () => {
       conditions: BASE_CONDITIONS,
       candidates: []
     }));
-    (workflow as any).handleSearchRecovery = vi.fn(async () => {
+    (workflow as any).recoveryHandler.handleSearchRecovery = vi.fn(async () => {
       (workflow as any).sessionState = {
         ...(workflow as any).sessionState,
         recoveryState: {
@@ -570,7 +586,7 @@ describe("SearchWorkflow agent policy integration", () => {
       conditions: BASE_CONDITIONS,
       candidates: []
     }));
-    (workflow as any).handleSearchRecovery = vi.fn(async () => {
+    (workflow as any).recoveryHandler.handleSearchRecovery = vi.fn(async () => {
       (workflow as any).sessionState = {
         ...(workflow as any).sessionState,
         recoveryState: {
@@ -1777,7 +1793,7 @@ describe("search recovery signals", () => {
       activeCompareSet: []
     };
 
-    const resolution = (workflow as any).resolveAnchorResolution(
+    const resolution = (workflow as any).recoveryHandler.resolveAnchorResolution(
       {
         ...BASE_CONDITIONS,
         candidateAnchor: { shortlistIndex: 2, name: "Lin" }
