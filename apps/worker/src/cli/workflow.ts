@@ -70,6 +70,7 @@ import {
 import { ProfileManager } from "./profile-manager.js";
 import { ComparisonController, type CompareLoopOutcome } from "./comparison-controller.js";
 import { SearchExecutor, type SearchExecutionResult, type SearchExecutionDiagnostics, type HydratedCandidate } from "./search-executor.js";
+import { ConditionRevisionService } from "./condition-revision-service.js";
 import { contextHasTermValue, buildSearchStateContextValue, findMatchedTermsValue } from "./search-context-helpers.js";
 import {
   type AgentInterventionResult,
@@ -789,6 +790,7 @@ export class SearchWorkflow {
   private profileManager: ProfileManager;
   private comparisonController: ComparisonController;
   private searchExecutor: SearchExecutor;
+  private conditionRevisionService: ConditionRevisionService;
 
   constructor(
     private db: SeekuDatabase,
@@ -837,6 +839,11 @@ export class SearchWorkflow {
       },
       buildConditionAudit,
       buildCandidateSourceMetadata
+    });
+    this.conditionRevisionService = new ConditionRevisionService({
+      reviseQuery: (args) => this.tools.reviseQuery(args),
+      getSessionState: () => this.sessionState,
+      applySessionState: (next) => this.applySessionState(next)
     });
     this.tools = createSearchAgentTools({
       searchCandidates: async ({ query, conditions }) => {
@@ -1895,7 +1902,7 @@ export class SearchWorkflow {
       }
 
       this.appendTranscriptEntry("user", instruction);
-      const revisedConditions = await this.reviseSessionConditions(conditions, instruction, candidates);
+      const revisedConditions = await this.conditionRevisionService.revise(conditions, instruction, candidates);
       this.transitionRecoveryPhase("idle", {
         overrides: {
           ...diagnosingState,
@@ -2051,7 +2058,7 @@ export class SearchWorkflow {
           return { type: "restart" };
         }
 
-        conditions = await this.reviseSessionConditions(conditions, prompt);
+        conditions = await this.conditionRevisionService.revise(conditions, prompt);
         shortlistPresentation = undefined;
         sortMode = "overall";
         continue;
@@ -2103,7 +2110,7 @@ export class SearchWorkflow {
             ...this.sessionState.recoveryState,
             compareSuggestedRefinement: undefined
           }));
-          conditions = await this.reviseSessionConditions(
+          conditions = await this.conditionRevisionService.revise(
             conditions,
             compareOutcome.prompt,
             candidates
@@ -2132,7 +2139,7 @@ export class SearchWorkflow {
         continue;
       }
 
-      conditions = await this.reviseSessionConditions(conditions, result.prompt || "", candidates);
+      conditions = await this.conditionRevisionService.revise(conditions, result.prompt || "", candidates);
       this.applySessionState(setRecoveryState(this.sessionState, {
         ...this.sessionState.recoveryState,
         compareSuggestedRefinement: undefined
@@ -2920,27 +2927,6 @@ export class SearchWorkflow {
     return indexes
       .map((index) => candidates[index - 1])
       .filter((candidate): candidate is HydratedCandidate => Boolean(candidate));
-  }
-
-  private async reviseSessionConditions(
-    current: SearchConditions,
-    prompt: string,
-    candidates: HydratedCandidate[] = []
-  ): Promise<SearchConditions> {
-    const revised = await this.tools.reviseQuery({
-      currentConditions: current,
-      prompt,
-      shortlist: candidates
-    });
-    this.applySessionState(
-      setOpenUncertainties(
-        resetRecoveryState(
-          recordClarification(this.sessionState, prompt, revised.conditions)
-        ),
-        []
-      )
-    );
-    return revised.conditions;
   }
 
   private applySearchStateOrdering(
