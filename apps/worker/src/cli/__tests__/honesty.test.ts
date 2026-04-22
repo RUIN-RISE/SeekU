@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildQueryMatchExplanation, buildResultWarning } from "../workflow.js";
+import { buildQueryMatchExplanation } from "../workflow.js";
+import { buildResultWarning } from "../result-warning.js";
 
 describe("Product Honesty", () => {
   describe("Result Warning & Match Strength", () => {

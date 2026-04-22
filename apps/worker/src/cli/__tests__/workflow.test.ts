@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MultiDimensionProfile, SearchConditions } from "../types.js";
 import { setConfidenceStatus, setRecommendedCandidate } from "../agent-state.js";
+import { buildResultWarning } from "../result-warning.js";
 import {
   SearchWorkflow,
   buildConditionAudit,
   buildCandidateSourceMetadata,
   buildQueryMatchExplanation,
-  buildResultWarning,
   classifyMatchStrength
 } from "../workflow.js";
 import { RecoveryHandler } from "../recovery-handler.js";
@@ -113,6 +113,8 @@ function createCandidate(overrides: Record<string, unknown> = {}) {
 function createWorkflowHarness() {
   const workflow = new SearchWorkflow({} as any, {} as any);
   const mockTui = {
+    displayBanner: vi.fn(),
+    displayWelcomeTips: vi.fn(),
     displayInitialSearch: vi.fn(),
     displayClarifiedDraft: vi.fn(),
     displayShortlist: vi.fn(),
@@ -132,6 +134,7 @@ function createWorkflowHarness() {
     promptDetailAction: vi.fn()
   };
   const mockChat = {
+    askInitial: vi.fn(),
     askFreeform: vi.fn(),
     extractConditions: vi.fn(),
     reviseConditions: vi.fn(),
@@ -169,7 +172,7 @@ function createWorkflowHarness() {
     scorer: (workflow as any).scorer,
     getSessionState: () => (workflow as any).sessionState,
     applySessionState: (next: any) => (workflow as any).applySessionState(next),
-    setSessionStatus: (status: string, summary?: string | null) => (workflow as any).setSessionStatus(status, summary),
+    setSessionStatus: (status: string, summary?: string | null, why?: any) => (workflow as any).setSessionStatus(status, summary, why),
     appendTranscriptEntry: (role: string, content: string) => (workflow as any).appendTranscriptEntry(role as any, content),
     getSessionId: () => (workflow as any).sessionId
   });
@@ -182,7 +185,7 @@ function createWorkflowHarness() {
     chat: mockChat as any,
     getSessionState: () => (workflow as any).sessionState,
     applySessionState: (next: any) => (workflow as any).applySessionState(next),
-    setSessionStatus: (status: string, summary?: string | null) => (workflow as any).setSessionStatus(status, summary),
+    setSessionStatus: (status: string, summary?: string | null, why?: any) => (workflow as any).setSessionStatus(status, summary, why),
     emitSessionEvent: (type: string, summary: string, data: Record<string, unknown>) => (workflow as any).emitSessionEvent(type, summary, data),
     refreshCandidateQueryExplanation: (candidate: any, conditions: any) => (workflow as any).refreshCandidateQueryExplanation(candidate, conditions),
     decorateComparisonResult: (result: any, conditions: any) => (workflow as any).recoveryHandler.applyBoundaryContextToComparisonResult(result, conditions),
@@ -282,6 +285,18 @@ describe("SearchWorkflow agent policy integration", () => {
       skills: ["python"],
       role: "backend"
     });
+  });
+
+  it("marks explicit quit as user_exit termination", async () => {
+    const { workflow, mockChat } = createWorkflowHarness();
+
+    mockChat.askInitial = vi.fn().mockResolvedValue("杭州 python backend");
+    vi.spyOn(workflow as any, "runClarifyLoop").mockResolvedValue(BASE_CONDITIONS);
+    vi.spyOn(workflow as any, "runSearchLoop").mockResolvedValue({ type: "quit" });
+
+    await workflow.execute();
+
+    expect(workflow.getTerminationReason()).toBe("user_exit");
   });
 
   it("skips extra clarification and searches early when the draft already has role or skill signals", async () => {
@@ -1354,6 +1369,39 @@ describe("SearchWorkflow shortlist command handling", () => {
       expect.anything()
     );
     expect(result.candidates).toEqual([]);
+  });
+
+  it("aborts in-flight embedding when workflow is interrupted", async () => {
+    const workflow = new SearchWorkflow({} as any, {
+      embed: vi.fn(async (_text: string, options?: { signal?: AbortSignal }) => {
+        expect(options?.signal).toBeInstanceOf(AbortSignal);
+        return await new Promise((resolve, reject) => {
+          options?.signal?.addEventListener("abort", () => reject(options.signal?.reason ?? new Error("aborted")), { once: true });
+        });
+      })
+    } as any);
+
+    (workflow as any).executionAbortController = new AbortController();
+    (workflow as any).searchExecutor.deps.planner = {
+      parse: vi.fn(async () => ({
+        rawQuery: "python 杭州",
+        roles: [],
+        skills: ["python"],
+        locations: ["杭州"],
+        mustHaves: [],
+        niceToHaves: []
+      }))
+    };
+    (workflow as any).searchExecutor.deps.retriever = {
+      retrieve: vi.fn(async () => [])
+    };
+    (workflow as any).searchExecutor.mergeIntentWithConditions = vi.fn((intent: any) => intent);
+
+    const execution = (workflow as any).performSearch("python 杭州", BASE_CONDITIONS);
+    await Promise.resolve();
+    workflow.interrupt("interrupted");
+
+    await expect(execution).rejects.toThrow("Workflow interrupted.");
   });
 
   it("exports pool records with comparison metadata", async () => {

@@ -341,7 +341,12 @@ export class QueryPlanner {
     this.model = config.model;
   }
 
-  async parse(query: string): Promise<QueryIntent> {
+  async parse(
+    query: string,
+    options: {
+      signal?: AbortSignal;
+    } = {}
+  ): Promise<QueryIntent> {
     const trimmedQuery = query.trim();
     if (!trimmedQuery) {
       return {
@@ -372,8 +377,14 @@ export class QueryPlanner {
     const controller = new AbortController();
     const timeoutMs = 30000; // 30 seconds
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const abortFromParent = () => controller.abort(options.signal?.reason);
+    options.signal?.addEventListener("abort", abortFromParent, { once: true });
 
     try {
+      if (options.signal?.aborted) {
+        throw options.signal.reason ?? new Error("Query planner aborted.");
+      }
+
       const response = await this.provider.chat(messages, {
         model: this.model,
         temperature: 0,
@@ -383,11 +394,15 @@ export class QueryPlanner {
 
       return sanitizeIntent(trimmedQuery, parseJsonObject(response.content));
     } catch (error) {
+      if (options.signal?.aborted) {
+        throw error;
+      }
       if ((error as Error).name === "AbortError") {
         console.warn("[QueryPlanner] LLM request timed out, falling back to heuristic");
       }
       return heuristicIntent(trimmedQuery);
     } finally {
+      options.signal?.removeEventListener("abort", abortFromParent);
       clearTimeout(timer);
     }
   }
@@ -396,12 +411,14 @@ export class QueryPlanner {
 export async function parseQuery(
   provider: LLMProvider,
   query: string,
-  config: Omit<Partial<QueryPlannerConfig>, "provider"> = {}
+  config: Omit<Partial<QueryPlannerConfig>, "provider"> & {
+    signal?: AbortSignal;
+  } = {}
 ): Promise<QueryIntent> {
   const planner = new QueryPlanner({
     provider,
     ...config
   });
 
-  return planner.parse(query);
+  return planner.parse(query, { signal: config.signal });
 }

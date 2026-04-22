@@ -24,6 +24,7 @@ export interface BonjourScanJobOptions {
   limit?: number;
   depth?: number;
   db?: SeekuDatabase;
+  signal?: AbortSignal;
 }
 
 export interface BonjourScanSummary {
@@ -41,7 +42,8 @@ export async function runBonjourDiscoveryScan(options: BonjourScanJobOptions): P
     const scanner = new WorkerScanner();
     const result = await scanner.scanByKeywords(options.query, {
       limitPerCategory: options.limit,
-      maxDepth: options.depth
+      maxDepth: options.depth,
+      signal: options.signal
     });
 
     if (result.handles.length === 0) {
@@ -58,7 +60,8 @@ export async function runBonjourDiscoveryScan(options: BonjourScanJobOptions): P
       db,
       handles: result.handles,
       limit: result.handles.length,
-      jobName: `bonjour.discovery.${options.query.join("_")}`
+      jobName: `bonjour.discovery.${options.query.join("_")}`,
+      signal: options.signal
     });
 
     return {
@@ -85,6 +88,7 @@ export interface BonjourSyncJobOptions {
   jobName?: string;
   db?: SeekuDatabase;
   adapter?: BonjourAdapter;
+  signal?: AbortSignal;
 }
 
 export interface BonjourSyncJobSummary {
@@ -124,10 +128,11 @@ function extractReplayHandle(rawPayload: Record<string, unknown> | null | undefi
 async function fetchBonjourProfileWithReplay(
   db: SeekuDatabase,
   adapter: BonjourAdapter,
-  handle: string
+  handle: string,
+  signal?: AbortSignal
 ) {
   try {
-    return await adapter.fetchProfileByHandle({ handle });
+    return await adapter.fetchProfileByHandle({ handle, signal });
   } catch (error) {
     const existing = await getSourceProfileByHandle(db, "bonjour", handle);
     const replayHandle = extractReplayHandle(existing?.rawPayload);
@@ -136,7 +141,7 @@ async function fetchBonjourProfileWithReplay(
       throw error;
     }
 
-    return adapter.fetchProfileByHandle({ handle: replayHandle });
+    return adapter.fetchProfileByHandle({ handle: replayHandle, signal });
   }
 }
 
@@ -169,7 +174,8 @@ export async function runBonjourSyncJob(options: BonjourSyncJobOptions): Promise
         }
       : await adapter.discoverSeeds({
           cursor: options.cursor,
-          limit: options.limit
+          limit: options.limit,
+          signal: options.signal
         });
 
     const handles = uniqueHandles(discovery.profiles.map((profile) => profile.handle)).slice(
@@ -182,7 +188,11 @@ export async function runBonjourSyncJob(options: BonjourSyncJobOptions): Promise
 
     for (const handle of handles) {
       try {
-        const result = await fetchBonjourProfileWithReplay(db, adapter, handle);
+        if (options.signal?.aborted) {
+          throw options.signal.reason ?? new Error("Bonjour sync aborted.");
+        }
+
+        const result = await fetchBonjourProfileWithReplay(db, adapter, handle, options.signal);
         const optedOut = await isHandleOptedOut(db, "bonjour", result.profile.sourceHandle);
 
         await upsertSourceProfile(

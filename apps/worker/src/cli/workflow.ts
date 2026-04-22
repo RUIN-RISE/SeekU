@@ -38,8 +38,10 @@ import {
   setSessionConditions,
   setSessionShortlist,
   setSessionUserGoal,
+  setRuntimeStatus,
   type AgentSessionState
 } from "./agent-state.js";
+import type { AgentSessionWhyCode } from "./session-runtime-types.js";
 import {
   decideClarifyAction,
   decidePostSearchAction,
@@ -64,6 +66,7 @@ import {
   truncateForDisplay,
   buildEvidenceHeadline
 } from "./comparison-formatters.js";
+import { buildResultWarning } from "./result-warning.js";
 import { ProfileManager } from "./profile-manager.js";
 import { ComparisonController } from "./comparison-controller.js";
 import { SearchExecutor, type SearchExecutionResult, type SearchExecutionDiagnostics, type HydratedCandidate } from "./search-executor.js";
@@ -74,7 +77,11 @@ import { contextHasTermValue, buildSearchStateContextValue, findMatchedTermsValu
 import {
   type AgentInterventionResult,
   buildAgentSessionSnapshot,
+  cloneAgentSessionEvent,
+  cloneTranscriptEntry,
   createAgentSessionEvent,
+  createTranscriptEventEntry,
+  createTranscriptMessageEntry,
   serializeRecoveryState,
   serializeConfidenceStatus,
   serializeRecommendation,
@@ -84,9 +91,12 @@ import {
   type AgentTranscriptRole,
   type AgentInterventionCommand,
   type AgentSessionEvent,
-  type AgentSessionSnapshot,
-  type AgentSessionStatus
+  type AgentSessionSnapshot
 } from "./agent-session-events.js";
+import type {
+  AgentSessionStatus,
+  AgentSessionTerminationReason
+} from "./session-runtime-types.js";
 import {
   assertAllowedRecoveryPhaseTransition,
   assertAllowedSessionStatusTransition,
@@ -520,24 +530,6 @@ export function buildQueryMatchExplanation(
   };
 }
 
-export function buildResultWarning(
-  candidates: Array<Pick<ScoredCandidate, "matchStrength">>
-): string | undefined {
-  if (candidates.length === 0) {
-    return undefined;
-  }
-
-  if (candidates.some((candidate) => candidate.matchStrength === "strong")) {
-    return undefined;
-  }
-
-  if (candidates.some((candidate) => candidate.matchStrength === "medium")) {
-    return "没有找到强匹配，当前结果以中等相关候选人为主。建议继续补充必须项、关键技术或放宽来源过滤。";
-  }
-
-  return "没有找到强匹配，只找到了弱相关候选人。建议继续补充必须项、关键技术或放宽来源过滤。";
-}
-
 function createEmptyRecoveryState(overrides: Partial<SearchRecoveryState> = {}): SearchRecoveryState {
   return {
     phase: "idle",
@@ -738,8 +730,6 @@ export class SearchWorkflow {
   private spinner: Ora;
   private sessionState: AgentSessionState;
   private sessionId: string;
-  private sessionStatus: AgentSessionStatus = "idle";
-  private sessionStatusSummary: string | null = "等待输入";
   private sessionEventSequence = 0;
   private readonly sessionEvents: AgentSessionEvent[] = [];
   private readonly sessionEventListeners = new Set<(event: AgentSessionEvent) => void>();
@@ -755,6 +745,8 @@ export class SearchWorkflow {
   private conditionRevisionService: ConditionRevisionService;
   private recoveryHandler: RecoveryHandler;
   private shortlistController: ShortlistController;
+  private terminationReason?: AgentSessionTerminationReason;
+  private executionAbortController?: AbortController;
 
   constructor(
     private db: SeekuDatabase,
@@ -783,7 +775,8 @@ export class SearchWorkflow {
       cacheRepo: this.cacheRepo,
       scorer: this.scorer,
       generator: this.generator,
-      getSpinner: () => this.spinner
+      getSpinner: () => this.spinner,
+      getExecutionSignal: () => this.executionAbortController?.signal
     });
     this.searchExecutor = new SearchExecutor({
       db,
@@ -816,7 +809,7 @@ export class SearchWorkflow {
       scorer: this.scorer,
       getSessionState: () => this.sessionState,
       applySessionState: (next) => this.applySessionState(next),
-      setSessionStatus: (status, summary) => this.setSessionStatus(status as any, summary),
+      setSessionStatus: (status, summary, why) => this.setSessionStatus(status as any, summary, why),
       appendTranscriptEntry: (role, content) => this.appendTranscriptEntry(role as any, content),
       getSessionId: () => this.sessionId
     });
@@ -865,7 +858,7 @@ export class SearchWorkflow {
       chat: this.chat,
       getSessionState: () => this.sessionState,
       applySessionState: (next) => this.applySessionState(next),
-      setSessionStatus: (status, summary) => this.setSessionStatus(status as any, summary),
+      setSessionStatus: (status, summary, why) => this.setSessionStatus(status as any, summary, why),
       emitSessionEvent: (type, summary, data) => this.emitSessionEvent(type as any, summary, data),
       refreshCandidateQueryExplanation: (candidate, conditions) => this.searchExecutor.refreshCandidateQueryExplanation(candidate as any, conditions),
       decorateComparisonResult: (result, conditions) => this.recoveryHandler.applyBoundaryContextToComparisonResult(result, conditions),
@@ -909,21 +902,25 @@ export class SearchWorkflow {
   getSessionSnapshot(): AgentSessionSnapshot {
     return buildAgentSessionSnapshot({
       sessionId: this.sessionId,
-      state: this.sessionState,
-      status: this.sessionStatus,
-      statusSummary: this.sessionStatusSummary
+      state: this.sessionState
     });
   }
 
   getSessionEvents(): AgentSessionEvent[] {
-    return this.sessionEvents.map((event) => ({
-      ...event,
-      data: { ...event.data }
-    }));
+    return this.sessionEvents.map((event) => cloneAgentSessionEvent(event));
   }
 
   getTranscript(): AgentTranscriptEntry[] {
-    return this.transcript.map((entry) => ({ ...entry }));
+    return this.transcript.map((entry) => cloneTranscriptEntry(entry));
+  }
+
+  getTerminationReason(): AgentSessionTerminationReason | undefined {
+    return this.terminationReason;
+  }
+
+  interrupt(reason: AgentSessionTerminationReason = "interrupted"): void {
+    this.setTerminationReason(reason);
+    this.executionAbortController?.abort(new Error(`Workflow ${reason}.`));
   }
 
   private appendTranscriptEntry(
@@ -937,16 +934,26 @@ export class SearchWorkflow {
     }
 
     const lastEntry = this.transcript[this.transcript.length - 1];
-    if (lastEntry && lastEntry.role === role && lastEntry.content === normalized) {
+    if (
+      lastEntry?.type === "message"
+      && lastEntry.role === role
+      && lastEntry.content === normalized
+    ) {
       return;
     }
 
-    this.transcript.push({
-      id: randomUUID(),
-      role,
-      content: normalized,
-      timestamp: timestamp.toISOString()
-    });
+    this.transcript.push(
+      createTranscriptMessageEntry({
+        id: randomUUID(),
+        role,
+        content: normalized,
+        timestamp: timestamp.toISOString()
+      })
+    );
+  }
+
+  private setTerminationReason(reason: AgentSessionTerminationReason): void {
+    this.terminationReason = reason;
   }
 
   subscribeToSessionEvents(
@@ -1082,13 +1089,14 @@ export class SearchWorkflow {
       sessionId: this.sessionId,
       sequence: ++this.sessionEventSequence,
       type,
-      status: this.sessionStatus,
+      status: this.sessionState.runtime.status,
       summary,
       data,
       timestamp
     });
 
     this.sessionEvents.push(event);
+    this.transcript.push(createTranscriptEventEntry(event));
     for (const listener of this.sessionEventListeners) {
       listener(event);
     }
@@ -1096,16 +1104,25 @@ export class SearchWorkflow {
     return event;
   }
 
-  private setSessionStatus(status: AgentSessionStatus, summary?: string | null): void {
+  private setSessionStatus(
+    status: AgentSessionStatus,
+    summary?: string | null,
+    why?: { primaryWhyCode?: AgentSessionWhyCode; whySummary?: string | null }
+  ): void {
     const normalizedSummary = summary?.trim() || null;
-    if (this.sessionStatus === status && this.sessionStatusSummary === normalizedSummary) {
+    if (
+      this.sessionState.runtime.status === status
+      && this.sessionState.runtime.statusSummary === normalizedSummary
+    ) {
       return;
     }
 
-    assertAllowedSessionStatusTransition(this.sessionStatus, status);
+    assertAllowedSessionStatusTransition(this.sessionState.runtime.status, status);
 
-    this.sessionStatus = status;
-    this.sessionStatusSummary = normalizedSummary;
+    this.applySessionState(setRuntimeStatus(this.sessionState, status, {
+      summary: normalizedSummary,
+      ...why
+    }));
     if (normalizedSummary) {
       this.appendTranscriptEntry("system", normalizedSummary);
     }
@@ -1310,48 +1327,57 @@ export class SearchWorkflow {
   async execute(initialPrompt?: string): Promise<void> {
     this.tui.displayBanner();
     this.tui.displayWelcomeTips();
+    this.terminationReason = undefined;
+    this.executionAbortController = new AbortController();
 
-    let nextPrompt = initialPrompt?.trim();
-    this.setSessionStatus("waiting-input", "等待新的搜索需求。");
+    try {
+      let nextPrompt = initialPrompt?.trim();
+      this.setSessionStatus("waiting-input", "等待新的搜索需求。", { primaryWhyCode: "awaiting_user_input", whySummary: "等待用户输入新的搜索需求。" });
 
-    while (true) {
-      const initialInput = nextPrompt || (await this.chat.askInitial());
-      nextPrompt = undefined;
+      while (true) {
+        const initialInput = nextPrompt || (await this.chat.askInitial());
+        nextPrompt = undefined;
 
-      if (!initialInput) {
-        this.setSessionStatus("completed", "会话已结束。");
-        return;
+        if (!initialInput) {
+          this.setTerminationReason("completed");
+          this.setSessionStatus("completed", "会话已结束。");
+          return;
+        }
+
+        this.appendTranscriptEntry("user", initialInput);
+
+        const clarifyOutcome = await this.runClarifyLoop(initialInput);
+        if (!clarifyOutcome) {
+          this.setTerminationReason("completed");
+          this.setSessionStatus("completed", "会话已结束。");
+          return;
+        }
+
+        const searchOutcome = await this.runSearchLoop(clarifyOutcome);
+        if (searchOutcome.type === "quit") {
+          this.setTerminationReason("user_exit");
+          this.setSessionStatus("completed", "会话已结束。");
+          return;
+        }
+
+        if (searchOutcome.prompt) {
+          nextPrompt = searchOutcome.prompt;
+          continue;
+        }
+
+        if (searchOutcome.type === "restart") {
+          nextPrompt = "";
+        }
       }
-
-      this.appendTranscriptEntry("user", initialInput);
-
-      const clarifyOutcome = await this.runClarifyLoop(initialInput);
-      if (!clarifyOutcome) {
-        this.setSessionStatus("completed", "会话已结束。");
-        return;
-      }
-
-      const searchOutcome = await this.runSearchLoop(clarifyOutcome);
-      if (searchOutcome.type === "quit") {
-        this.setSessionStatus("completed", "会话已结束。");
-        return;
-      }
-
-      if (searchOutcome.prompt) {
-        nextPrompt = searchOutcome.prompt;
-        continue;
-      }
-
-      if (searchOutcome.type === "restart") {
-        nextPrompt = "";
-      }
+    } finally {
+      this.executionAbortController = undefined;
     }
   }
 
   async bootstrapMission(initialPrompt: string): Promise<void> {
     const prompt = initialPrompt.trim();
     if (!prompt) {
-      this.setSessionStatus("blocked", "缺少初始搜索目标。");
+      this.setSessionStatus("blocked", "缺少初始搜索目标。", { primaryWhyCode: "goal_missing", whySummary: "用户未提供初始搜索目标。" });
       return;
     }
 
@@ -1367,7 +1393,7 @@ export class SearchWorkflow {
 
     const effectiveQuery = buildEffectiveQuery(conditions);
     if (!effectiveQuery) {
-      this.setSessionStatus("blocked", "当前条件不足以形成有效搜索。");
+      this.setSessionStatus("blocked", "当前条件不足以形成有效搜索。", { primaryWhyCode: "conditions_insufficient", whySummary: "当前搜索条件不足以形成有效查询。" });
       return;
     }
 
@@ -1391,7 +1417,7 @@ export class SearchWorkflow {
         query: effectiveQuery,
         resultCount: 0
       });
-      this.setSessionStatus("waiting-input", "当前没有命中候选人，请继续收紧或调整方向。");
+      this.setSessionStatus("waiting-input", "当前没有命中候选人，请继续收紧或调整方向。", { primaryWhyCode: "retrieval_zero_hits", whySummary: "当前条件下没有检索到任何候选人。" });
       return;
     }
 
@@ -1472,7 +1498,7 @@ export class SearchWorkflow {
       const effectiveQuery = buildEffectiveQuery(conditions);
       if (!effectiveQuery) {
         console.log(chalk.yellow("\n当前没有可搜索的条件，请重新描述需求。"));
-        this.setSessionStatus("blocked", "当前条件不足以形成有效搜索。");
+        this.setSessionStatus("blocked", "当前条件不足以形成有效搜索。", { primaryWhyCode: "conditions_insufficient", whySummary: "当前搜索条件不足以形成有效查询。" });
         return { type: "restart" };
       }
 
@@ -1526,7 +1552,7 @@ export class SearchWorkflow {
         );
         if (!prompt) {
           console.log(chalk.dim("没有收到新指令，你可以稍后再来继续。"));
-          this.setSessionStatus("blocked", "未收到新的 refine 指令。");
+          this.setSessionStatus("blocked", "未收到新的 refine 指令。", { primaryWhyCode: "awaiting_user_input", whySummary: "等待用户提供新的搜索方向。" });
           return { type: "restart" };
         }
 
@@ -1641,7 +1667,9 @@ export class SearchWorkflow {
   }
 
   private async performSearch(query: string, conditions: SearchConditions): Promise<SearchExecutionResult> {
-    return this.searchExecutor.performSearch(query, conditions);
+    return this.searchExecutor.performSearch(query, conditions, {
+      signal: this.executionAbortController?.signal
+    });
   }
 
   private getMatchedLocations(

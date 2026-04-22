@@ -47,15 +47,22 @@ describe("agent-session-events", () => {
 
     const snapshot = buildAgentSessionSnapshot({
       sessionId: "session-1",
-      state,
-      status: "shortlist",
-      statusSummary: "正在查看 shortlist"
+      state: {
+        ...state,
+        runtime: {
+          ...state.runtime,
+          status: "shortlist",
+          statusSummary: "正在查看 shortlist"
+        }
+      }
     });
 
     expect(snapshot).toMatchObject({
       sessionId: "session-1",
-      status: "shortlist",
-      statusSummary: "正在查看 shortlist",
+      runtime: {
+        status: "shortlist",
+        statusSummary: "正在查看 shortlist"
+      },
       userGoal: "找做多智能体产品的工程负责人",
       currentShortlist: [
         {

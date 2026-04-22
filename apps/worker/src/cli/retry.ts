@@ -6,6 +6,7 @@ export interface RetryOptions {
   baseDelay?: number;
   factor?: number;
   quiet?: boolean;
+  isRetryable?: (error: unknown) => boolean;
 }
 
 /**
@@ -50,6 +51,7 @@ export async function withRetry<T>(
   const baseDelay = options.baseDelay ?? 1000;
   const factor = options.factor ?? 2;
   const quiet = options.quiet ?? false;
+  const retryable = options.isRetryable ?? isRetryable;
 
   let lastError: unknown;
 
@@ -59,7 +61,7 @@ export async function withRetry<T>(
     } catch (error) {
       lastError = error;
       
-      if (!isRetryable(error) || attempt === maxRetries) {
+      if (!retryable(error) || attempt === maxRetries) {
         throw error;
       }
 

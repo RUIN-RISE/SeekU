@@ -29,6 +29,7 @@ export interface DumpBonjourRawOptions {
   profileClients?: BonjourClient[];
   commentClients?: BonjourClient[];
   timelineClients?: BonjourClient[];
+  signal?: AbortSignal;
   pageSize?: number;
   maxPagesPerCategory?: number;
   scanCategoryTimeline?: boolean;
@@ -171,6 +172,12 @@ function toPrettyJson(value: unknown) {
 async function writeJsonFile(path: string, value: unknown) {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, toPrettyJson(value), "utf8");
+}
+
+function throwIfAborted(signal?: AbortSignal, fallbackMessage = "Bonjour dump aborted.") {
+  if (signal?.aborted) {
+    throw signal.reason ?? new Error(fallbackMessage);
+  }
 }
 
 function getOrCreateHandleAccumulator(
@@ -403,14 +410,16 @@ function compareHandleSummary(left: DumpBonjourHandleSummary, right: DumpBonjour
 async function fetchProfileWithOptionalInflation(
   client: BonjourClient,
   handle: string,
-  inflateProfiles: boolean
+  inflateProfiles: boolean,
+  signal?: AbortSignal
 ): Promise<{
   profile: BonjourProfile;
   inflationRequired: boolean;
   inflated: boolean;
   inflateError?: string;
 }> {
-  const profile = await client.fetchProfileByHandle(handle);
+  throwIfAborted(signal);
+  const profile = await client.fetchProfileByHandle(handle, { signal });
   const inflationRequired = Boolean(profile.inflationRequired);
 
   if (!inflateProfiles || !inflationRequired) {
@@ -422,7 +431,7 @@ async function fetchProfileWithOptionalInflation(
   }
 
   try {
-    const inflatedProfile = await client.fetchProfileByHandle(handle, { inflate: true });
+    const inflatedProfile = await client.fetchProfileByHandle(handle, { inflate: true, signal });
     return {
       profile: inflatedProfile,
       inflationRequired,
@@ -468,7 +477,9 @@ export async function dumpBonjourRawData(
 
   await mkdir(outputDir, { recursive: true });
 
-  const categories = scanCategoryTimeline ? sortCategories(await client.fetchCategories()) : [];
+  const categories = scanCategoryTimeline
+    ? sortCategories(await client.fetchCategories({ signal: options.signal }))
+    : [];
   const categoriesPath = resolve(outputDir, "categories.json");
   await writeJsonFile(categoriesPath, categories);
 
@@ -483,6 +494,7 @@ export async function dumpBonjourRawData(
 
   if (scanCategoryTimeline) {
     for (const category of categories) {
+      throwIfAborted(options.signal);
       let skip = 0;
       let pageIndex = 0;
       let categoryLocalPostsScanned = 0;
@@ -498,7 +510,10 @@ export async function dumpBonjourRawData(
           break;
         }
 
-        const posts = await client.fetchCommunityPostsByCategory(category.key, pageSize, skip);
+        throwIfAborted(options.signal);
+        const posts = await client.fetchCommunityPostsByCategory(category.key, pageSize, skip, {
+          signal: options.signal
+        });
         if (posts.length === 0) {
           break;
         }
@@ -552,11 +567,14 @@ export async function dumpBonjourRawData(
     let pageIndex = 0;
 
     while (true) {
+      throwIfAborted(options.signal);
       if (maxGlobalTimelinePages !== null && pageIndex >= maxGlobalTimelinePages) {
         break;
       }
 
-      const posts = await client.fetchGlobalCommunityPosts(globalTimelinePageSize, skip);
+      const posts = await client.fetchGlobalCommunityPosts(globalTimelinePageSize, skip, {
+        signal: options.signal
+      });
       if (posts.length === 0) {
         break;
       }
@@ -606,6 +624,7 @@ export async function dumpBonjourRawData(
     const workers = timelineClients.map((timelineClient) =>
       (async () => {
         while (true) {
+          throwIfAborted(options.signal);
           const currentIndex = nextImportedHandleIndex;
           nextImportedHandleIndex += 1;
 
@@ -623,10 +642,12 @@ export async function dumpBonjourRawData(
               break;
             }
 
+            throwIfAborted(options.signal);
             const posts = await timelineClient.fetchCommunityPostsByProfileLink(
               handle,
               profileTimelinePageSize,
-              skip
+              skip,
+              { signal: options.signal }
             );
             if (posts.length === 0) {
               break;
@@ -693,6 +714,7 @@ export async function dumpBonjourRawData(
     const workers = commentClients.map((commentClient) =>
       (async () => {
         while (true) {
+          throwIfAborted(options.signal);
           const currentIndex = nextCommentThreadIndex;
           nextCommentThreadIndex += 1;
 
@@ -701,7 +723,9 @@ export async function dumpBonjourRawData(
           }
 
           const thread = commentThreadQueue[currentIndex]!;
-          const comments = await commentClient.fetchCommunityCommentsByPostId(thread.postId);
+          const comments = await commentClient.fetchCommunityCommentsByPostId(thread.postId, {
+            signal: options.signal
+          });
           const commentFilePath = resolve(outputDir, "comments", `${thread.postId}.json`);
           await writeJsonFile(commentFilePath, comments);
 
@@ -778,6 +802,7 @@ export async function dumpBonjourRawData(
     const workers = profileClients.map((profileClient) =>
       (async () => {
         while (true) {
+          throwIfAborted(options.signal);
           const currentIndex = nextHandleIndex;
           nextHandleIndex += 1;
 
@@ -791,7 +816,8 @@ export async function dumpBonjourRawData(
             const fetched = await fetchProfileWithOptionalInflation(
               profileClient,
               handle,
-              inflateProfiles
+              inflateProfiles,
+              options.signal
             );
             const filePath = resolve(outputDir, "profiles", `${encodeURIComponent(handle)}.json`);
             await writeJsonFile(filePath, fetched.profile);

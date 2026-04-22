@@ -82,11 +82,13 @@ export class SiliconFlowProvider implements LLMProvider {
     });
   }
 
-  async embed(text: string, options?: { model?: string }): Promise<EmbeddingResponse> {
+  async embed(text: string, options?: { model?: string; signal?: AbortSignal }): Promise<EmbeddingResponse> {
     return withRetry(async () => {
       const response = await this.client.embeddings.create({
         model: options?.model ?? this.defaultEmbeddingModel,
         input: text
+      }, {
+        signal: options?.signal
       });
 
       const data = response.data[0];
@@ -99,7 +101,7 @@ export class SiliconFlowProvider implements LLMProvider {
     });
   }
 
-  async embedBatch(texts: string[], options?: { model?: string }): Promise<EmbeddingResponse[]> {
+  async embedBatch(texts: string[], options?: { model?: string; signal?: AbortSignal }): Promise<EmbeddingResponse[]> {
     const BATCH_SIZE = 50;
     const results: EmbeddingResponse[] = [];
 
@@ -109,6 +111,8 @@ export class SiliconFlowProvider implements LLMProvider {
         const response = await this.client.embeddings.create({
           model: options?.model ?? this.defaultEmbeddingModel,
           input: batch
+        }, {
+          signal: options?.signal
         });
         return response.data.map((data) => ({
           embedding: data.embedding,

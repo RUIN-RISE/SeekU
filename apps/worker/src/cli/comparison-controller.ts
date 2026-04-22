@@ -7,6 +7,7 @@ import {
   setRecoveryState,
   type AgentSessionState
 } from "./agent-state.js";
+import type { AgentSessionWhyCode } from "./session-runtime-types.js";
 import type { ComparisonResult, SearchConditions } from "./types.js";
 import type { ProfileManager } from "./profile-manager.js";
 import type { SearchAgentTools } from "./agent-tools.js";
@@ -28,7 +29,7 @@ export interface ComparisonControllerDependencies {
   chat: ChatInterface;
   getSessionState: () => AgentSessionState;
   applySessionState: (next: AgentSessionState) => void;
-  setSessionStatus: (status: string, summary?: string | null) => void;
+  setSessionStatus: (status: string, summary?: string | null, why?: { primaryWhyCode?: AgentSessionWhyCode; whySummary?: string | null }) => void;
   emitSessionEvent: (type: string, summary: string, data: Record<string, unknown>) => void;
   refreshCandidateQueryExplanation: (candidate: any, conditions: SearchConditions) => void;
   decorateComparisonResult: (result: ComparisonResult, conditions: SearchConditions) => ComparisonResult;

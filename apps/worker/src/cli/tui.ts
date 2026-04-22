@@ -2,7 +2,10 @@ import enquirer from "enquirer";
 import chalk from "chalk";
 import { emitKeypressEvents } from "node:readline";
 import type { AgentSessionSnapshot, AgentTranscriptEntry } from "./agent-session-events.js";
+import { runPromptWithUserExit } from "./prompt-abort.js";
 import type { PersistedCliSessionSummary } from "./session-ledger.js";
+import type { PersistedCliSessionRecord } from "./session-ledger.js";
+import type { ResumePanelItem } from "./resume-resolver.js";
 import {
   ClarifyAction,
   DetailAction,
@@ -79,6 +82,89 @@ export class TerminalUI {
     console.log(chalk.dim("也可以直接输入 attach <sessionId>。"));
   }
 
+  displayResumePanel(items: ResumePanelItem[]) {
+    process.stdout.write("\x1Bc");
+    this.displayBanner();
+    console.log(chalk.bold("选择一个工作入口："));
+    console.log(`[1] ${chalk.green("新开 session")}`);
+
+    items.forEach((item, index) => {
+      const stamp = new Date(item.updatedAt).toLocaleString("zh-CN", {
+        hour12: false
+      });
+      const resumabilityLabel = item.resumability === "resumable"
+        ? chalk.green("resume")
+        : item.resumability === "read_only"
+          ? chalk.yellow("read-only")
+          : chalk.dim("blocked");
+      const kindLabel = chalk.cyan(item.kind);
+      const statusLabel = chalk.bold(item.status);
+      const cacheHint = item.cacheOnly ? chalk.dim(" · local cache") : "";
+      console.log(
+        `[${index + 2}] ${resumabilityLabel}  ${kindLabel}  ${statusLabel}${cacheHint}`
+      );
+
+      const why = item.primaryWhyCode || "no-why";
+      const summary = item.whySummary || item.statusSummary || "无额外说明";
+      console.log(
+        `    ${chalk.dim(`${why} · ${summary} · ${stamp}`)}`
+      );
+    });
+
+    console.log("");
+    console.log(chalk.dim("也可以直接输入 attach <sessionId>。"));
+  }
+
+  async promptResumePanelChoice(defaultChoice = "1"): Promise<string> {
+    return this.promptLine("launcher>", defaultChoice);
+  }
+
+  resolveResumePanelSelection(raw: string, items: ResumePanelItem[]): ResumePanelItem | null {
+    const normalized = raw.trim();
+    const index = Number.parseInt(normalized, 10);
+    if (Number.isNaN(index)) {
+      return null;
+    }
+
+    if (index < 2 || index > items.length + 1) {
+      return null;
+    }
+
+    return items[index - 2] ?? null;
+  }
+
+  displayResumePreview(record: PersistedCliSessionRecord) {
+    process.stdout.write("\x1Bc");
+    this.displayBanner();
+    console.log(chalk.bold("可继续的 runtime work item"));
+    console.log(chalk.dim("可用命令：resume / workboard / transcript / q\n"));
+    this.displayRecordSummary(record);
+  }
+
+  async promptResumableAction(): Promise<string> {
+    return this.promptLine("resume>", "resume");
+  }
+
+  displayReadOnlyPreview(record: PersistedCliSessionRecord) {
+    process.stdout.write("\x1Bc");
+    this.displayBanner();
+    console.log(chalk.bold("只读 session"));
+    console.log(chalk.dim("可用命令：workboard / transcript / new / q\n"));
+    this.displayRecordSummary(record);
+  }
+
+  async promptReadOnlyAction(): Promise<string> {
+    return this.promptLine("restored>", "workboard");
+  }
+
+  displaySessionNotFound(sessionId: string) {
+    console.log(chalk.red(`\n❌ Session not found: ${sessionId}`));
+  }
+
+  displayLauncherInputError() {
+    console.log(chalk.yellow("无法识别该输入。请输入 1、列表编号，或 attach <sessionId>。"));
+  }
+
   async promptSessionLauncherChoice(defaultChoice = "1"): Promise<string> {
     return this.promptLine("launcher>", defaultChoice);
   }
@@ -95,6 +181,17 @@ export class TerminalUI {
     }
 
     for (const entry of transcript) {
+      if (entry.type === "event") {
+        const stamp = new Date(entry.event.timestamp).toLocaleString("zh-CN", {
+          hour12: false
+        });
+        const eventLabel = chalk.yellow("事件");
+        const detail = `${entry.event.type} · ${entry.event.status}`;
+        console.log(`${eventLabel} ${chalk.dim(stamp)} ${chalk.dim(detail)}`);
+        console.log(`${entry.event.summary}\n`);
+        continue;
+      }
+
       const stamp = new Date(entry.timestamp).toLocaleString("zh-CN", {
         hour12: false
       });
@@ -132,8 +229,8 @@ export class TerminalUI {
     }
 
     const nowTitle = this.deriveWorkboardNow(snapshot);
-    const why = snapshot.openUncertainties[0] || snapshot.statusSummary || "当前 session 没有额外解释。";
-    const movement = snapshot.statusSummary || "当前没有新的结构化变动。";
+    const why = snapshot.runtime.whySummary || snapshot.openUncertainties[0] || snapshot.runtime.statusSummary || "当前 session 没有额外解释。";
+    const movement = snapshot.runtime.statusSummary || "当前没有新的结构化变动。";
     const focus = this.deriveWorkboardFocus(snapshot);
 
     console.log(`${chalk.cyan("Now")}      ${nowTitle}`);
@@ -144,7 +241,7 @@ export class TerminalUI {
   }
 
   private deriveWorkboardNow(snapshot: AgentSessionSnapshot): string {
-    switch (snapshot.status) {
+    switch (snapshot.runtime.status) {
       case "clarifying":
         return "Clarifying goal";
       case "searching":
@@ -162,7 +259,7 @@ export class TerminalUI {
       case "waiting-input":
         return "Waiting for input";
       default:
-        return snapshot.status;
+        return snapshot.runtime.status;
     }
   }
 
@@ -171,7 +268,7 @@ export class TerminalUI {
       return `Recommendation: ${snapshot.recommendedCandidate.candidate.name}`;
     }
 
-    if (snapshot.activeCompareSet.length >= 2 || snapshot.status === "comparing") {
+    if (snapshot.activeCompareSet.length >= 2 || snapshot.runtime.status === "comparing") {
       return `Compare set: ${snapshot.activeCompareSet.map((candidate) => candidate.name).join(" / ")}`;
     }
 
@@ -184,6 +281,23 @@ export class TerminalUI {
     }
 
     return "当前没有聚焦对象。";
+  }
+
+  private displayRecordSummary(record: PersistedCliSessionRecord) {
+    const runtime = record.latestSnapshot?.runtime;
+    console.log(`${chalk.cyan("Session")}  ${record.sessionId}`);
+    if (!runtime) {
+      console.log(chalk.dim("暂无 runtime snapshot。\n"));
+      return;
+    }
+
+    console.log(`${chalk.cyan("Mode")}     ${runtime.status}`);
+    console.log(`${chalk.cyan("Why")}      ${runtime.whySummary || runtime.primaryWhyCode || "暂无说明"}`);
+    console.log(`${chalk.cyan("Summary")}  ${runtime.statusSummary || "暂无摘要"}`);
+    if (runtime.terminationReason) {
+      console.log(`${chalk.cyan("Stopped")}  ${runtime.terminationReason}`);
+    }
+    console.log("");
   }
 
   displayInitialSearch(query: string) {
@@ -657,7 +771,7 @@ export class TerminalUI {
       initial
     });
 
-    const result = await promptBuffer.run();
+    const result = await runPromptWithUserExit<string>(promptBuffer);
     return result.trim();
   }
 

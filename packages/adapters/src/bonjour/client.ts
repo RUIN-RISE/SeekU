@@ -161,6 +161,62 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function createAbortError(message: string) {
+  return new DOMException(message, "AbortError");
+}
+
+async function sleepWithSignal(ms: number, signal?: AbortSignal) {
+  if (ms <= 0) {
+    return;
+  }
+
+  if (signal?.aborted) {
+    throw signal.reason ?? createAbortError("Bonjour request aborted.");
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+
+    const onAbort = () => {
+      clearTimeout(timeoutId);
+      signal?.removeEventListener("abort", onAbort);
+      reject(signal?.reason ?? createAbortError("Bonjour request aborted."));
+    };
+
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+function createRequestSignal(timeoutMs: number, parentSignal?: AbortSignal) {
+  const controller = new AbortController();
+  const onParentAbort = () => {
+    controller.abort(parentSignal?.reason ?? createAbortError("Bonjour request aborted."));
+  };
+
+  if (parentSignal?.aborted) {
+    controller.abort(parentSignal.reason ?? createAbortError("Bonjour request aborted."));
+  } else if (parentSignal) {
+    parentSignal.addEventListener("abort", onParentAbort, { once: true });
+  }
+
+  const timeoutId = setTimeout(() => {
+    if (!controller.signal.aborted) {
+      controller.abort(createAbortError(`Bonjour request timed out after ${timeoutMs}ms.`));
+    }
+  }, timeoutMs);
+
+  return {
+    signal: controller.signal,
+    cleanup() {
+      clearTimeout(timeoutId);
+      parentSignal?.removeEventListener("abort", onParentAbort);
+    }
+  };
+}
+
 function isBonjourApiFailure<T>(payload: BonjourApiResponse<T>): payload is BonjourApiFailure {
   return payload.success === false;
 }
@@ -178,7 +234,7 @@ export class BonjourClient {
     };
   }
 
-  private async withRateLimit<T>(operation: () => Promise<T>): Promise<T> {
+  private async withRateLimit<T>(operation: () => Promise<T>, signal?: AbortSignal): Promise<T> {
     const previous = this.requestQueue;
     let releaseQueue!: () => void;
 
@@ -189,9 +245,13 @@ export class BonjourClient {
     await previous;
 
     try {
+      if (signal?.aborted) {
+        throw signal.reason ?? createAbortError("Bonjour request aborted.");
+      }
+
       const waitMs = Math.max(0, this.lastRequestAt + this.config.requestDelay - Date.now());
       if (waitMs > 0) {
-        await sleep(waitMs);
+        await sleepWithSignal(waitMs, signal);
       }
 
       this.lastRequestAt = Date.now();
@@ -201,18 +261,21 @@ export class BonjourClient {
     }
   }
 
-  private async fetchWithRetry<T>(url: URL): Promise<T> {
+  private async fetchWithRetry<T>(url: URL, signal?: AbortSignal): Promise<T> {
     let lastError: Error | undefined;
 
     for (let attempt = 0; attempt < this.config.maxRetries; attempt += 1) {
       try {
         return await this.withRateLimit(async () => {
+          const request = createRequestSignal(this.config.timeout, signal);
+
+          try {
           const response = await fetch(url, {
             headers: {
               accept: "application/json",
               ...(this.config.authToken ? { token: this.config.authToken } : {})
             },
-            signal: AbortSignal.timeout(this.config.timeout)
+            signal: request.signal
           });
 
           if (!response.ok) {
@@ -228,12 +291,19 @@ export class BonjourClient {
           }
 
           return payload.data;
-        });
+          } finally {
+            request.cleanup();
+          }
+        }, signal);
       } catch (error) {
+        if (signal?.aborted) {
+          throw signal.reason ?? (error instanceof Error ? error : new Error(String(error)));
+        }
+
         lastError = error instanceof Error ? error : new Error(String(error));
 
         if (attempt < this.config.maxRetries - 1) {
-          await sleep(500 * 2 ** attempt);
+          await sleepWithSignal(500 * 2 ** attempt, signal);
         }
       }
     }
@@ -255,31 +325,42 @@ export class BonjourClient {
     return url;
   }
 
-  async fetchProfileByLink(link: string, options: { inflate?: boolean } = {}): Promise<BonjourProfile> {
+  async fetchProfileByLink(
+    link: string,
+    options: { inflate?: boolean; signal?: AbortSignal } = {}
+  ): Promise<BonjourProfile> {
     return this.fetchWithRetry<BonjourProfile>(
       this.buildUrl(
         `/profile/${encodeURIComponent(link)}`,
         options.inflate ? { inflate: "true" } : undefined
-      )
+      ),
+      options.signal
     );
   }
 
-  async fetchProfileByHandle(handle: string, options: { inflate?: boolean } = {}): Promise<BonjourProfile> {
+  async fetchProfileByHandle(
+    handle: string,
+    options: { inflate?: boolean; signal?: AbortSignal } = {}
+  ): Promise<BonjourProfile> {
     return this.fetchProfileByLink(handle, options);
   }
 
-  async fetchProfileByProfileLink(profileLink: string, options: { inflate?: boolean } = {}): Promise<BonjourProfile> {
+  async fetchProfileByProfileLink(
+    profileLink: string,
+    options: { inflate?: boolean; signal?: AbortSignal } = {}
+  ): Promise<BonjourProfile> {
     return this.fetchProfileByLink(profileLink, options);
   }
 
-  async fetchCategories(): Promise<BonjourCategory[]> {
-    return this.fetchWithRetry<BonjourCategory[]>(this.buildUrl("/user/category"));
+  async fetchCategories(options: { signal?: AbortSignal } = {}): Promise<BonjourCategory[]> {
+    return this.fetchWithRetry<BonjourCategory[]>(this.buildUrl("/user/category"), options.signal);
   }
 
   async fetchCommunityPostsByCategory(
     category: string,
     limit = 20,
-    skip = 0
+    skip = 0,
+    options: { signal?: AbortSignal } = {}
   ): Promise<BonjourCommunityPost[]> {
     return this.fetchWithRetry<BonjourCommunityPost[]>(
       this.buildUrl("/user/community", {
@@ -287,14 +368,16 @@ export class BonjourClient {
         category,
         limit,
         skip
-      })
+      }),
+      options.signal
     );
   }
 
   async fetchCommunityPostsByProfileLink(
     profileLink: string,
     limit = 20,
-    skip = 0
+    skip = 0,
+    options: { signal?: AbortSignal } = {}
   ): Promise<BonjourCommunityPost[]> {
     return this.fetchWithRetry<BonjourCommunityPost[]>(
       this.buildUrl("/user/community", {
@@ -302,36 +385,47 @@ export class BonjourClient {
         profile_link: profileLink,
         limit,
         skip
-      })
+      }),
+      options.signal
     );
   }
 
-  async fetchGlobalCommunityPosts(limit = 20, skip = 0): Promise<BonjourCommunityPost[]> {
+  async fetchGlobalCommunityPosts(
+    limit = 20,
+    skip = 0,
+    options: { signal?: AbortSignal } = {}
+  ): Promise<BonjourCommunityPost[]> {
     return this.fetchWithRetry<BonjourCommunityPost[]>(
       this.buildUrl("/user/community", {
         limit,
         skip
-      })
+      }),
+      options.signal
     );
   }
 
-  async fetchCommunityCommentsByPostId(postId: string): Promise<BonjourCommunityComment[]> {
+  async fetchCommunityCommentsByPostId(
+    postId: string,
+    options: { signal?: AbortSignal } = {}
+  ): Promise<BonjourCommunityComment[]> {
     return this.fetchWithRetry<BonjourCommunityComment[]>(
       this.buildUrl("/user/communitycomment", {
         _id: postId
-      })
+      }),
+      options.signal
     );
   }
 
-  async fetchOwnProfile(): Promise<BonjourProfile> {
-    return this.fetchWithRetry<BonjourProfile>(this.buildUrl("/user/profile"));
+  async fetchOwnProfile(options: { signal?: AbortSignal } = {}): Promise<BonjourProfile> {
+    return this.fetchWithRetry<BonjourProfile>(this.buildUrl("/user/profile"), options.signal);
   }
 
-  async fetchFriendLinks(handle?: string): Promise<BonjourFriendLinkResponse> {
+  async fetchFriendLinks(handle?: string, options: { signal?: AbortSignal } = {}): Promise<BonjourFriendLinkResponse> {
     return this.fetchWithRetry<BonjourFriendLinkResponse>(
       handle
         ? this.buildUrl(`/user/friend/${encodeURIComponent(handle)}`)
-        : this.buildUrl("/user/friend")
+        : this.buildUrl("/user/friend"),
+      options.signal
     );
   }
 }

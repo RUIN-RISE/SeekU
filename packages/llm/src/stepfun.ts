@@ -53,11 +53,11 @@ export class StepFunProvider implements LLMProvider {
     });
   }
 
-  async embed(): Promise<never> {
+  async embed(_text?: string, _options?: { model?: string; signal?: AbortSignal }): Promise<never> {
     throw new Error("StepFunProvider does not support embeddings. Use SiliconFlowProvider for embedding operations.");
   }
 
-  async embedBatch(): Promise<never> {
+  async embedBatch(_texts?: string[], _options?: { model?: string; signal?: AbortSignal }): Promise<never> {
     throw new Error("StepFunProvider does not support embeddings. Use SiliconFlowProvider for embedding operations.");
   }
 

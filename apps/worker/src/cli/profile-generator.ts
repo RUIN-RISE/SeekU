@@ -4,11 +4,12 @@ import { createProvider } from "@seeku/llm";
 import { MultiDimensionProfile, SearchConditions } from "./types.js";
 import { ProfileSummarySchema, sanitizeForPrompt, safeParseJSON } from "./schemas.js";
 import { CLI_CONFIG } from "./config.js";
-import { withRetry } from "./retry.js";
+import { isRetryable, withRetry } from "./retry.js";
 
 interface ProfileGenerationOptions {
   quiet?: boolean;
   maxRetries?: number;
+  signal?: AbortSignal;
 }
 
 export class ProfileGenerator {
@@ -79,8 +80,14 @@ ${searchLens}
     try {
       const response = await withRetry(
         async () => {
+          if (options.signal?.aborted) {
+            throw options.signal.reason ?? new Error("Profile generation aborted.");
+          }
+
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), CLI_CONFIG.llm.timeoutMs);
+          const abortFromParent = () => controller.abort(options.signal?.reason);
+          options.signal?.addEventListener("abort", abortFromParent, { once: true });
 
           try {
             return await this.llm.chat([
@@ -88,12 +95,14 @@ ${searchLens}
               { role: "user", content: summaryPrompt }
             ], { signal: controller.signal });
           } finally {
+            options.signal?.removeEventListener("abort", abortFromParent);
             clearTimeout(timeoutId);
           }
         },
         {
           maxRetries: options.maxRetries ?? CLI_CONFIG.llm.maxRetries,
-          quiet: options.quiet
+          quiet: options.quiet,
+          isRetryable: (error) => !options.signal?.aborted && isRetryable(error)
         }
       );
 
@@ -112,6 +121,10 @@ ${searchLens}
         highlights: result.data.highlights ?? ["具备相关技术与项目实践", "资料显示有持续投入记录", "可作为后续深看的候选人"]
       };
     } catch (e) {
+      if (options.signal?.aborted) {
+        throw e;
+      }
+
       if (!options.quiet) {
         if (e instanceof Error && e.name === "AbortError") {
           console.warn("Profile generation timed out after", CLI_CONFIG.llm.timeoutMs, "ms");

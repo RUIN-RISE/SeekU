@@ -117,6 +117,8 @@ export const agentSessions = pgTable("agent_sessions", {
     .$type<Record<string, unknown> | null>()
     .default(sql`'{}'::jsonb`)
     .notNull(),
+  resumeMeta: jsonb("resume_meta")
+    .$type<Record<string, unknown> | null>(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
 });

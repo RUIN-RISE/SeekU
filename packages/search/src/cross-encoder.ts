@@ -30,6 +30,10 @@ export interface CrossEncoderScore {
   reasoning: string;
 }
 
+export interface CrossEncoderOptions {
+  signal?: AbortSignal;
+}
+
 export interface CandidateSummary {
   personId: string;
   name: string;
@@ -224,8 +228,13 @@ export class CrossEncoder {
    */
   async scoreBatch(
     intent: QueryIntent,
-    candidates: CandidateSummary[]
+    candidates: CandidateSummary[],
+    options: CrossEncoderOptions = {}
   ): Promise<CrossEncoderScore[]> {
+    if (options.signal?.aborted) {
+      throw options.signal.reason ?? new Error("Cross-encoder aborted.");
+    }
+
     if (candidates.length === 0) {
       return [];
     }
@@ -237,7 +246,7 @@ export class CrossEncoder {
     for (let i = 0; i < candidates.length; i += this.batchSize) {
       const batch = candidates.slice(i, i + this.batchSize);
       const batchResults = await Promise.all(
-        batch.map((candidate) => this.scoreSingle(intentText, candidate))
+        batch.map((candidate) => this.scoreSingle(intentText, candidate, options))
       );
       results.push(...batchResults);
     }
@@ -247,7 +256,8 @@ export class CrossEncoder {
 
   private async scoreSingle(
     intentText: string,
-    candidate: CandidateSummary
+    candidate: CandidateSummary,
+    options: CrossEncoderOptions = {}
   ): Promise<CrossEncoderScore> {
     const candidateText = buildCandidateText(candidate);
 
@@ -261,8 +271,14 @@ export class CrossEncoder {
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const abortFromParent = () => controller.abort(options.signal?.reason);
+    options.signal?.addEventListener("abort", abortFromParent, { once: true });
 
     try {
+      if (options.signal?.aborted) {
+        throw options.signal.reason ?? new Error("Cross-encoder aborted.");
+      }
+
       const response = await this.provider.chat(messages, {
         model: this.model,
         temperature: 0,
@@ -278,6 +294,10 @@ export class CrossEncoder {
         reasoning: parsed.reasoning
       };
     } catch (error) {
+      if (options.signal?.aborted) {
+        throw error;
+      }
+
       const errorMessage =
         (error as Error).name === "AbortError" ? "Timeout" : "LLM error";
       return {
@@ -286,6 +306,7 @@ export class CrossEncoder {
         reasoning: errorMessage
       };
     } finally {
+      options.signal?.removeEventListener("abort", abortFromParent);
       clearTimeout(timer);
     }
   }
@@ -298,8 +319,9 @@ export class CrossEncoder {
 export async function crossEncoderScore(
   config: CrossEncoderConfig,
   intent: QueryIntent,
-  candidates: CandidateSummary[]
+  candidates: CandidateSummary[],
+  options: CrossEncoderOptions = {}
 ): Promise<CrossEncoderScore[]> {
   const encoder = new CrossEncoder(config);
-  return encoder.scoreBatch(intent, candidates);
+  return encoder.scoreBatch(intent, candidates, options);
 }

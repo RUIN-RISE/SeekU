@@ -49,6 +49,62 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function createAbortError(message: string) {
+  return new DOMException(message, "AbortError");
+}
+
+async function sleepWithSignal(ms: number, signal?: AbortSignal) {
+  if (ms <= 0) {
+    return;
+  }
+
+  if (signal?.aborted) {
+    throw signal.reason ?? createAbortError("GitHub request aborted.");
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+
+    const onAbort = () => {
+      clearTimeout(timeoutId);
+      signal?.removeEventListener("abort", onAbort);
+      reject(signal?.reason ?? createAbortError("GitHub request aborted."));
+    };
+
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+function createRequestSignal(timeoutMs: number, parentSignal?: AbortSignal) {
+  const controller = new AbortController();
+  const onParentAbort = () => {
+    controller.abort(parentSignal?.reason ?? createAbortError("GitHub request aborted."));
+  };
+
+  if (parentSignal?.aborted) {
+    controller.abort(parentSignal.reason ?? createAbortError("GitHub request aborted."));
+  } else if (parentSignal) {
+    parentSignal.addEventListener("abort", onParentAbort, { once: true });
+  }
+
+  const timeoutId = setTimeout(() => {
+    if (!controller.signal.aborted) {
+      controller.abort(createAbortError(`GitHub request timed out after ${timeoutMs}ms.`));
+    }
+  }, timeoutMs);
+
+  return {
+    signal: controller.signal,
+    cleanup() {
+      clearTimeout(timeoutId);
+      parentSignal?.removeEventListener("abort", onParentAbort);
+    }
+  };
+}
+
 export class GithubClient {
   private readonly config: AdapterConfig;
   private readonly token?: string;
@@ -64,7 +120,7 @@ export class GithubClient {
     this.token = token;
   }
 
-  private async withRateLimit<T>(operation: () => Promise<T>) {
+  private async withRateLimit<T>(operation: () => Promise<T>, signal?: AbortSignal) {
     const previous = this.requestQueue;
     let release!: () => void;
 
@@ -75,9 +131,13 @@ export class GithubClient {
     await previous;
 
     try {
+      if (signal?.aborted) {
+        throw signal.reason ?? createAbortError("GitHub request aborted.");
+      }
+
       const waitMs = Math.max(0, this.lastRequestAt + this.config.requestDelay - Date.now());
       if (waitMs > 0) {
-        await sleep(waitMs);
+        await sleepWithSignal(waitMs, signal);
       }
 
       this.lastRequestAt = Date.now();
@@ -95,7 +155,11 @@ export class GithubClient {
     };
   }
 
-  private async fetchWithRetry<T>(pathname: string, searchParams?: Record<string, string | number>) {
+  private async fetchWithRetry<T>(
+    pathname: string,
+    searchParams?: Record<string, string | number>,
+    signal?: AbortSignal
+  ) {
     const url = new URL(pathname, this.config.baseUrl);
 
     for (const [key, value] of Object.entries(searchParams ?? {})) {
@@ -107,9 +171,12 @@ export class GithubClient {
     for (let attempt = 0; attempt < this.config.maxRetries; attempt += 1) {
       try {
         return await this.withRateLimit(async () => {
+          const request = createRequestSignal(this.config.timeout, signal);
+
+          try {
           const response = await fetch(url, {
             headers: this.createHeaders(),
-            signal: AbortSignal.timeout(this.config.timeout)
+            signal: request.signal
           });
 
           if (response.status === 404) {
@@ -122,12 +189,19 @@ export class GithubClient {
           }
 
           return (await response.json()) as T;
-        });
+          } finally {
+            request.cleanup();
+          }
+        }, signal);
       } catch (error) {
+        if (signal?.aborted) {
+          throw signal.reason ?? (error instanceof Error ? error : new Error(String(error)));
+        }
+
         lastError = error instanceof Error ? error : new Error(String(error));
 
         if (attempt < this.config.maxRetries - 1) {
-          await sleep(500 * 2 ** attempt);
+          await sleepWithSignal(500 * 2 ** attempt, signal);
         }
       }
     }
@@ -135,32 +209,35 @@ export class GithubClient {
     throw lastError ?? new Error("GitHub API request failed.");
   }
 
-  async fetchProfileByUsername(username: string) {
-    return this.fetchWithRetry<GithubProfile>(`/users/${encodeURIComponent(username)}`);
+  async fetchProfileByUsername(username: string, options: { signal?: AbortSignal } = {}) {
+    return this.fetchWithRetry<GithubProfile>(`/users/${encodeURIComponent(username)}`, undefined, options.signal);
   }
 
-  async fetchRepositoriesByUsername(username: string) {
+  async fetchRepositoriesByUsername(username: string, options: { signal?: AbortSignal } = {}) {
     return this.fetchWithRetry<GithubRepository[]>(`/users/${encodeURIComponent(username)}/repos`, {
       per_page: 100,
       sort: "updated",
       direction: "desc",
       type: "owner"
-    });
+    }, options.signal);
   }
 
-  async fetchFollowingByUsername(username: string) {
+  async fetchFollowingByUsername(username: string, options: { signal?: AbortSignal } = {}) {
     return this.fetchWithRetry<GithubUserSummary[]>(`/users/${encodeURIComponent(username)}/following`, {
       per_page: 30
-    });
+    }, options.signal);
   }
 
-  async fetchFollowersByUsername(username: string) {
+  async fetchFollowersByUsername(username: string, options: { signal?: AbortSignal } = {}) {
     return this.fetchWithRetry<GithubUserSummary[]>(`/users/${encodeURIComponent(username)}/followers`, {
       per_page: 30
-    });
+    }, options.signal);
   }
 
-  async searchUsers(query: string, options: { page?: number; per_page?: number } = {}) {
+  async searchUsers(
+    query: string,
+    options: { page?: number; per_page?: number; signal?: AbortSignal } = {}
+  ) {
     return this.fetchWithRetry<{
       total_count: number;
       incomplete_results: boolean;
@@ -169,6 +246,6 @@ export class GithubClient {
       q: query,
       page: options.page ?? 1,
       per_page: options.per_page ?? 30
-    });
+    }, options.signal);
   }
 }

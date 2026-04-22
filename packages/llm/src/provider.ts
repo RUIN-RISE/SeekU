@@ -27,8 +27,8 @@ export interface EmbeddingResponse {
 export interface LLMProvider {
   readonly name: string;
   chat(messages: ChatMessage[], options?: ChatOptions): Promise<ChatResponse>;
-  embed(text: string, options?: { model?: string }): Promise<EmbeddingResponse>;
-  embedBatch(texts: string[], options?: { model?: string }): Promise<EmbeddingResponse[]>;
+  embed(text: string, options?: { model?: string; signal?: AbortSignal }): Promise<EmbeddingResponse>;
+  embedBatch(texts: string[], options?: { model?: string; signal?: AbortSignal }): Promise<EmbeddingResponse[]>;
 }
 
 export interface LLMProviderConfig {

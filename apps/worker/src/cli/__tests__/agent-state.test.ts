@@ -9,6 +9,7 @@ import {
   removeCandidateFromCompareSet,
   setConfidenceStatus,
   setCurrentShortlist,
+  setRuntimeStatus,
   setSessionShortlist,
   setRecommendedCandidate
 } from "../agent-state.js";
@@ -252,5 +253,77 @@ describe("agent-state", () => {
         askedAt: new Date("2026-04-16T10:30:00.000Z")
       }
     ]);
+  });
+
+  it("clears primaryWhyCode and whyCodes when transitioning without explicit why input", () => {
+    let state = createAgentSessionState();
+    state = setRuntimeStatus(state, "searching", {
+      primaryWhyCode: "retrieval_all_weak",
+      whySummary: "当前结果偏弱。"
+    });
+
+    expect(state.runtime.primaryWhyCode).toBe("retrieval_all_weak");
+    expect(state.runtime.whyCodes).toEqual(["retrieval_all_weak"]);
+    expect(state.runtime.whySummary).toBe("当前结果偏弱。");
+
+    const after = setRuntimeStatus(state, "shortlist");
+
+    expect(after.runtime.status).toBe("shortlist");
+    expect(after.runtime.primaryWhyCode).toBeUndefined();
+    expect(after.runtime.whyCodes).toEqual([]);
+    expect(after.runtime.whySummary).toBeNull();
+  });
+
+  it("preserves primaryWhyCode when explicitly provided in the new transition", () => {
+    let state = createAgentSessionState();
+    state = setRuntimeStatus(state, "searching", {
+      primaryWhyCode: "retrieval_all_weak",
+      whySummary: "当前结果偏弱。"
+    });
+
+    const after = setRuntimeStatus(state, "recovering", {
+      primaryWhyCode: "recovery_rewrite",
+      whySummary: "正在重写查询条件。"
+    });
+
+    expect(after.runtime.status).toBe("recovering");
+    expect(after.runtime.primaryWhyCode).toBe("recovery_rewrite");
+    expect(after.runtime.whyCodes).toEqual(["recovery_rewrite"]);
+    expect(after.runtime.whySummary).toBe("正在重写查询条件。");
+  });
+
+  it("clears whySummary when no why input is provided, even if whySummary is passed", () => {
+    let state = createAgentSessionState();
+    state = setRuntimeStatus(state, "searching", {
+      primaryWhyCode: "retrieval_all_weak",
+      whySummary: "当前结果偏弱。"
+    });
+
+    const after = setRuntimeStatus(state, "shortlist", {
+      summary: "Shortlist ready.",
+      whySummary: "This should be cleared."
+    });
+
+    expect(after.runtime.status).toBe("shortlist");
+    expect(after.runtime.statusSummary).toBe("Shortlist ready.");
+    expect(after.runtime.primaryWhyCode).toBeUndefined();
+    expect(after.runtime.whyCodes).toEqual([]);
+    expect(after.runtime.whySummary).toBeNull();
+  });
+
+  it("preserves whySummary when primaryWhyCode is provided", () => {
+    let state = createAgentSessionState();
+    state = setRuntimeStatus(state, "searching", {
+      primaryWhyCode: "retrieval_all_weak",
+      whySummary: "当前结果偏弱。"
+    });
+
+    const after = setRuntimeStatus(state, "recovering", {
+      primaryWhyCode: "recovery_rewrite",
+      whySummary: "正在重写查询条件。"
+    });
+
+    expect(after.runtime.primaryWhyCode).toBe("recovery_rewrite");
+    expect(after.runtime.whySummary).toBe("正在重写查询条件。");
   });
 });

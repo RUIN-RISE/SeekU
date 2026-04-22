@@ -7,7 +7,7 @@ import type { MultiDimensionProfile, SearchConditions } from "./types.js";
 import { CLI_CONFIG } from "./config.js";
 import { HybridScoringEngine } from "./scorer.js";
 import { ProfileGenerator } from "./profile-generator.js";
-import { withRetry } from "./retry.js";
+import { isRetryable, withRetry } from "./retry.js";
 
 export interface ProfileLoadableCandidate {
   personId: string;
@@ -24,6 +24,13 @@ export interface ProfileManagerDependencies {
   scorer: HybridScoringEngine;
   generator: ProfileGenerator;
   getSpinner: () => Ora;
+  getExecutionSignal?: () => AbortSignal | undefined;
+}
+
+interface ProfileExecutionOptions {
+  quiet?: boolean;
+  maxRetries?: number;
+  signal?: AbortSignal;
 }
 
 export class ProfileManager {
@@ -61,8 +68,10 @@ export class ProfileManager {
   async ensureProfiles(
     candidates: ProfileLoadableCandidate[],
     conditions: SearchConditions,
-    loadingText: string
+    loadingText: string,
+    options: ProfileExecutionOptions = {}
   ): Promise<void> {
+    const signal = this.resolveSignal(options.signal);
     const targets = candidates.filter((candidate) => !candidate.profile);
     if (targets.length === 0) {
       return;
@@ -71,7 +80,7 @@ export class ProfileManager {
     const spinner = this.deps.getSpinner();
     spinner.start(loadingText);
     try {
-      await Promise.all(targets.map((candidate) => this.loadProfileForCandidate(candidate, conditions)));
+      await Promise.all(targets.map((candidate) => this.loadProfileForCandidate(candidate, conditions, { signal })));
       spinner.stop();
     } catch (error) {
       spinner.fail("画像准备失败。");
@@ -81,8 +90,10 @@ export class ProfileManager {
 
   async loadProfileForCandidate(
     candidate: ProfileLoadableCandidate,
-    conditions: SearchConditions
+    conditions: SearchConditions,
+    options: ProfileExecutionOptions = {}
   ): Promise<MultiDimensionProfile | null> {
+    const signal = this.resolveSignal(options.signal);
     const { person, evidence } = candidate._hydrated;
     const profileCacheKey = this.buildProfileCacheKey(conditions);
     const processingKey = `${candidate.personId}:${profileCacheKey}`;
@@ -98,7 +109,7 @@ export class ProfileManager {
         spinner.start(`等待后台完成 ${candidate.name} 的分析...`);
       }
 
-      const profile = await this.getOrGenerateProfile(candidate.personId, person, evidence, conditions);
+      const profile = await this.getOrGenerateProfile(candidate.personId, person, evidence, conditions, { signal });
       candidate.profile = profile;
 
       if (spinner.isSpinning && !isCached && !isPreloading) {
@@ -109,6 +120,10 @@ export class ProfileManager {
 
       return profile;
     } catch (error) {
+      if (signal?.aborted) {
+        throw error;
+      }
+
       if (spinner.isSpinning) {
         spinner.fail("画像分析失败。");
       }
@@ -122,11 +137,9 @@ export class ProfileManager {
     person: Person,
     evidence: EvidenceItem[],
     conditions: SearchConditions,
-    options: {
-      quiet?: boolean;
-      maxRetries?: number;
-    } = {}
+    options: ProfileExecutionOptions = {}
   ): Promise<MultiDimensionProfile> {
+    const signal = this.resolveSignal(options.signal);
     const profileCacheKey = this.buildProfileCacheKey(conditions);
     const processingKey = `${personId}:${profileCacheKey}`;
 
@@ -152,6 +165,10 @@ export class ProfileManager {
 
     const generateTask = async () =>
       withRetry(async () => {
+        if (signal?.aborted) {
+          throw signal.reason ?? new Error("Profile generation aborted.");
+        }
+
         let innerProfile = await this.deps.cacheRepo.getProfile(personId, profileCacheKey);
         if (innerProfile) {
           return innerProfile;
@@ -160,19 +177,25 @@ export class ProfileManager {
         const rules = this.deps.scorer.scoreByRules(person, evidence, conditions);
         const llm = await this.deps.scorer.scoreByLLM(person, evidence, {
           quiet: options.quiet,
-          maxRetries: options.maxRetries
+          maxRetries: options.maxRetries,
+          signal
         });
         const experienceBonus = this.deps.scorer.calculateExperienceMatch(person, evidence, conditions);
         innerProfile = this.deps.scorer.aggregate(rules, llm, experienceBonus);
 
         innerProfile = await this.deps.generator.generate(person, evidence, innerProfile, conditions, {
           quiet: options.quiet,
-          maxRetries: options.maxRetries
+          maxRetries: options.maxRetries,
+          signal
         });
         await this.deps.cacheRepo.setProfile(personId, profileCacheKey, innerProfile, innerProfile.overallScore);
 
         return innerProfile;
-      }, { maxRetries: CLI_CONFIG.llm.maxRetries, baseDelay: 2000 });
+      }, {
+        maxRetries: CLI_CONFIG.llm.maxRetries,
+        baseDelay: 2000,
+        isRetryable: (error) => !signal?.aborted && isRetryable(error)
+      });
 
     const promise = generateTask().finally(() => {
       this.processingProfiles.delete(processingKey);
@@ -194,8 +217,10 @@ export class ProfileManager {
 
   async preloadProfiles(
     candidates: ProfileLoadableCandidate[],
-    conditions: SearchConditions
+    conditions: SearchConditions,
+    options: ProfileExecutionOptions = {}
   ): Promise<void> {
+    const signal = this.resolveSignal(options.signal);
     const tasks: Array<() => Promise<void>> = [];
 
     for (const candidate of candidates) {
@@ -203,14 +228,15 @@ export class ProfileManager {
         const { person, evidence } = candidate._hydrated;
         const profile = await this.getOrGenerateProfile(candidate.personId, person, evidence, conditions, {
           quiet: true,
-          maxRetries: 0
+          maxRetries: 0,
+          signal
         });
         candidate.profile = profile;
       });
     }
 
     if (tasks.length > 0) {
-      await this.promisePool(tasks, CLI_CONFIG.llm.parallelLimit);
+      await this.promisePool(tasks, CLI_CONFIG.llm.parallelLimit, signal);
     }
   }
 
@@ -218,7 +244,11 @@ export class ProfileManager {
     return !process.stdin.isTTY;
   }
 
-  private async promisePool<T>(tasks: Array<() => Promise<T>>, limit: number): Promise<T[]> {
+  private resolveSignal(signal?: AbortSignal): AbortSignal | undefined {
+    return signal ?? this.deps.getExecutionSignal?.();
+  }
+
+  private async promisePool<T>(tasks: Array<() => Promise<T>>, limit: number, signal?: AbortSignal): Promise<T[]> {
     type PoolResult = T | { error: Error };
     const results: PoolResult[] = new Array(tasks.length);
 
@@ -243,6 +273,9 @@ export class ProfileManager {
     );
 
     if (failed.length > 0) {
+      if (signal?.aborted) {
+        throw failed[0].error;
+      }
       console.warn(chalk.dim(`\n[Pool Warning] ${failed.length} analysis tasks failed. Results may be incomplete.`));
     }
 

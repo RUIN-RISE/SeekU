@@ -10,7 +10,7 @@ import {
 } from "./types.js";
 import { LLMScoresSchema, sanitizeForPrompt, safeParseJSON } from "./schemas.js";
 import { CLI_CONFIG } from "./config.js";
-import { withRetry } from "./retry.js";
+import { isRetryable, withRetry } from "./retry.js";
 
 // Scoring weights configuration (centralized in config.ts)
 const SCORING_WEIGHTS = CLI_CONFIG.scoring.weights;
@@ -21,6 +21,7 @@ const LLM_TIMEOUT_MS = CLI_CONFIG.llm.timeoutMs;
 interface LLMExecutionOptions {
   quiet?: boolean;
   maxRetries?: number;
+  signal?: AbortSignal;
 }
 
 type RerankOnlySortMode = Extract<SortMode, "fresh" | "source" | "evidence">;
@@ -202,9 +203,15 @@ CRITICAL: Return ONLY the JSON, no markdown, no explanation.
 
       const response = await withRetry(
         async () => {
+          if (options.signal?.aborted) {
+            throw options.signal.reason ?? new Error("LLM scoring aborted.");
+          }
+
           // ISSUE-V3: P2 Create fresh AbortController and timeout for EACH retry attempt
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), LLM_TIMEOUT_MS);
+          const abortFromParent = () => controller.abort(options.signal?.reason);
+          options.signal?.addEventListener("abort", abortFromParent, { once: true });
           
           try {
             return await this.llm.chat([
@@ -212,12 +219,14 @@ CRITICAL: Return ONLY the JSON, no markdown, no explanation.
               { role: "user", content: prompt }
             ], { signal: controller.signal });
           } finally {
+            options.signal?.removeEventListener("abort", abortFromParent);
             clearTimeout(timeoutId);
           }
         },
         {
           maxRetries: options.maxRetries ?? CLI_CONFIG.llm.maxRetries,
-          quiet: options.quiet
+          quiet: options.quiet,
+          isRetryable: (error) => !options.signal?.aborted && isRetryable(error)
         }
       );
 
@@ -237,6 +246,10 @@ CRITICAL: Return ONLY the JSON, no markdown, no explanation.
         communityReputation: result.data.communityReputationBoost
       };
     } catch (e) {
+      if (options.signal?.aborted) {
+        throw e;
+      }
+
       // Check if it was aborted
       if (!options.quiet) {
         if (e instanceof Error && e.name === "AbortError") {

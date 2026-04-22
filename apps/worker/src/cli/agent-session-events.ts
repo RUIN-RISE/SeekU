@@ -4,23 +4,18 @@ import type {
   AgentSessionState,
   RecommendationGateFailureReason
 } from "./agent-state.js";
+import type { AgentSessionRuntimeState } from "./agent-state.js";
 import type {
   ScoredCandidate,
   SearchConditions,
   SearchHistoryEntry,
   SearchRecoveryState
 } from "./types.js";
-
-export type AgentSessionStatus =
-  | "idle"
-  | "clarifying"
-  | "searching"
-  | "recovering"
-  | "shortlist"
-  | "comparing"
-  | "waiting-input"
-  | "blocked"
-  | "completed";
+import type {
+  AgentSessionStatus,
+  AgentSessionTerminationReason,
+  AgentSessionWhyCode
+} from "./session-runtime-types.js";
 
 export type AgentInterventionType =
   | "add_to_compare"
@@ -54,19 +49,36 @@ export interface AgentSearchHistoryEntrySnapshot extends Omit<SearchHistoryEntry
 
 export interface AgentRecoveryStateSnapshot extends SearchRecoveryState {}
 
+export interface AgentSessionRuntimeSnapshot {
+  status: AgentSessionStatus;
+  statusSummary: string | null;
+  primaryWhyCode?: AgentSessionWhyCode;
+  whyCodes: AgentSessionWhyCode[];
+  whySummary: string | null;
+  terminationReason?: AgentSessionTerminationReason;
+  lastStatusAt: string;
+}
+
 export type AgentTranscriptRole = "user" | "assistant" | "system";
 
-export interface AgentTranscriptEntry {
+export interface AgentTranscriptMessageEntry {
+  type: "message";
   id: string;
   role: AgentTranscriptRole;
   content: string;
   timestamp: string;
 }
 
+export interface AgentTranscriptEventEntry {
+  type: "event";
+  event: AgentSessionEvent<Record<string, unknown>>;
+}
+
+export type AgentTranscriptEntry = AgentTranscriptMessageEntry | AgentTranscriptEventEntry;
+
 export interface AgentSessionSnapshot {
   sessionId: string;
-  status: AgentSessionStatus;
-  statusSummary: string | null;
+  runtime: AgentSessionRuntimeSnapshot;
   userGoal: string | null;
   currentConditions: SearchConditions;
   currentShortlist: AgentSessionCandidateSnapshot[];
@@ -217,6 +229,20 @@ export function serializeRecoveryState(
   };
 }
 
+export function serializeRuntimeState(
+  runtime: AgentSessionRuntimeState
+): AgentSessionRuntimeSnapshot {
+  return {
+    status: runtime.status,
+    statusSummary: runtime.statusSummary,
+    primaryWhyCode: runtime.primaryWhyCode,
+    whyCodes: [...runtime.whyCodes],
+    whySummary: runtime.whySummary,
+    terminationReason: runtime.terminationReason,
+    lastStatusAt: runtime.lastStatusAt.toISOString()
+  };
+}
+
 export function serializeRecommendation(
   recommendation: AgentRecommendation | null
 ): AgentRecommendationSnapshot | null {
@@ -235,15 +261,12 @@ export function serializeRecommendation(
 export function buildAgentSessionSnapshot(options: {
   sessionId: string;
   state: AgentSessionState;
-  status: AgentSessionStatus;
-  statusSummary?: string | null;
 }): AgentSessionSnapshot {
-  const { sessionId, state, status, statusSummary } = options;
+  const { sessionId, state } = options;
 
   return {
     sessionId,
-    status,
-    statusSummary: statusSummary?.trim() || null,
+    runtime: serializeRuntimeState(state.runtime),
     userGoal: state.userGoal,
     currentConditions: cloneSearchConditions(state.currentConditions),
     currentShortlist: state.currentShortlist.map(serializeSessionCandidate),
@@ -269,6 +292,56 @@ export function createAgentSessionEvent<TData>(
     summary: options.summary,
     data: options.data
   };
+}
+
+export function cloneAgentSessionEvent<TData>(
+  event: AgentSessionEvent<TData>
+): AgentSessionEvent<TData> {
+  return {
+    ...event,
+    data: isRecordValue(event.data)
+      ? { ...event.data as Record<string, unknown> } as TData
+      : event.data
+  };
+}
+
+export function createTranscriptMessageEntry(options: {
+  id: string;
+  role: AgentTranscriptRole;
+  content: string;
+  timestamp: string;
+}): AgentTranscriptMessageEntry {
+  return {
+    type: "message",
+    id: options.id,
+    role: options.role,
+    content: options.content,
+    timestamp: options.timestamp
+  };
+}
+
+export function createTranscriptEventEntry<TData>(
+  event: AgentSessionEvent<TData>
+): AgentTranscriptEventEntry {
+  return {
+    type: "event",
+    event: cloneAgentSessionEvent(event as AgentSessionEvent<Record<string, unknown>>)
+  };
+}
+
+export function cloneTranscriptEntry(entry: AgentTranscriptEntry): AgentTranscriptEntry {
+  if (entry.type === "message") {
+    return { ...entry };
+  }
+
+  return {
+    type: "event",
+    event: cloneAgentSessionEvent(entry.event)
+  };
+}
+
+function isRecordValue(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 export function summarizeInterventionCommand(command: AgentInterventionCommand): string {

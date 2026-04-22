@@ -56,11 +56,13 @@ export class OpenRouterProvider implements LLMProvider {
     });
   }
 
-  async embed(text: string, options?: { model?: string }): Promise<EmbeddingResponse> {
+  async embed(text: string, options?: { model?: string; signal?: AbortSignal }): Promise<EmbeddingResponse> {
     // Note: OpenRouter supports embeddings for some models, but we primarily use it for chat.
     const response = await this.client.embeddings.create({
       model: options?.model ?? "openai/text-embedding-3-small",
       input: text
+    }, {
+      signal: options?.signal
     });
 
     const data = response.data[0];
@@ -72,10 +74,12 @@ export class OpenRouterProvider implements LLMProvider {
     };
   }
 
-  async embedBatch(texts: string[], options?: { model?: string }): Promise<EmbeddingResponse[]> {
+  async embedBatch(texts: string[], options?: { model?: string; signal?: AbortSignal }): Promise<EmbeddingResponse[]> {
     const response = await this.client.embeddings.create({
       model: options?.model ?? "openai/text-embedding-3-small",
       input: texts
+    }, {
+      signal: options?.signal
     });
 
     return response.data.map(data => ({

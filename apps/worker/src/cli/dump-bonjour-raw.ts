@@ -8,6 +8,11 @@ import {
   type DumpBonjourImportedHandleSource
 } from "@seeku/adapters";
 
+import {
+  WorkflowInterruptedError,
+  createWorkflowInterruptionMonitor
+} from "./workflow-interruption.js";
+
 const COMMANDS_DIR = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_OUTPUT_DIR = resolve(COMMANDS_DIR, "../../../../output/bonjour-raw");
 
@@ -299,52 +304,62 @@ export function parseDumpBonjourRawArgs(argv: string[]): DumpBonjourRawCommandOp
 }
 
 export async function runDumpBonjourRawCommand(argv: string[]) {
-  const options = parseDumpBonjourRawArgs(argv);
-
-  if (options.help) {
-    console.log(DUMP_BONJOUR_RAW_HELP_TEXT);
-    return;
-  }
-
-  const outputDir = options.outputPath ? resolve(options.outputPath) : buildDefaultOutputPath();
-  const importedHandleSources = await Promise.all(
-    options.importHandlePaths.map((path) => loadImportedHandleSource(path))
-  );
-
-  const timelineClients = Array.from(
-    { length: Math.max(1, options.timelineConcurrency) },
-    () => new BonjourClient()
-  );
-  const profileClients = Array.from(
-    { length: Math.max(1, options.profileConcurrency) },
-    () => new BonjourClient()
-  );
-  const commentClients = Array.from(
-    { length: Math.max(1, options.commentConcurrency) },
-    () => new BonjourClient()
-  );
-
-  const result = await dumpBonjourRawData({
-    outputDir,
-    pageSize: options.pageSize,
-    maxPagesPerCategory: options.maxPagesPerCategory,
-    scanCategoryTimeline: options.scanCategoryTimeline,
-    scanGlobalTimeline: options.scanGlobalTimeline,
-    scanPostComments: options.scanPostComments,
-    scanImportedProfileTimelines: options.scanImportedProfileTimelines,
-    globalTimelinePageSize: options.globalTimelinePageSize,
-    maxGlobalTimelinePages: options.maxGlobalTimelinePages,
-    profileTimelinePageSize: options.profileTimelinePageSize,
-    maxProfileTimelinePages: options.maxProfileTimelinePages,
-    importedHandleSources,
-    timelineClients,
-    profileClients,
-    commentClients,
-    profileLimit: options.profileLimit,
-    fetchProfiles: !options.skipProfiles,
-    inflateProfiles: options.inflateProfiles
+  const abortController = new AbortController();
+  const interruption = createWorkflowInterruptionMonitor({
+    onInterrupt: (signal) => abortController.abort(new WorkflowInterruptedError(signal))
   });
 
-  console.log(JSON.stringify(result, null, 2));
-  return result;
+  const options = parseDumpBonjourRawArgs(argv);
+
+  try {
+    if (options.help) {
+      console.log(DUMP_BONJOUR_RAW_HELP_TEXT);
+      return;
+    }
+
+    const outputDir = options.outputPath ? resolve(options.outputPath) : buildDefaultOutputPath();
+    const importedHandleSources = await Promise.all(
+      options.importHandlePaths.map((path) => loadImportedHandleSource(path))
+    );
+
+    const timelineClients = Array.from(
+      { length: Math.max(1, options.timelineConcurrency) },
+      () => new BonjourClient()
+    );
+    const profileClients = Array.from(
+      { length: Math.max(1, options.profileConcurrency) },
+      () => new BonjourClient()
+    );
+    const commentClients = Array.from(
+      { length: Math.max(1, options.commentConcurrency) },
+      () => new BonjourClient()
+    );
+
+    const result = await dumpBonjourRawData({
+      outputDir,
+      signal: abortController.signal,
+      pageSize: options.pageSize,
+      maxPagesPerCategory: options.maxPagesPerCategory,
+      scanCategoryTimeline: options.scanCategoryTimeline,
+      scanGlobalTimeline: options.scanGlobalTimeline,
+      scanPostComments: options.scanPostComments,
+      scanImportedProfileTimelines: options.scanImportedProfileTimelines,
+      globalTimelinePageSize: options.globalTimelinePageSize,
+      maxGlobalTimelinePages: options.maxGlobalTimelinePages,
+      profileTimelinePageSize: options.profileTimelinePageSize,
+      maxProfileTimelinePages: options.maxProfileTimelinePages,
+      importedHandleSources,
+      timelineClients,
+      profileClients,
+      commentClients,
+      profileLimit: options.profileLimit,
+      fetchProfiles: !options.skipProfiles,
+      inflateProfiles: options.inflateProfiles
+    });
+
+    console.log(JSON.stringify(result, null, 2));
+    return result;
+  } finally {
+    interruption.dispose();
+  }
 }

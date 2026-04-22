@@ -122,7 +122,7 @@ function createWorkflowHarness() {
     scorer: (workflow as any).scorer,
     getSessionState: () => (workflow as any).sessionState,
     applySessionState: (next: any) => (workflow as any).applySessionState(next),
-    setSessionStatus: (status: string, summary?: string | null) => (workflow as any).setSessionStatus(status, summary),
+    setSessionStatus: (status: string, summary?: string | null, why?: any) => (workflow as any).setSessionStatus(status, summary, why),
     appendTranscriptEntry: (role: string, content: string) => (workflow as any).appendTranscriptEntry(role as any, content),
     getSessionId: () => (workflow as any).sessionId
   });
@@ -135,7 +135,7 @@ function createWorkflowHarness() {
     chat: mockChat as any,
     getSessionState: () => (workflow as any).sessionState,
     applySessionState: (next: any) => (workflow as any).applySessionState(next),
-    setSessionStatus: (status: string, summary?: string | null) => (workflow as any).setSessionStatus(status, summary),
+    setSessionStatus: (status: string, summary?: string | null, why?: any) => (workflow as any).setSessionStatus(status, summary, why),
     emitSessionEvent: (type: string, summary: string, data: Record<string, unknown>) => (workflow as any).emitSessionEvent(type, summary, data),
     refreshCandidateQueryExplanation: (candidate: any, conditions: any) => (workflow as any).refreshCandidateQueryExplanation(candidate, conditions),
     decorateComparisonResult: (result: any, conditions: any) => (workflow as any).recoveryHandler.applyBoundaryContextToComparisonResult(result, conditions),
@@ -215,7 +215,7 @@ describe("SearchWorkflow session events", () => {
       latestEvidenceAt: "2026-03-29T00:00:00.000Z"
     });
     expect(snapshot.searchHistory).toHaveLength(1);
-    expect(snapshot.status).toBe("shortlist");
+    expect(snapshot.runtime.status).toBe("shortlist");
   });
 
   it("emits compare and recommendation events in a stable order", async () => {
@@ -351,5 +351,75 @@ describe("SearchWorkflow session events", () => {
     const snapshot = workflow.getSessionSnapshot();
     expect(snapshot.currentConditions.mustHave).toEqual(["infra backend"]);
     expect(snapshot.recoveryState.compareSuggestedRefinement).toBeUndefined();
+  });
+
+  it("serializes runtime whyCodes and primaryWhyCode in snapshot", async () => {
+    const { workflow, mockChat, runClarifyLoop } = createWorkflowHarness();
+    mockChat.extractConditions.mockResolvedValue(BASE_CONDITIONS);
+
+    await runClarifyLoop("杭州 python backend");
+
+    const snapshot = workflow.getSessionSnapshot();
+    expect(snapshot.runtime).toBeDefined();
+    expect(Array.isArray(snapshot.runtime.whyCodes)).toBe(true);
+    expect(typeof snapshot.runtime.lastStatusAt).toBe("string");
+  });
+
+  it("sets primaryWhyCode when blocked with goal_missing", async () => {
+    const workflow = new SearchWorkflow({} as any, {} as any);
+    (workflow as any).tui = { displayBanner: vi.fn() };
+    (workflow as any).spinner = { start: vi.fn(), stop: vi.fn() };
+    (workflow as any).chat = { askFreeform: vi.fn().mockResolvedValue("") };
+
+    await (workflow as any).bootstrapMission("");
+
+    const snapshot = workflow.getSessionSnapshot();
+    expect(snapshot.runtime.status).toBe("blocked");
+    expect(snapshot.runtime.primaryWhyCode).toBe("goal_missing");
+    expect(snapshot.runtime.whyCodes).toEqual(["goal_missing"]);
+    expect(snapshot.runtime.whySummary).toBe("用户未提供初始搜索目标。");
+  });
+
+  it("sets primaryWhyCode when blocked with conditions_insufficient", async () => {
+    const workflow = new SearchWorkflow({} as any, {} as any);
+    (workflow as any).tui = { displayBanner: vi.fn() };
+    (workflow as any).spinner = { start: vi.fn(), stop: vi.fn() };
+    (workflow as any).chat = {
+      askFreeform: vi.fn().mockResolvedValue(""),
+      extractConditions: vi.fn().mockResolvedValue({
+        skills: [],
+        locations: [],
+        experience: undefined,
+        role: undefined,
+        sourceBias: undefined,
+        mustHave: [],
+        niceToHave: [],
+        exclude: [],
+        preferFresh: false,
+        candidateAnchor: undefined,
+        limit: 10
+      })
+    };
+
+    await (workflow as any).bootstrapMission("随便找找");
+
+    const snapshot = workflow.getSessionSnapshot();
+    expect(snapshot.runtime.status).toBe("blocked");
+    expect(snapshot.runtime.primaryWhyCode).toBe("conditions_insufficient");
+    expect(snapshot.runtime.whyCodes).toEqual(["conditions_insufficient"]);
+    expect(snapshot.runtime.whySummary).toBe("当前搜索条件不足以形成有效查询。");
+  });
+
+  it("clears why fields when transitioning to status without explicit why", async () => {
+    const { workflow, mockChat, runClarifyLoop } = createWorkflowHarness();
+    mockChat.extractConditions.mockResolvedValue(BASE_CONDITIONS);
+
+    await runClarifyLoop("杭州 python backend");
+
+    const snapshot = workflow.getSessionSnapshot();
+    expect(snapshot.runtime.status).toBe("searching");
+    expect(snapshot.runtime.primaryWhyCode).toBeUndefined();
+    expect(snapshot.runtime.whyCodes).toEqual([]);
+    expect(snapshot.runtime.whySummary).toBeNull();
   });
 });

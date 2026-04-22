@@ -28,7 +28,8 @@ function makeCacheKey(text: string): string {
 export async function generateEmbedding(
   provider: LLMProvider,
   text: string,
-  cache?: EmbeddingCache
+  cache?: EmbeddingCache,
+  options: { signal?: AbortSignal } = {}
 ): Promise<number[]> {
   const cacheKey = makeCacheKey(text);
 
@@ -37,7 +38,7 @@ export async function generateEmbedding(
     if (cached) return cached;
   }
 
-  const response = await provider.embed(text);
+  const response = await provider.embed(text, { signal: options.signal });
 
   if (cache) {
     cache.set(cacheKey, response.embedding);
@@ -52,7 +53,8 @@ export async function generateEmbedding(
 export async function generateEmbeddings(
   provider: LLMProvider,
   texts: string[],
-  cache?: EmbeddingCache
+  cache?: EmbeddingCache,
+  options: { signal?: AbortSignal } = {}
 ): Promise<number[][]> {
   // Check cache for each text
   const uncachedIndices: number[] = [];
@@ -67,7 +69,7 @@ export async function generateEmbeddings(
   // Batch generate uncached embeddings
   if (uncachedIndices.length > 0) {
     const uncachedTexts = uncachedIndices.map(i => texts[i]);
-    const embeddings = await provider.embedBatch(uncachedTexts);
+    const embeddings = await provider.embedBatch(uncachedTexts, { signal: options.signal });
 
     for (let j = 0; j < uncachedIndices.length; j++) {
       const embedding = embeddings[j];

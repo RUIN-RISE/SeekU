@@ -21,12 +21,13 @@ export class BonjourAdapter implements SourceAdapter<BonjourProfile> {
   async discoverSeeds(input: {
     cursor?: Record<string, unknown>;
     limit: number;
+    signal?: AbortSignal;
   }): Promise<DiscoverResult> {
     return discoverBonjourSeeds(this.client, input);
   }
 
-  async fetchProfileByHandle(input: { handle: string }): Promise<FetchResult<BonjourProfile>> {
-    const rawPayload = await this.client.fetchProfileByLink(input.handle);
+  async fetchProfileByHandle(input: { handle: string; signal?: AbortSignal }): Promise<FetchResult<BonjourProfile>> {
+    const rawPayload = await this.client.fetchProfileByLink(input.handle, { signal: input.signal });
     const profile = await this.normalizeProfile({ rawProfile: rawPayload });
 
     return {

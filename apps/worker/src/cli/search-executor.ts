@@ -15,8 +15,7 @@ import {
   type SourceProfile,
   type PersonIdentity
 } from "@seeku/db";
-import type { LLMProvider } from "@seeku/llm";
-import { QueryPlanner, HybridRetriever, Reranker, buildDisambiguationNotes, type QueryIntent } from "@seeku/search";
+import { HybridRetriever, Reranker, buildDisambiguationNotes, type QueryIntent } from "@seeku/search";
 import { classifyMatchStrength } from "@seeku/shared";
 import type { ScoredCandidate, SearchConditions, ConditionAuditItem, CandidatePrimaryLink } from "./types.js";
 import { contextHasTermValue, buildSearchStateContextValue } from "./search-context-helpers.js";
@@ -57,8 +56,12 @@ export interface HydratedCandidate extends ScoredCandidate {
 
 export interface SearchExecutorDependencies {
   db: SeekuDatabase;
-  llmProvider: LLMProvider;
-  planner: QueryPlanner;
+  llmProvider: {
+    embed(text: string, options?: { model?: string; signal?: AbortSignal }): Promise<{ embedding: number[] }>;
+  };
+  planner: {
+    parse(query: string, options?: { signal?: AbortSignal }): Promise<QueryIntent>;
+  };
   retriever: HybridRetriever;
   reranker: Reranker;
   scorer: { calculateExperienceMatch(person: Person, evidence: EvidenceItem[], conditions: SearchConditions): number };
@@ -96,10 +99,28 @@ export interface SearchExecutorDependencies {
 export class SearchExecutor {
   constructor(private deps: SearchExecutorDependencies) {}
 
-  async performSearch(query: string, conditions: SearchConditions): Promise<SearchExecutionResult> {
+  async performSearch(
+    query: string,
+    conditions: SearchConditions,
+    options: {
+      signal?: AbortSignal;
+    } = {}
+  ): Promise<SearchExecutionResult> {
+    if (options.signal?.aborted) {
+      throw options.signal.reason ?? new Error("Search execution aborted.");
+    }
+
     const limit = conditions.limit;
-    const intent = this.mergeIntentWithConditions(await this.deps.planner.parse(query), conditions);
-    const queryEmbedding = await this.deps.llmProvider.embed(intent.rawQuery);
+    const intent = this.mergeIntentWithConditions(await this.deps.planner.parse(query, {
+      signal: options.signal
+    }), conditions);
+    const queryEmbedding = await this.deps.llmProvider.embed(intent.rawQuery, {
+      signal: options.signal
+    });
+
+    if (options.signal?.aborted) {
+      throw options.signal.reason ?? new Error("Search execution aborted.");
+    }
 
     let retrieved = await this.deps.retriever.retrieve(intent, { embedding: queryEmbedding.embedding });
 

@@ -20,8 +20,8 @@ export interface FetchResult<T = unknown> {
 
 export interface SourceAdapter<T = unknown> {
   readonly source: SourceName;
-  discoverSeeds(input: { cursor?: Record<string, unknown>; limit: number }): Promise<DiscoverResult>;
-  fetchProfileByHandle(input: { handle: string }): Promise<FetchResult<T>>;
+  discoverSeeds(input: { cursor?: Record<string, unknown>; limit: number; signal?: AbortSignal }): Promise<DiscoverResult>;
+  fetchProfileByHandle(input: { handle: string; signal?: AbortSignal }): Promise<FetchResult<T>>;
   normalizeProfile(input: { rawProfile: T }): Promise<NormalizedProfile>;
 }
 

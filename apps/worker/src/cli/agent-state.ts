@@ -4,6 +4,11 @@ import type {
   SearchHistoryEntry,
   SearchRecoveryState
 } from "./types.js";
+import type {
+  AgentSessionStatus,
+  AgentSessionTerminationReason,
+  AgentSessionWhyCode
+} from "./session-runtime-types.js";
 
 export type AgentConfidenceLevel = "high" | "medium" | "low";
 export type RecommendationGateFailureReason =
@@ -29,6 +34,16 @@ export interface AgentRecommendation {
   confidenceLevel: Exclude<AgentConfidenceLevel, "low">;
 }
 
+export interface AgentSessionRuntimeState {
+  status: AgentSessionStatus;
+  statusSummary: string | null;
+  primaryWhyCode?: AgentSessionWhyCode;
+  whyCodes: AgentSessionWhyCode[];
+  whySummary: string | null;
+  terminationReason?: AgentSessionTerminationReason;
+  lastStatusAt: Date;
+}
+
 export interface AgentSessionState {
   userGoal: string | null;
   currentConditions: SearchConditions;
@@ -40,6 +55,7 @@ export interface AgentSessionState {
   recommendedCandidate: AgentRecommendation | null;
   openUncertainties: string[];
   recoveryState: SearchRecoveryState;
+  runtime: AgentSessionRuntimeState;
 }
 
 export type SearchSessionState<TCandidate extends ScoredCandidate = ScoredCandidate> =
@@ -64,6 +80,10 @@ export interface CreateAgentSessionStateOptions {
   recommendedCandidate?: AgentRecommendation | null;
   openUncertainties?: string[];
   recoveryState?: Partial<SearchRecoveryState>;
+  runtime?: Partial<Omit<AgentSessionRuntimeState, "lastStatusAt" | "whyCodes">> & {
+    lastStatusAt?: Date;
+    whyCodes?: AgentSessionWhyCode[];
+  };
 }
 
 export interface RecordSearchOptions {
@@ -128,6 +148,18 @@ function createDefaultRecoveryState(): SearchRecoveryState {
     lastRewrittenQuery: undefined,
     compareSuggestedRefinement: undefined,
     boundaryDiagnosticCode: undefined
+  };
+}
+
+function createDefaultRuntimeState(): AgentSessionRuntimeState {
+  return {
+    status: "idle",
+    statusSummary: "等待输入",
+    primaryWhyCode: "awaiting_user_input",
+    whyCodes: ["awaiting_user_input"],
+    whySummary: "等待用户输入新的搜索需求。",
+    terminationReason: undefined,
+    lastStatusAt: new Date(0)
   };
 }
 
@@ -240,10 +272,72 @@ export function createAgentSessionState(
     recoveryState: {
       ...createDefaultRecoveryState(),
       ...options.recoveryState
+    },
+    runtime: {
+      ...createDefaultRuntimeState(),
+      ...options.runtime,
+      whyCodes: [...(options.runtime?.whyCodes ?? createDefaultRuntimeState().whyCodes)],
+      lastStatusAt: options.runtime?.lastStatusAt ?? createDefaultRuntimeState().lastStatusAt
     }
   };
 
   return clearRecommendationIfInvalid(state);
+}
+
+export interface SetRuntimeStatusOptions {
+  summary?: string | null;
+  primaryWhyCode?: AgentSessionWhyCode;
+  whyCodes?: AgentSessionWhyCode[];
+  whySummary?: string | null;
+  at?: Date;
+}
+
+function dedupeWhyCodes(codes: readonly AgentSessionWhyCode[]): AgentSessionWhyCode[] {
+  return [...new Set(codes)];
+}
+
+export function setRuntimeStatus(
+  state: AgentSessionState,
+  status: AgentSessionStatus,
+  options: SetRuntimeStatusOptions = {}
+): AgentSessionState {
+  const at = options.at ?? new Date();
+  const runtime = state.runtime;
+  const hasWhyInput = options.primaryWhyCode !== undefined || options.whyCodes !== undefined;
+  const nextWhyCodes = dedupeWhyCodes(
+    options.whyCodes
+      ?? (options.primaryWhyCode
+        ? [options.primaryWhyCode]
+        : [])
+  );
+  const isTerminalTarget = status === "completed" || status === "blocked";
+
+  return {
+    ...state,
+    runtime: {
+      ...runtime,
+      status,
+      statusSummary: options.summary?.trim() || null,
+      primaryWhyCode: hasWhyInput ? options.primaryWhyCode : undefined,
+      whyCodes: nextWhyCodes,
+      whySummary: hasWhyInput ? (options.whySummary?.trim() || null) : null,
+      terminationReason: isTerminalTarget ? runtime.terminationReason : undefined,
+      lastStatusAt: at
+    }
+  };
+}
+
+export function setTerminationReason(
+  state: AgentSessionState,
+  reason: AgentSessionTerminationReason | undefined
+): AgentSessionState {
+  return {
+    ...state,
+    runtime: {
+      ...state.runtime,
+      terminationReason: reason
+    }
+  };
 }
 
 export const createSearchSessionState = createAgentSessionState;

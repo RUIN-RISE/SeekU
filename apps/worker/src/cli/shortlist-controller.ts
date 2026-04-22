@@ -18,7 +18,7 @@ import {
 } from "./agent-state.js";
 import { formatConditionsAsPrompt } from "./search-conditions.js";
 import { buildComparisonEvidence } from "./comparison-formatters.js";
-import { buildResultWarning } from "./workflow.js";
+import { buildResultWarning } from "./result-warning.js";
 import type { CompareLoopOutcome } from "./comparison-controller.js";
 
 interface SearchLoopOutcome {

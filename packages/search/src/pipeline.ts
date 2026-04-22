@@ -15,7 +15,7 @@
  */
 
 import type { EvidenceItem, SearchDocument, SeekuDatabase } from "@seeku/db";
-import type { LLMProvider } from "@seeku/llm";
+import type { ChatMessage, ChatOptions, ChatResponse, EmbeddingResponse, LLMProvider } from "@seeku/llm";
 import { QueryPlanner, type QueryIntent } from "./planner.js";
 import { HybridRetriever, type RetrieverFilters, type SearchResult } from "./retriever.js";
 import { Reranker, type RerankResult, type RerankerConfig } from "./reranker.js";
@@ -30,7 +30,7 @@ import {
 
 export interface PipelineConfig {
   db: SeekuDatabase;
-  provider: LLMProvider;
+  provider: PipelineProvider;
   /** Enable query cache (default: true) */
   useCache?: boolean;
   /** Enable cross-encoder scoring (default: false) */
@@ -60,6 +60,10 @@ export interface PipelineCallbacks {
   onResults?: (results: RerankResult[]) => void;
 }
 
+export interface PipelineSearchOptions {
+  signal?: AbortSignal;
+}
+
 export interface PipelineResult {
   results: RerankResult[];
   intent: QueryIntent;
@@ -70,12 +74,19 @@ export interface PipelineResult {
   evidence: Map<string, EvidenceItem[]>;
 }
 
+interface PipelineProvider {
+  readonly name: string;
+  chat(messages: ChatMessage[], options?: ChatOptions): Promise<ChatResponse>;
+  embed(text: string, options?: { model?: string; signal?: AbortSignal }): Promise<EmbeddingResponse>;
+  embedBatch(texts: string[], options?: { model?: string; signal?: AbortSignal }): Promise<EmbeddingResponse[]>;
+}
+
 /**
  * Search Pipeline Orchestrator
  */
 export class SearchPipeline {
   private readonly db: SeekuDatabase;
-  private readonly provider: LLMProvider;
+  private readonly provider: PipelineProvider;
   private readonly planner: QueryPlanner;
   private readonly retriever: HybridRetriever;
   private readonly reranker: Reranker;
@@ -127,19 +138,24 @@ export class SearchPipeline {
   async search(
     query: string,
     filters?: RetrieverFilters,
-    callbacks?: PipelineCallbacks
+    callbacks?: PipelineCallbacks,
+    options: PipelineSearchOptions = {}
   ): Promise<PipelineResult> {
+    if (options.signal?.aborted) {
+      throw options.signal.reason ?? new Error("Search pipeline aborted.");
+    }
+
     const emit = (stage: PipelineProgress["stage"], message: string, data?: Record<string, unknown>) => {
       callbacks?.onProgress?.({ stage, message, data });
     };
 
     // Stage 1: Parse query intent
     emit("intent", "Parsing query intent");
-    const intent = await this.planner.parse(query);
+    const intent = await this.planner.parse(query, { signal: options.signal });
 
     // Stage 2: Get query embedding and check cache
     emit("cache", "Checking query cache");
-    const queryEmbedding = await this.provider.embed(intent.rawQuery);
+    const queryEmbedding = await this.provider.embed(intent.rawQuery, { signal: options.signal });
     let cachedIntent = false;
 
     const cached = this.cache.get(queryEmbedding.embedding);
@@ -154,7 +170,8 @@ export class SearchPipeline {
     emit("retrieve", "Retrieving candidates");
     const retrieved = await this.retriever.retrieve(intent, {
       filters,
-      embedding: queryEmbedding.embedding
+      embedding: queryEmbedding.embedding,
+      signal: options.signal
     });
 
     emit("retrieve", `Found ${retrieved.length} candidates`, { count: retrieved.length });
@@ -202,7 +219,9 @@ export class SearchPipeline {
         )
       );
 
-      const scores = await this.crossEncoder.scoreBatch(intent, candidateSummaries);
+      const scores = await this.crossEncoder.scoreBatch(intent, candidateSummaries, {
+        signal: options.signal
+      });
       crossEncoderScores = new Map(scores.map((score) => [score.personId, score]));
       crossEncoderUsed = true;
 
@@ -291,8 +310,9 @@ export async function search(
   config: PipelineConfig,
   query: string,
   filters?: RetrieverFilters,
-  callbacks?: PipelineCallbacks
+  callbacks?: PipelineCallbacks,
+  options: PipelineSearchOptions = {}
 ): Promise<PipelineResult> {
   const pipeline = new SearchPipeline(config);
-  return pipeline.search(query, filters, callbacks);
+  return pipeline.search(query, filters, callbacks, options);
 }

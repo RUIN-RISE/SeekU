@@ -645,7 +645,7 @@ export class HybridRetriever {
 
   async retrieve(
     intent: QueryIntent,
-    options: { filters?: RetrieverFilters; embedding?: number[] } = {}
+    options: { filters?: RetrieverFilters; embedding?: number[]; signal?: AbortSignal } = {}
   ): Promise<SearchResult[]> {
     const blendWeights = this.resolveBlendWeights(intent);
     const keywordResults = await this.retrieveKeyword(intent, options.filters);
@@ -653,9 +653,19 @@ export class HybridRetriever {
 
     try {
       const embedding =
-        options.embedding ?? (await generateEmbedding(this.provider, buildKeywordQuery(intent) || intent.rawQuery));
+        options.embedding ??
+        (await generateEmbedding(
+          this.provider,
+          buildKeywordQuery(intent) || intent.rawQuery,
+          undefined,
+          { signal: options.signal }
+        ));
       vectorResults = await this.retrieveVector(embedding, intent, options.filters);
     } catch (error) {
+      if (options.signal?.aborted) {
+        throw options.signal.reason ?? error;
+      }
+
       const reason = error instanceof Error ? error.message : String(error);
       console.warn(`[HybridRetriever] Vector retrieval failed, falling back to keyword-only results: ${reason}`);
     }
@@ -671,7 +681,7 @@ export class HybridRetriever {
 export async function retrieve(
   config: RetrieverConfig,
   intent: QueryIntent,
-  options: { filters?: RetrieverFilters; embedding?: number[] } = {}
+  options: { filters?: RetrieverFilters; embedding?: number[]; signal?: AbortSignal } = {}
 ): Promise<SearchResult[]> {
   const retriever = new HybridRetriever(config);
   return retriever.retrieve(intent, options);

@@ -1,4 +1,4 @@
-import type { AgentSessionStatus } from "./agent-session-events.js";
+import type { AgentSessionStatus } from "./session-runtime-types.js";
 import type { RecoveryPhase } from "./types.js";
 
 const SESSION_STATUS_TRANSITIONS: Record<AgentSessionStatus, readonly AgentSessionStatus[]> = {
@@ -6,8 +6,8 @@ const SESSION_STATUS_TRANSITIONS: Record<AgentSessionStatus, readonly AgentSessi
   clarifying: ["clarifying", "searching", "waiting-input", "blocked", "completed"],
   searching: ["searching", "recovering", "shortlist", "waiting-input", "blocked", "completed"],
   recovering: ["recovering", "searching", "shortlist", "blocked", "waiting-input", "completed"],
-  shortlist: ["shortlist", "comparing", "waiting-input", "blocked", "completed"],
-  comparing: ["comparing", "shortlist", "waiting-input", "blocked", "completed"],
+  shortlist: ["shortlist", "comparing", "searching", "waiting-input", "blocked", "completed"],
+  comparing: ["comparing", "shortlist", "searching", "waiting-input", "blocked", "completed"],
   "waiting-input": ["waiting-input", "clarifying", "searching", "shortlist", "comparing", "blocked", "completed"],
   blocked: ["blocked", "waiting-input", "clarifying", "searching", "completed"],
   completed: ["completed"],

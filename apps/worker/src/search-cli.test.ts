@@ -6,6 +6,7 @@ const mockPlannerParse = vi.fn();
 const mockRetrieverRetrieve = vi.fn();
 const mockRetrieverRetrieveKeyword = vi.fn();
 const mockRerankerRerank = vi.fn();
+const mockBuildDisambiguationNotes = vi.fn(() => new Map());
 const mockEmbed = vi.fn();
 const mockBuildQueryMatchExplanation = vi.fn();
 const mockDescribeRelativeDate = vi.fn();
@@ -61,15 +62,19 @@ vi.mock("@seeku/search", () => ({
   })),
   Reranker: vi.fn(() => ({
     rerank: mockRerankerRerank
-  }))
+  })),
+  buildDisambiguationNotes: mockBuildDisambiguationNotes
 }));
 
 vi.mock("./cli/workflow.js", () => ({
   buildQueryMatchExplanation: mockBuildQueryMatchExplanation,
-  buildResultWarning: mockBuildResultWarning,
   classifyMatchStrength: mockClassifyMatchStrength,
   describeRelativeDate: mockDescribeRelativeDate,
   formatSourceLabel: mockFormatSourceLabel
+}));
+
+vi.mock("./cli/result-warning.js", () => ({
+  buildResultWarning: mockBuildResultWarning
 }));
 
 function createMockDb() {

@@ -7,6 +7,7 @@ const { Input } = enquirer as unknown as { Input: any };
 import { SearchCandidateAnchor, SearchConditions, MissingField } from "./types.js";
 import { ConditionsSchema, sanitizeForPrompt, safeParseJSON, isEmptyInput, dedupeArray } from "./schemas.js";
 import { CLI_CONFIG } from "./config.js";
+import { runPromptWithUserExit } from "./prompt-abort.js";
 import { withRetry } from "./retry.js";
 
 // Skip keywords that indicate user wants to skip the question
@@ -239,7 +240,7 @@ CRITICAL RULES:
         initial: ""
       });
 
-      const result = await promptBuffer.run();
+      const result = await runPromptWithUserExit<string>(promptBuffer);
       const trimmed = result.trim();
       
       if (trimmed) {
@@ -266,7 +267,7 @@ CRITICAL RULES:
     const INPUT_TIMEOUT_MS = CLI_CONFIG.ui.inputTimeoutMs;
     
     let timeoutId: NodeJS.Timeout | undefined;
-    const promptPromise = promptBuffer.run();
+    const promptPromise = runPromptWithUserExit<string>(promptBuffer);
     try {
       const result = await Promise.race([
         promptPromise,
@@ -294,7 +295,7 @@ CRITICAL RULES:
       initial
     });
 
-    const result = await promptBuffer.run();
+    const result = await runPromptWithUserExit<string>(promptBuffer);
     return result.trim();
   }
 

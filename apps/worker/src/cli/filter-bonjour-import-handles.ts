@@ -9,6 +9,11 @@ import {
   type SeekuDatabase
 } from "@seeku/db";
 
+import {
+  WorkflowInterruptedError,
+  createWorkflowInterruptionMonitor
+} from "./workflow-interruption.js";
+
 interface HandleRecord {
   handle: string;
   name?: string | null;
@@ -198,7 +203,8 @@ async function writeJsonFile(path: string, value: unknown) {
 
 async function resolveHandleRecords(
   records: HandleRecord[],
-  concurrency: number
+  concurrency: number,
+  signal?: AbortSignal
 ): Promise<{
   records: HandleRecord[];
   resolvedCount: number;
@@ -227,6 +233,10 @@ async function resolveHandleRecords(
   const workers = clients.map((client) =>
     (async () => {
       while (true) {
+        if (signal?.aborted) {
+          throw signal.reason ?? new Error("Bonjour handle resolution aborted.");
+        }
+
         const currentIndex = nextIndex;
         nextIndex += 1;
 
@@ -236,7 +246,7 @@ async function resolveHandleRecords(
 
         const record = records[currentIndex]!;
         try {
-          const profile = await client.fetchProfileByHandle(record.handle);
+          const profile = await client.fetchProfileByHandle(record.handle, { signal });
           const canonicalHandle = normalizeHandle(profile.profile_link || record.handle);
           const sourceProfileId = normalizeSourceProfileId(profile._id);
           results[currentIndex] = {
@@ -255,7 +265,11 @@ async function resolveHandleRecords(
           if (canonicalHandle && canonicalHandle !== record.handle) {
             canonicalizedCount += 1;
           }
-        } catch {
+        } catch (error) {
+          if (signal?.aborted) {
+            throw signal.reason ?? error;
+          }
+
           results[currentIndex] = {
             ...record,
             requestedHandle: record.handle,
@@ -335,164 +349,186 @@ export function parseFilterBonjourImportHandlesArgs(argv: string[]): FilterBonjo
 }
 
 export async function runFilterBonjourImportHandlesCommand(argv: string[]) {
-  const options = parseFilterBonjourImportHandlesArgs(argv);
+  const abortController = new AbortController();
+  const interruption = createWorkflowInterruptionMonitor({
+    onInterrupt: (signal) => abortController.abort(new WorkflowInterruptedError(signal))
+  });
 
-  if (options.help) {
-    console.log(FILTER_BONJOUR_IMPORT_HANDLES_HELP_TEXT);
-    return;
-  }
-
-  if (!options.inputPath) {
-    throw new Error("Missing --input");
-  }
-
-  const inputPath = resolve(options.inputPath);
-  const outputPath = resolve(
-    options.outputPath ?? resolve(dirname(inputPath), "delta-import-handles.json")
-  );
-
-  const inputRecords = await readHandleRecords(inputPath);
-  const deduped = new Map<string, HandleRecord>();
-  let duplicateInputCount = 0;
-
-  for (const record of inputRecords) {
-    const handle = normalizeHandle(record.handle);
-    if (!handle) {
-      continue;
+  const throwIfAborted = () => {
+    if (abortController.signal.aborted) {
+      throw abortController.signal.reason ?? new Error("Bonjour handle filtering aborted.");
     }
-
-    if (deduped.has(handle)) {
-      duplicateInputCount += 1;
-      continue;
-    }
-
-    deduped.set(handle, {
-      handle,
-      name: typeof record.name === "string" ? record.name : null
-    });
-  }
-
-  const fileExcludeSet = new Set<string>();
-  const dbHandleSet = new Set<string>();
-  const dbSourceProfileIdSet = new Set<string>();
-  let excludedByDbCount = 0;
-  let excludedByDbProfileIdCount = 0;
-  let excludedByDbHandleCount = 0;
-  let excludedByFileCount = 0;
-  let collapsedAliasCount = 0;
-
-  if (options.excludeExistingDb) {
-    const ownedConnection = createDatabaseConnection();
-    try {
-      const existingProfiles = await listExistingBonjourProfiles(ownedConnection.db);
-      for (const handle of existingProfiles.handleSet) {
-        dbHandleSet.add(handle);
-      }
-      for (const sourceProfileId of existingProfiles.sourceProfileIdSet) {
-        dbSourceProfileIdSet.add(sourceProfileId);
-      }
-    } finally {
-      await ownedConnection.close();
-    }
-  }
-
-  for (const excludePath of options.excludePaths) {
-    const records = await readHandleRecords(excludePath);
-    for (const record of records) {
-      const handle = normalizeHandle(record.handle);
-      if (handle) {
-        fileExcludeSet.add(handle);
-      }
-    }
-  }
-
-  const preparedRecords = options.resolveSourceProfiles
-    ? await resolveHandleRecords([...deduped.values()], options.resolveConcurrency)
-    : {
-        records: [...deduped.values()],
-        resolvedCount: 0,
-        canonicalizedCount: 0,
-        resolveErrorCount: 0
-      };
-
-  const collapsedRecords = new Map<string, HandleRecord>();
-  for (const record of preparedRecords.records) {
-    const handle = normalizeHandle(record.handle);
-    if (!handle) {
-      continue;
-    }
-
-    const sourceProfileId = normalizeSourceProfileId(record.sourceProfileId);
-    const collapseKey = sourceProfileId ? `profile:${sourceProfileId}` : `handle:${handle}`;
-    if (collapsedRecords.has(collapseKey)) {
-      collapsedAliasCount += 1;
-      continue;
-    }
-
-    collapsedRecords.set(collapseKey, {
-      handle,
-      name: typeof record.name === "string" ? record.name : null,
-      requestedHandle:
-        typeof record.requestedHandle === "string" ? normalizeHandle(record.requestedHandle) : handle,
-      sourceProfileId
-    });
-  }
-
-  const outputRecords: Array<{
-    handle: string;
-    name: string | null;
-    requestedHandle?: string;
-    sourceProfileId?: string | null;
-  }> = [];
-
-  for (const record of collapsedRecords.values()) {
-    const handle = normalizeHandle(record.handle);
-    const sourceProfileId = normalizeSourceProfileId(record.sourceProfileId);
-
-    if (options.excludeExistingDb && sourceProfileId && dbSourceProfileIdSet.has(sourceProfileId)) {
-      excludedByDbProfileIdCount += 1;
-      excludedByDbCount += 1;
-      continue;
-    }
-
-    if (options.excludeExistingDb && dbHandleSet.has(handle)) {
-      excludedByDbHandleCount += 1;
-      excludedByDbCount += 1;
-      continue;
-    }
-
-    if (fileExcludeSet.has(handle)) {
-      excludedByFileCount += 1;
-      continue;
-    }
-
-    outputRecords.push({
-      handle,
-      name: typeof record.name === "string" ? record.name : null,
-      requestedHandle:
-        typeof record.requestedHandle === "string" ? record.requestedHandle : undefined,
-      sourceProfileId
-    });
-  }
-
-  await writeJsonFile(outputPath, outputRecords);
-
-  const summary: FilterBonjourImportHandlesSummary = {
-    inputPath,
-    outputPath,
-    inputCount: inputRecords.length,
-    outputCount: outputRecords.length,
-    excludedByDbCount,
-    excludedByDbProfileIdCount,
-    excludedByDbHandleCount,
-    excludedByFileCount,
-    duplicateInputCount,
-    canonicalizedCount: preparedRecords.canonicalizedCount,
-    resolvedCount: preparedRecords.resolvedCount,
-    resolveErrorCount: preparedRecords.resolveErrorCount,
-    collapsedAliasCount
   };
 
-  console.log(JSON.stringify(summary, null, 2));
-  return summary;
+  const options = parseFilterBonjourImportHandlesArgs(argv);
+
+  try {
+    if (options.help) {
+      console.log(FILTER_BONJOUR_IMPORT_HANDLES_HELP_TEXT);
+      return;
+    }
+
+    if (!options.inputPath) {
+      throw new Error("Missing --input");
+    }
+
+    const inputPath = resolve(options.inputPath);
+    const outputPath = resolve(
+      options.outputPath ?? resolve(dirname(inputPath), "delta-import-handles.json")
+    );
+
+    throwIfAborted();
+    const inputRecords = await readHandleRecords(inputPath);
+    const deduped = new Map<string, HandleRecord>();
+    let duplicateInputCount = 0;
+
+    for (const record of inputRecords) {
+      throwIfAborted();
+      const handle = normalizeHandle(record.handle);
+      if (!handle) {
+        continue;
+      }
+
+      if (deduped.has(handle)) {
+        duplicateInputCount += 1;
+        continue;
+      }
+
+      deduped.set(handle, {
+        handle,
+        name: typeof record.name === "string" ? record.name : null
+      });
+    }
+
+    const fileExcludeSet = new Set<string>();
+    const dbHandleSet = new Set<string>();
+    const dbSourceProfileIdSet = new Set<string>();
+    let excludedByDbCount = 0;
+    let excludedByDbProfileIdCount = 0;
+    let excludedByDbHandleCount = 0;
+    let excludedByFileCount = 0;
+    let collapsedAliasCount = 0;
+
+    if (options.excludeExistingDb) {
+      const ownedConnection = createDatabaseConnection();
+      try {
+        throwIfAborted();
+        const existingProfiles = await listExistingBonjourProfiles(ownedConnection.db);
+        for (const handle of existingProfiles.handleSet) {
+          dbHandleSet.add(handle);
+        }
+        for (const sourceProfileId of existingProfiles.sourceProfileIdSet) {
+          dbSourceProfileIdSet.add(sourceProfileId);
+        }
+      } finally {
+        await ownedConnection.close();
+      }
+    }
+
+    for (const excludePath of options.excludePaths) {
+      throwIfAborted();
+      const records = await readHandleRecords(excludePath);
+      for (const record of records) {
+        const handle = normalizeHandle(record.handle);
+        if (handle) {
+          fileExcludeSet.add(handle);
+        }
+      }
+    }
+
+    const preparedRecords = options.resolveSourceProfiles
+      ? await resolveHandleRecords([...deduped.values()], options.resolveConcurrency, abortController.signal)
+      : {
+          records: [...deduped.values()],
+          resolvedCount: 0,
+          canonicalizedCount: 0,
+          resolveErrorCount: 0
+        };
+
+    const collapsedRecords = new Map<string, HandleRecord>();
+    for (const record of preparedRecords.records) {
+      throwIfAborted();
+      const handle = normalizeHandle(record.handle);
+      if (!handle) {
+        continue;
+      }
+
+      const sourceProfileId = normalizeSourceProfileId(record.sourceProfileId);
+      const collapseKey = sourceProfileId ? `profile:${sourceProfileId}` : `handle:${handle}`;
+      if (collapsedRecords.has(collapseKey)) {
+        collapsedAliasCount += 1;
+        continue;
+      }
+
+      collapsedRecords.set(collapseKey, {
+        handle,
+        name: typeof record.name === "string" ? record.name : null,
+        requestedHandle:
+          typeof record.requestedHandle === "string" ? normalizeHandle(record.requestedHandle) : handle,
+        sourceProfileId
+      });
+    }
+
+    const outputRecords: Array<{
+      handle: string;
+      name: string | null;
+      requestedHandle?: string;
+      sourceProfileId?: string | null;
+    }> = [];
+
+    for (const record of collapsedRecords.values()) {
+      throwIfAborted();
+      const handle = normalizeHandle(record.handle);
+      const sourceProfileId = normalizeSourceProfileId(record.sourceProfileId);
+
+      if (options.excludeExistingDb && sourceProfileId && dbSourceProfileIdSet.has(sourceProfileId)) {
+        excludedByDbProfileIdCount += 1;
+        excludedByDbCount += 1;
+        continue;
+      }
+
+      if (options.excludeExistingDb && dbHandleSet.has(handle)) {
+        excludedByDbHandleCount += 1;
+        excludedByDbCount += 1;
+        continue;
+      }
+
+      if (fileExcludeSet.has(handle)) {
+        excludedByFileCount += 1;
+        continue;
+      }
+
+      outputRecords.push({
+        handle,
+        name: typeof record.name === "string" ? record.name : null,
+        requestedHandle:
+          typeof record.requestedHandle === "string" ? record.requestedHandle : undefined,
+        sourceProfileId
+      });
+    }
+
+    throwIfAborted();
+    await writeJsonFile(outputPath, outputRecords);
+
+    const summary: FilterBonjourImportHandlesSummary = {
+      inputPath,
+      outputPath,
+      inputCount: inputRecords.length,
+      outputCount: outputRecords.length,
+      excludedByDbCount,
+      excludedByDbProfileIdCount,
+      excludedByDbHandleCount,
+      excludedByFileCount,
+      duplicateInputCount,
+      canonicalizedCount: preparedRecords.canonicalizedCount,
+      resolvedCount: preparedRecords.resolvedCount,
+      resolveErrorCount: preparedRecords.resolveErrorCount,
+      collapsedAliasCount
+    };
+
+    console.log(JSON.stringify(summary, null, 2));
+    return summary;
+  } finally {
+    interruption.dispose();
+  }
 }

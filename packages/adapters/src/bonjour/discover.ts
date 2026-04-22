@@ -58,9 +58,10 @@ export async function discoverBonjourSeeds(
   input: {
     cursor?: Record<string, unknown>;
     limit: number;
+    signal?: AbortSignal;
   }
 ): Promise<DiscoverResult> {
-  const categories = sortCategories(await client.fetchCategories());
+  const categories = sortCategories(await client.fetchCategories({ signal: input.signal }));
   const cursor = (input.cursor ?? {}) as BonjourDiscoverCursor;
   const seenHandles = new Set<string>();
   const profiles: SourceSeed[] = [];
@@ -72,7 +73,9 @@ export async function discoverBonjourSeeds(
   while (categoryIndex < categories.length && profiles.length < input.limit) {
     const category = categories[categoryIndex];
     const pageSize = Math.max(DEFAULT_CATEGORY_PAGE_SIZE, input.limit);
-    const posts = await client.fetchCommunityPostsByCategory(category.key, pageSize, skip);
+    const posts = await client.fetchCommunityPostsByCategory(category.key, pageSize, skip, {
+      signal: input.signal
+    });
     const references = extractSeedProfilesFromCommunity(posts);
 
     appendUniqueSeeds(
@@ -89,7 +92,9 @@ export async function discoverBonjourSeeds(
         break;
       }
 
-      const neighborPosts = await client.fetchCommunityPostsByProfileLink(reference.profile_link, 5, 0);
+      const neighborPosts = await client.fetchCommunityPostsByProfileLink(reference.profile_link, 5, 0, {
+        signal: input.signal
+      });
       appendUniqueSeeds(
         profiles,
         seenHandles,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   evaluateRegressionFixture,
   runAcceptanceEval,
@@ -7,8 +8,10 @@ import {
 } from "../agent-eval.js";
 import { AGENT_REGRESSION_FIXTURES } from "../agent-eval-fixtures.js";
 
+const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const SNAPSHOT_DIR = resolve(
-  process.cwd(),
+  TEST_DIR,
+  "../../../../..",
   ".planning/github-expansion/snapshots/ws4-rerun-2026-04-15-controlled-open-followup"
 );
 

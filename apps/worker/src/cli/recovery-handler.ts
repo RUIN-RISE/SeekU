@@ -7,6 +7,7 @@ import {
   decideRecoveryActionV2
 } from "./agent-policy.js";
 import type { AgentSessionState } from "./agent-state.js";
+import type { AgentSessionWhyCode } from "./session-runtime-types.js";
 import {
   recordClarification,
   resetRecoveryState,
@@ -35,12 +36,11 @@ import type { HydratedCandidate, SearchExecutionDiagnostics } from "./search-exe
 import { contextHasTermValue, buildSearchStateContextValue } from "./search-context-helpers.js";
 import type {
   SearchConditions,
-  RecoveryDiagnosis,
-  ConditionAuditItem
+  RecoveryDiagnosis
 } from "./types.js";
 import type { ConditionRevisionService } from "./condition-revision-service.js";
 import type { ComparisonResult } from "./types.js";
-import { buildQueryMatchExplanation, buildConditionAudit, buildResultWarning } from "./workflow.js";
+import { buildResultWarning } from "./result-warning.js";
 
 interface SearchRecoveryAssessment {
   usable: boolean;
@@ -105,7 +105,7 @@ export interface RecoveryHandlerDependencies {
   scorer: { calculateExperienceMatch(person: any, evidence: any[], conditions: SearchConditions): number };
   getSessionState: () => AgentSessionState;
   applySessionState: (next: AgentSessionState) => void;
-  setSessionStatus: (status: string, summary?: string | null) => void;
+  setSessionStatus: (status: string, summary?: string | null, why?: { primaryWhyCode?: AgentSessionWhyCode; whySummary?: string | null }) => void;
   appendTranscriptEntry: (role: string, content: string) => void;
   getSessionId: () => string;
 }
@@ -347,12 +347,18 @@ export class RecoveryHandler {
 
     if (decision.action === "clarify") {
       const prompt = this.buildRecoveryClarificationPrompt(conditions, decision.promptKind);
+      const clarifyWhyCode: AgentSessionWhyCode = decision.promptKind === "role"
+        ? "recovery_clarify_role"
+        : decision.promptKind === "skill"
+          ? "recovery_clarify_skill"
+          : "recovery_clarify_anchor";
       this.transitionRecoveryPhase("clarifying", {
         overrides: {
           ...diagnosingState
         },
         uncertaintySummary: joinRecoveryMessages("我还缺一个关键约束，先补一句再重试。", boundaryHint),
-        summary: "我还缺一个关键约束，先问你一句。"
+        summary: "我还缺一个关键约束，先问你一句。",
+        why: { primaryWhyCode: clarifyWhyCode, whySummary: "缺少关键约束，需要用户补充后再重试。" }
       });
       const instruction = await this.deps.chat.askFreeform(prompt);
 
@@ -367,7 +373,8 @@ export class RecoveryHandler {
               "没有补充新的关键约束，因此当前只能提供低置信 shortlist。",
               boundaryHint
             ),
-            summary: "当前是低置信 shortlist，只适合先看，不适合直接推荐。"
+            summary: "当前是低置信 shortlist，只适合先看，不适合直接推荐。",
+            why: { primaryWhyCode: "low_confidence_shortlist", whySummary: "未补充关键约束，只能提供低置信 shortlist。" }
           });
           this.deps.applySessionState(setConfidenceStatus(this.deps.getSessionState(), {
             level: "low",
@@ -393,7 +400,8 @@ export class RecoveryHandler {
             "没有补充新的关键约束，因此当前无法继续恢复。",
             boundaryHint
           ),
-          summary: "没有补充新的关键约束，因此当前无法继续恢复。"
+          summary: "没有补充新的关键约束，因此当前无法继续恢复。",
+          why: { primaryWhyCode: "recovery_budget_exhausted", whySummary: "Recovery budget 已用完，无法继续恢复。" }
         });
         return { type: "stop" };
       }
@@ -407,7 +415,7 @@ export class RecoveryHandler {
         },
         uncertaintySummary: "已补充关键约束，重新搜索。"
       });
-      this.deps.setSessionStatus("searching", "已补充关键约束，正在重新搜索。");
+      this.deps.setSessionStatus("searching", "已补充关键约束，正在重新搜索。", { primaryWhyCode: "recovery_rewrite", whySummary: "已补充关键约束，准备重新搜索。" });
       return {
         type: "retry",
         conditions: revisedConditions
@@ -435,7 +443,7 @@ export class RecoveryHandler {
           boundaryHint
         )
       });
-      this.deps.setSessionStatus("searching", "已收敛检索表达，正在重新搜索。");
+      this.deps.setSessionStatus("searching", "已收敛检索表达，正在重新搜索。", { primaryWhyCode: "recovery_rewrite", whySummary: "已收敛检索表达，准备重新搜索。" });
       return {
         type: "retry",
         conditions: rewrittenConditions
@@ -455,7 +463,8 @@ export class RecoveryHandler {
           lowConfidenceEmitted: true
         },
         uncertaintySummary,
-        summary: "当前是低置信 shortlist，只适合先看，不适合直接推荐。"
+        summary: "当前是低置信 shortlist，只适合先看，不适合直接推荐。",
+        why: { primaryWhyCode: "low_confidence_shortlist", whySummary: "当前结果置信度不足，只能提供参考 shortlist。" }
       });
       this.deps.applySessionState(setConfidenceStatus(this.deps.getSessionState(), {
         level: "low",
@@ -478,7 +487,8 @@ export class RecoveryHandler {
         "这轮 recovery 已经用完，但仍没有形成可用 shortlist。",
         boundaryHint
       ),
-      summary: "这轮 recovery 已用完，但仍没有形成可用 shortlist。"
+      summary: "这轮 recovery 已用完，但仍没有形成可用 shortlist。",
+      why: { primaryWhyCode: "recovery_budget_exhausted", whySummary: "Recovery budget 已用完，仍没有形成可用 shortlist。" }
     });
     return { type: "stop" };
   }
@@ -609,6 +619,7 @@ export class RecoveryHandler {
       overrides?: Partial<RecoveryStateOverrides>;
       uncertaintySummary?: string | null;
       summary?: string;
+      why?: { primaryWhyCode?: AgentSessionWhyCode; whySummary?: string | null };
     }
   ): Partial<RecoveryStateOverrides> {
     const state = this.deps.getSessionState();
@@ -621,7 +632,7 @@ export class RecoveryHandler {
     const nextState = setRecoveryState(state, nextRecoveryState as any);
     this.deps.applySessionState(nextState);
     if (options.summary) {
-      this.deps.setSessionStatus("recovering", options.summary);
+      this.deps.setSessionStatus("recovering", options.summary, options.why);
     }
     if (options.uncertaintySummary?.trim()) {
       this.deps.applySessionState(setOpenUncertainties(this.deps.getSessionState(), [options.uncertaintySummary]));

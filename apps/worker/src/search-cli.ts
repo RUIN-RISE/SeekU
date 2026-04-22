@@ -18,9 +18,9 @@ import { createProvider } from "@seeku/llm";
 import { QueryPlanner, HybridRetriever, Reranker, buildDisambiguationNotes, type QueryIntent } from "@seeku/search";
 import { FALLBACK_MATCH_REASONS } from "@seeku/shared";
 import type { ScriptSearchResponseOutput, ScriptSearchResultOutput, SearchConditions } from "./cli/types.js";
+import { buildResultWarning } from "./cli/result-warning.js";
 import {
   buildQueryMatchExplanation,
-  buildResultWarning,
   classifyMatchStrength,
   describeRelativeDate,
   formatSourceLabel

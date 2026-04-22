@@ -15,7 +15,11 @@ export class GithubAdapter implements SourceAdapter<GithubProfile> {
     this.client = client;
   }
 
-  async discoverSeeds(_: { cursor?: Record<string, unknown>; limit: number }): Promise<DiscoverResult> {
+  async discoverSeeds(_: {
+    cursor?: Record<string, unknown>;
+    limit: number;
+    signal?: AbortSignal;
+  }): Promise<DiscoverResult> {
     return {
       profiles: [],
       nextCursor: undefined,
@@ -23,8 +27,8 @@ export class GithubAdapter implements SourceAdapter<GithubProfile> {
     };
   }
 
-  async fetchProfileByHandle(input: { handle: string }): Promise<FetchResult<GithubProfile>> {
-    const rawPayload = await this.client.fetchProfileByUsername(input.handle);
+  async fetchProfileByHandle(input: { handle: string; signal?: AbortSignal }): Promise<FetchResult<GithubProfile>> {
+    const rawPayload = await this.client.fetchProfileByUsername(input.handle, { signal: input.signal });
     const profile = await this.normalizeProfile({ rawProfile: rawPayload });
 
     return {
