@@ -251,6 +251,10 @@ export interface ResultListCommand {
   exportTarget?: ExportTarget;
   prompt?: string;
   direction?: ShortlistMoveDirection;
+  /** For /sort command, the mode argument */
+  mode?: string;
+  /** For /export command, the format argument */
+  format?: string;
 }
 
 export interface SearchHistoryEntry {

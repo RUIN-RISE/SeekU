@@ -665,3 +665,85 @@ describe("B6: displayTaskWorkboard", () => {
   });
 });
 
+// ============================================================================
+// Phase 4: / command interception tests
+// ============================================================================
+
+describe("Phase 4: / command interception in prompts", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("promptClarifyAction intercepts /help as immediate command", async () => {
+    const ui = new TerminalUI();
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.spyOn(ui as any, "promptLine").mockResolvedValueOnce("/help");
+
+    const result = await ui.promptClarifyAction();
+    expect(result).toEqual({ type: "immediate", command: "help", args: "" });
+  });
+
+  it("promptClarifyAction intercepts /quit as immediate command", async () => {
+    const ui = new TerminalUI();
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.spyOn(ui as any, "promptLine").mockResolvedValueOnce("/quit");
+
+    const result = await ui.promptClarifyAction();
+    expect(result).toEqual({ type: "immediate", command: "quit", args: "" });
+  });
+
+  it("promptClarifyAction passes natural language through unchanged", async () => {
+    const ui = new TerminalUI();
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.spyOn(ui as any, "promptLine").mockResolvedValueOnce("1");
+
+    const result = await ui.promptClarifyAction();
+    expect(result).toBe("search");
+  });
+
+  it("promptCompareAction intercepts /help as immediate command", async () => {
+    const ui = new TerminalUI();
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.spyOn(ui as any, "promptLine").mockResolvedValueOnce("/help");
+
+    const result = await ui.promptCompareAction();
+    expect(result).toEqual({ type: "immediate", command: "help", args: "" });
+  });
+
+  it("promptCompareAction intercepts /back as stage command", async () => {
+    const ui = new TerminalUI();
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.spyOn(ui as any, "promptLine").mockResolvedValueOnce("/back");
+
+    const result = await ui.promptCompareAction();
+    expect(result).toEqual({ type: "stage", command: "back", args: "" });
+  });
+
+  it("promptDetailAction intercepts /why as stage command", async () => {
+    const ui = new TerminalUI();
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.spyOn(ui as any, "promptLine").mockResolvedValueOnce("/why");
+
+    const result = await ui.promptDetailAction("TestCandidate");
+    expect(result).toEqual({ type: "stage", command: "why", args: "" });
+  });
+
+  it("promptDetailAction intercepts / (palette) as help", async () => {
+    const ui = new TerminalUI();
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.spyOn(ui as any, "promptLine").mockResolvedValueOnce("/");
+
+    const result = await ui.promptDetailAction("TestCandidate");
+    expect(result).toEqual({ type: "immediate", command: "help", args: "" });
+  });
+
+  it("promptClarifyAction intercepts / (palette) as help", async () => {
+    const ui = new TerminalUI();
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.spyOn(ui as any, "promptLine").mockResolvedValueOnce("/");
+
+    const result = await ui.promptClarifyAction();
+    expect(result).toEqual({ type: "immediate", command: "help", args: "" });
+  });
+});
+

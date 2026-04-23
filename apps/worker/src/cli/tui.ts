@@ -11,6 +11,7 @@ import type { WorkboardViewModel } from "./workboard-view-model.js";
 import { shellRenderer } from "./shell-renderer.js";
 import type { ContextBarData } from "./workboard-view-model.js";
 import type { CliStage } from "./command-spec.js";
+import { parseCommand, routeCommand, type CommandAction } from "./command-router.js";
 import {
   ClarifyAction,
   DetailAction,
@@ -43,6 +44,22 @@ interface ShortlistViewOptions {
   uncertaintySummary?: string;
   statusMessage?: ShortlistStatusMessage;
   reuseViewport?: boolean;
+}
+
+function commandActionToShortlistResult(action: CommandAction): ResultListCommand {
+  if (action.type === "immediate") {
+    if (action.command === "help") return { type: "help" };
+    if (action.command === "quit") return { type: "quit" };
+    if (action.command === "memory") return { type: "help" };
+  }
+  if (action.type === "stage") {
+    if (action.command === "refine") return { type: "refine", prompt: action.args };
+    if (action.command === "compare") return { type: "compare" };
+    if (action.command === "sort") return { type: "sort", mode: action.args || "overall" };
+    if (action.command === "export") return { type: "export", format: action.args || "json" };
+    if (action.command === "back") return { type: "back" };
+  }
+  return { type: "help" };
 }
 
 export class TerminalUI {
@@ -506,9 +523,16 @@ export class TerminalUI {
     console.log(`[q] 退出`);
   }
 
-  async promptClarifyAction(contextBar?: ContextBarData): Promise<ClarifyAction> {
+  async promptClarifyAction(contextBar?: ContextBarData): Promise<ClarifyAction | CommandAction> {
     shellRenderer.renderShellBottom({ stage: "clarify", contextBar });
     const raw = await this.promptLine(">", "1");
+
+    const parsed = parseCommand(raw);
+    if (parsed) {
+      if (parsed.kind === "palette") return { type: "immediate", command: "help", args: "" };
+      return routeCommand(parsed, "clarify");
+    }
+
     const normalized = raw.trim().toLowerCase();
 
     if (normalized === "" || normalized === "1" || normalized === "s" || normalized === "search") {
@@ -707,10 +731,17 @@ export class TerminalUI {
     return this.promptShortlistHotkeys(state);
   }
 
-  async promptDetailAction(name: string, contextBar?: ContextBarData): Promise<DetailAction> {
+  async promptDetailAction(name: string, contextBar?: ContextBarData): Promise<DetailAction | CommandAction> {
     shellRenderer.renderShellBottom({ stage: "detail", taskTitle: name, contextBar });
     console.log(chalk.dim(`动作：back 返回 | o 打开 (Bonjour) | why 评分依据 | refine 进一步收敛 | q 退出`));
     const raw = await this.promptLine(`${name}>`, "back");
+
+    const parsed = parseCommand(raw);
+    if (parsed) {
+      if (parsed.kind === "palette") return { type: "immediate", command: "help", args: "" };
+      return routeCommand(parsed, "detail");
+    }
+
     const normalized = raw.trim().toLowerCase();
 
     if (normalized === "" || normalized === "back" || normalized === "b") {
@@ -736,10 +767,17 @@ export class TerminalUI {
     return "back";
   }
 
-  async promptCompareAction(contextBar?: ContextBarData): Promise<CompareAction> {
+  async promptCompareAction(contextBar?: ContextBarData): Promise<CompareAction | CommandAction> {
     shellRenderer.renderShellBottom({ stage: "compare", contextBar });
     console.log(chalk.dim("动作：back 返回 shortlist | refine 直接收敛 | clear 清空对比池 | q 退出"));
     const raw = await this.promptLine("compare>", "back");
+
+    const parsed = parseCommand(raw);
+    if (parsed) {
+      if (parsed.kind === "palette") return { type: "immediate", command: "help", args: "" };
+      return routeCommand(parsed, "compare");
+    }
+
     const normalized = raw.trim().toLowerCase();
 
     if (normalized === "" || normalized === "back" || normalized === "b") {
@@ -1072,7 +1110,7 @@ export class TerminalUI {
           return;
         }
 
-        if (!key.ctrl && !key.meta && (key.name === "r" || str === "/")) {
+        if (!key.ctrl && !key.meta && key.name === "r") {
           enterLineMode(
             "refine>",
             "",
@@ -1080,6 +1118,27 @@ export class TerminalUI {
               const prompt = raw.trim();
               return prompt ? { type: "refine", prompt } : { type: "back" };
             }
+          );
+          return;
+        }
+
+        if (!key.ctrl && !key.meta && str === "/") {
+          enterLineMode(
+            "/",
+            "",
+            (raw) => {
+              const parsed = parseCommand(raw);
+              if (!parsed) {
+                const prompt = raw.trim();
+                return prompt ? { type: "refine", prompt } : { type: "back" };
+              }
+              if (parsed.kind === "palette") {
+                return { type: "help" };
+              }
+              const action = routeCommand(parsed, "shortlist");
+              return commandActionToShortlistResult(action);
+            },
+            { type: "help" }
           );
           return;
         }

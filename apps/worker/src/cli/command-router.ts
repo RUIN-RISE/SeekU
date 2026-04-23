@@ -153,3 +153,15 @@ export function isValidCommand(
   if (!cmd) return false;
   return cmd.stages.includes(stage) || cmd.stages.includes("global");
 }
+
+/**
+ * Type guard: check if a value is a CommandAction (from / command routing).
+ */
+export function isCommandAction(value: unknown): value is CommandAction {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "type" in value &&
+    (value.type === "immediate" || value.type === "stage" || value.type === "unknown")
+  );
+}

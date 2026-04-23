@@ -7,6 +7,7 @@ import {
   setRecoveryState,
   type AgentSessionState
 } from "./agent-state.js";
+import { isCommandAction, type CommandAction } from "./command-router.js";
 import type { AgentSessionWhyCode } from "./session-runtime-types.js";
 import type { ComparisonResult, SearchConditions } from "./types.js";
 import type { ProfileManager } from "./profile-manager.js";
@@ -146,6 +147,23 @@ export class ComparisonController {
         nextActionTitle: comparisonResult.outcome.recommendationMode === "no-recommendation" ? "调整条件" : "确认推荐",
         blocked: false
       });
+
+      if (isCommandAction(action)) {
+        if (action.type === "immediate" && action.command === "quit") {
+          return "quit";
+        }
+        if (action.type === "stage" && action.command === "refine") {
+          const prompt = await this.deps.chat.askFreeform(
+            this.deps.buildCompareRefinePrompt(conditions)
+          );
+          if (!prompt) {
+            continue;
+          }
+          return { type: "refine", prompt };
+        }
+        continue;
+      }
+
       if (action === "back") {
         return "back";
       }

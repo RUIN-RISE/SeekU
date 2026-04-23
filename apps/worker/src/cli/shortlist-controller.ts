@@ -28,6 +28,8 @@ interface SearchLoopOutcome {
   conditions?: SearchConditions;
 }
 
+import type { CommandAction } from "./command-router.js";
+
 interface DetailOutcome {
   type: "back" | "refine" | "quit";
   prompt?: string;
@@ -46,7 +48,7 @@ export interface ShortlistControllerDependencies {
     displayUndo(entry: SearchConditions | null): void;
     displayHistory(history: any[]): void;
     promptShortlistAction(options: any): Promise<ResultListCommand>;
-    promptDetailAction(name: string, contextBar?: any): Promise<string>;
+    promptDetailAction(name: string, contextBar?: any): Promise<string | CommandAction>;
     renderShellHeader(args: { stage: string; taskTitle?: string; status?: string; contextBar?: any }): void;
   };
   chat: {
@@ -580,6 +582,15 @@ export class ShortlistController {
 
     while (true) {
       const action = await this.deps.tui.promptDetailAction(selected.name, detailContextBar);
+
+      if (typeof action === "object" && action !== null && "type" in action) {
+        const cmd = action as CommandAction;
+        if (cmd.type === "immediate" && cmd.command === "quit") {
+          return { type: "quit" };
+        }
+        continue;
+      }
+
       if (action === "back") {
         return { type: "back" };
       }
