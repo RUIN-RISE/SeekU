@@ -9,7 +9,9 @@ import chalk from "chalk";
 import { getCommandsForStage, type CliStage } from "./command-spec.js";
 
 export function renderCommandPalette(stage: CliStage): void {
-  const commands = getCommandsForStage(stage);
+  const commands = getCommandsForStage(stage).filter((command) =>
+    stage === "home" || command.name !== "memory"
+  );
 
   console.log(chalk.bold("\n命令列表：\n"));
 

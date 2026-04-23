@@ -10,6 +10,7 @@ import type { TaskResumeItem } from "./resume-panel-types.js";
 import type { WorkboardViewModel } from "./workboard-view-model.js";
 import { shellRenderer } from "./shell-renderer.js";
 import type { ContextBarData } from "./workboard-view-model.js";
+import { renderCommandPalette } from "./command-palette.js";
 import type { CliStage } from "./command-spec.js";
 import { parseCommand, routeCommand, type CommandAction } from "./command-router.js";
 import {
@@ -46,22 +47,6 @@ interface ShortlistViewOptions {
   reuseViewport?: boolean;
 }
 
-function commandActionToShortlistResult(action: CommandAction): ResultListCommand {
-  if (action.type === "immediate") {
-    if (action.command === "help") return { type: "help" };
-    if (action.command === "quit") return { type: "quit" };
-    if (action.command === "memory") return { type: "help" };
-  }
-  if (action.type === "stage") {
-    if (action.command === "refine") return { type: "refine", prompt: action.args };
-    if (action.command === "compare") return { type: "compare" };
-    if (action.command === "sort") return { type: "sort", mode: action.args || "overall" };
-    if (action.command === "export") return { type: "export", format: action.args || "json" };
-    if (action.command === "back") return { type: "back" };
-  }
-  return { type: "help" };
-}
-
 export class TerminalUI {
   private shortlistViewportHeight = 0;
 
@@ -89,6 +74,10 @@ export class TerminalUI {
    ┃   ${chalk.dim("底座数据：")}${chalk.cyan("Bonjour 主资料")} ${chalk.dim("|")} ${chalk.cyan("GitHub 证据（分批覆盖中）")}      ┃
    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
     `));
+  }
+
+  displayCommandPalette(stage: CliStage) {
+    renderCommandPalette(stage);
   }
 
   displayWelcomeTips() {
@@ -642,8 +631,8 @@ export class TerminalUI {
     const selectedLabel = typeof options.selectedIndex === "number"
       ? `当前选中 #${options.selectedIndex + 1}`
       : "使用方向键选择";
-    lines.push(chalk.dim(`热键：↑/↓/j/k 移动 | Enter 详情 | space 入池/移出 | o 打开 | / refine | s 排序 | e 导出 | : 命令 | ? 帮助 | q 退出${poolHint}`));
-    lines.push(chalk.dim(`${selectedLabel} | 高级命令仍支持 :history / :show / :sort fresh / :export md`));
+    lines.push(chalk.dim(`热键：↑/↓/j/k 移动 | Enter 详情 | space 入池/移出 | o 打开 | r refine | s 排序 | e 导出 | / slash 命令 | : 高级命令 | ? 帮助 | q 退出${poolHint}`));
+    lines.push(chalk.dim(`${selectedLabel} | 例如：/compare | /sort fresh | /export md | r 去掉销售`));
 
     const output = lines.join("\n");
     process.stdout.write(`${output}\n`);
@@ -834,7 +823,8 @@ export class TerminalUI {
     console.log(chalk.dim("  space          把当前候选人加入/移出对比池"));
     console.log(chalk.dim("  o              打开当前候选人的 Bonjour 页面"));
     console.log(chalk.dim("  c              进入对比池 compare"));
-    console.log(chalk.dim("  / 或 r         直接输入 refine 指令"));
+    console.log(chalk.dim("  /              进入 slash 命令输入"));
+    console.log(chalk.dim("  r              直接输入 refine 指令"));
     console.log(chalk.dim("  s              快速输入排序命令（例如 fresh / source）"));
     console.log(chalk.dim("  e              快速输入导出命令（例如 md / pool md）"));
     console.log(chalk.dim("  :              进入高级命令模式"));
@@ -867,6 +857,7 @@ export class TerminalUI {
     console.log(chalk.dim("  r 去掉销售       直接输入自然语言 refine 指令"));
     console.log(chalk.dim("  r 更看重最近活跃"));
     console.log(chalk.dim("  r 像 2 号但更偏后端"));
+    console.log(chalk.dim("  /help          查看当前阶段的 slash 命令列表"));
     console.log(chalk.dim("  提示：sort 只重排当前结果；refine 会触发新一轮搜索"));
   }
 
@@ -1127,16 +1118,12 @@ export class TerminalUI {
             "/",
             "",
             (raw) => {
-              const parsed = parseCommand(raw);
-              if (!parsed) {
-                const prompt = raw.trim();
-                return prompt ? { type: "refine", prompt } : { type: "back" };
-              }
-              if (parsed.kind === "palette") {
+              const input = raw.trim();
+              if (!input) {
                 return { type: "help" };
               }
-              const action = routeCommand(parsed, "shortlist");
-              return commandActionToShortlistResult(action);
+              const normalized = input.startsWith("/") ? input : `/${input}`;
+              return this.parseShortlistCommand(normalized);
             },
             { type: "help" }
           );

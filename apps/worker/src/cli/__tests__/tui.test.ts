@@ -745,5 +745,24 @@ describe("Phase 4: / command interception in prompts", () => {
     const result = await ui.promptClarifyAction();
     expect(result).toEqual({ type: "immediate", command: "help", args: "" });
   });
-});
 
+  it("parses slash sort commands into shortlist sortMode", () => {
+    const ui = new TerminalUI();
+
+    const result = (ui as any).parseShortlistCommand("/sort fresh");
+
+    expect(result).toEqual({ type: "sort", sortMode: "fresh" });
+  });
+
+  it("parses slash export commands into shortlist export target and format", () => {
+    const ui = new TerminalUI();
+
+    const result = (ui as any).parseShortlistCommand("/export pool md");
+
+    expect(result).toEqual({
+      type: "export",
+      exportTarget: "pool",
+      exportFormat: "md"
+    });
+  });
+});

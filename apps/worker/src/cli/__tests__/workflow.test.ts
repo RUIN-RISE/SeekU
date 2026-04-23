@@ -121,6 +121,7 @@ function createWorkflowHarness() {
     resetShortlistViewport: vi.fn(),
     displayNoResults: vi.fn(),
     displayHelp: vi.fn(),
+    displayCommandPalette: vi.fn(),
     displayPoolEmpty: vi.fn(),
     displayPool: vi.fn(),
     displayHistory: vi.fn(),
@@ -680,6 +681,22 @@ describe("SearchWorkflow shortlist command handling", () => {
     });
   });
 
+  it("shows the slash command palette alongside shortlist help", async () => {
+    const { handleShortlistCommand, mockTui } = createWorkflowHarness();
+
+    const result = await handleShortlistCommand(
+      { type: "help" },
+      [createCandidate()],
+      BASE_CONDITIONS,
+      { sortMode: "overall", visibleCount: 1, selectedIndex: 0 }
+    );
+
+    expect(mockTui.resetShortlistViewport).toHaveBeenCalledTimes(1);
+    expect(mockTui.displayHelp).toHaveBeenCalledTimes(1);
+    expect(mockTui.displayCommandPalette).toHaveBeenCalledWith("shortlist");
+    expect(result.type).toBe("continue");
+  });
+
   it("uses a boundary-aware refine prompt for low-confidence shortlist", async () => {
     const { workflow, handleShortlistCommand, mockChat } = createWorkflowHarness();
     const candidates = [createCandidate()];
@@ -893,6 +910,38 @@ describe("SearchWorkflow shortlist command handling", () => {
     expect(result.type).toBe("continue");
   });
 
+  it("supports slash back command inside compare view", async () => {
+    const { workflow, handleShortlistCommand, mockTui } = createWorkflowHarness();
+    const first = createCandidate();
+    const second = createCandidate({
+      personId: "person-2",
+      name: "Lin"
+    });
+
+    (workflow as any).comparePool = [first, second];
+    (workflow as any).tools.prepareComparison = vi.fn(async () => ({
+      targets: [first, second],
+      entries: [
+        createComparisonEntry({ shortlistIndex: 1, candidate: first, profile: first.profile }),
+        createComparisonEntry({ shortlistIndex: 2, candidate: second, profile: second.profile })
+      ]
+    }));
+    mockTui.promptCompareAction.mockResolvedValue({
+      type: "stage",
+      command: "back",
+      args: ""
+    });
+
+    const result = await handleShortlistCommand(
+      { type: "compare" },
+      [first, second],
+      BASE_CONDITIONS,
+      { sortMode: "overall", visibleCount: 2, selectedIndex: 0 }
+    );
+
+    expect(result.type).toBe("continue");
+  });
+
   it("returns a refine outcome directly from compare view", async () => {
     const { workflow, handleShortlistCommand, mockTui, mockChat } = createWorkflowHarness();
     const first = createCandidate();
@@ -998,6 +1047,23 @@ describe("SearchWorkflow shortlist command handling", () => {
       type: "refine",
       prompt: "更偏 infra backend"
     });
+    logSpy.mockRestore();
+  });
+
+  it("supports slash why command inside detail view", async () => {
+    const { workflow, showCandidateDetail, mockTui, mockRenderer } = createWorkflowHarness();
+    const candidate = createCandidate({ name: "Ada" });
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    (workflow as any).profileManager.loadProfileForCandidate = vi.fn(async () => candidate.profile);
+    mockTui.promptDetailAction
+      .mockResolvedValueOnce({ type: "stage", command: "why", args: "" })
+      .mockResolvedValueOnce({ type: "stage", command: "back", args: "" });
+
+    const result = await showCandidateDetail(candidate, BASE_CONDITIONS);
+
+    expect(mockRenderer.renderWhyMatched).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ type: "back" });
     logSpy.mockRestore();
   });
 

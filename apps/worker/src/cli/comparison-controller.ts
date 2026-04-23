@@ -7,7 +7,8 @@ import {
   setRecoveryState,
   type AgentSessionState
 } from "./agent-state.js";
-import { isCommandAction, type CommandAction } from "./command-router.js";
+import chalk from "chalk";
+import { isCommandAction } from "./command-router.js";
 import type { AgentSessionWhyCode } from "./session-runtime-types.js";
 import type { ComparisonResult, SearchConditions } from "./types.js";
 import type { ProfileManager } from "./profile-manager.js";
@@ -147,38 +148,52 @@ export class ComparisonController {
         nextActionTitle: comparisonResult.outcome.recommendationMode === "no-recommendation" ? "调整条件" : "确认推荐",
         blocked: false
       });
+      let resolvedAction = action;
 
       if (isCommandAction(action)) {
-        if (action.type === "immediate" && action.command === "quit") {
-          return "quit";
-        }
-        if (action.type === "stage" && action.command === "refine") {
-          const prompt = await this.deps.chat.askFreeform(
-            this.deps.buildCompareRefinePrompt(conditions)
-          );
-          if (!prompt) {
+        if (action.type === "immediate") {
+          if (action.command === "quit") {
+            return "quit";
+          }
+          if (action.command === "help") {
+            this.deps.tui.displayCommandPalette("compare");
             continue;
           }
-          return { type: "refine", prompt };
+          if (action.command === "memory") {
+            console.log(chalk.yellow("\n/memory 当前还未接入 compare 视图，会在下一阶段改成 overlay。"));
+            continue;
+          }
+          continue;
         }
-        continue;
+
+        if (action.type === "unknown") {
+          console.log(chalk.yellow(`\n未识别的命令：/${action.name}`));
+          this.deps.tui.displayCommandPalette("compare");
+          continue;
+        }
+
+        if (action.command === "back" || action.command === "clear" || action.command === "refine") {
+          resolvedAction = action.command;
+        } else {
+          continue;
+        }
       }
 
-      if (action === "back") {
+      if (resolvedAction === "back") {
         return "back";
       }
 
-      if (action === "clear") {
+      if (resolvedAction === "clear") {
         this.deps.applySessionState(clearCompareSet(this.deps.getSessionState()));
         this.deps.tui.displayPoolCleared();
         return "clear";
       }
 
-      if (action === "quit") {
+      if (resolvedAction === "quit") {
         return "quit";
       }
 
-      if (action === "refine") {
+      if (resolvedAction === "refine") {
         const prompt = await this.deps.chat.askFreeform(
           this.deps.buildCompareRefinePrompt(conditions)
         );

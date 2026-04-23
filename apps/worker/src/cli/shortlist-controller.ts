@@ -21,14 +21,13 @@ import { buildComparisonEvidence } from "./comparison-formatters.js";
 import { buildResultWarning } from "./result-warning.js";
 import type { CompareLoopOutcome } from "./comparison-controller.js";
 import type { UserMemoryStore } from "./user-memory-store.js";
+import { isCommandAction, type CommandAction } from "./command-router.js";
 
 interface SearchLoopOutcome {
   type: "refine" | "restart" | "quit" | "restore";
   prompt?: string;
   conditions?: SearchConditions;
 }
-
-import type { CommandAction } from "./command-router.js";
 
 interface DetailOutcome {
   type: "back" | "refine" | "quit";
@@ -49,6 +48,7 @@ export interface ShortlistControllerDependencies {
     displayHistory(history: any[]): void;
     promptShortlistAction(options: any): Promise<ResultListCommand>;
     promptDetailAction(name: string, contextBar?: any): Promise<string | CommandAction>;
+    displayCommandPalette(stage: "shortlist" | "detail"): void;
     renderShellHeader(args: { stage: string; taskTitle?: string; status?: string; contextBar?: any }): void;
   };
   chat: {
@@ -198,6 +198,7 @@ export class ShortlistController {
     if (command.type === "help") {
       this.deps.tui.resetShortlistViewport();
       this.deps.tui.displayHelp();
+      this.deps.tui.displayCommandPalette("shortlist");
       return continueWith();
     }
 
@@ -582,24 +583,46 @@ export class ShortlistController {
 
     while (true) {
       const action = await this.deps.tui.promptDetailAction(selected.name, detailContextBar);
+      let resolvedAction = action;
 
-      if (typeof action === "object" && action !== null && "type" in action) {
-        const cmd = action as CommandAction;
-        if (cmd.type === "immediate" && cmd.command === "quit") {
-          return { type: "quit" };
+      if (isCommandAction(action)) {
+        if (action.type === "immediate") {
+          if (action.command === "quit") {
+            return { type: "quit" };
+          }
+          if (action.command === "help") {
+            this.deps.tui.displayCommandPalette("detail");
+            continue;
+          }
+          if (action.command === "memory") {
+            console.log(chalk.yellow("\n/memory 当前还未接入详情视图，会在下一阶段改成 overlay。"));
+            continue;
+          }
+          continue;
         }
-        continue;
+
+        if (action.type === "unknown") {
+          console.log(chalk.yellow(`\n未识别的命令：/${action.name}`));
+          this.deps.tui.displayCommandPalette("detail");
+          continue;
+        }
+
+        if (action.command === "back" || action.command === "open" || action.command === "why" || action.command === "refine") {
+          resolvedAction = action.command;
+        } else {
+          continue;
+        }
       }
 
-      if (action === "back") {
+      if (resolvedAction === "back") {
         return { type: "back" };
       }
 
-      if (action === "quit") {
+      if (resolvedAction === "quit") {
         return { type: "quit" };
       }
 
-      if (action === "open") {
+      if (resolvedAction === "open") {
         const message = await this.openCandidateInBrowser(selected);
         const colorize = message.tone === "success"
           ? chalk.green
@@ -610,7 +633,7 @@ export class ShortlistController {
         continue;
       }
 
-      if (action === "why") {
+      if (resolvedAction === "why") {
         console.log(this.deps.renderer.renderWhyMatched(
           selected,
           profile,
@@ -625,7 +648,7 @@ export class ShortlistController {
         continue;
       }
 
-      if (action === "refine") {
+      if (resolvedAction === "refine") {
         const prompt = await this.deps.chat.askFreeform(
           this.deps.recoveryHandler.buildShortlistRefinePrompt(conditions, selected.name)
         );
