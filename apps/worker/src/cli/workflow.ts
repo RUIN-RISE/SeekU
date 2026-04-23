@@ -150,6 +150,10 @@ export { classifyMatchStrength };
 interface SearchWorkflowOptions {
   sessionId?: string;
   initialTranscript?: AgentTranscriptEntry[];
+  memoryStore?: import("./user-memory-store.js").UserMemoryStore;
+  workItemStore?: import("./work-item-store.js").WorkItemStore;
+  /** Restore an existing work item instead of creating a new one. */
+  workItemId?: string;
 }
 
 export interface QueryMatchExplanation {
@@ -163,6 +167,11 @@ interface QueryMatchExplanationOptions {
   sources?: string[];
   referenceDate?: Date;
   experienceMatched?: boolean;
+}
+
+function unionDedupeStrings(a: string[] | undefined, b: string[] | undefined): string[] {
+  const set = new Set([...(a ?? []), ...(b ?? [])]);
+  return [...set];
 }
 
 function truncateDisplayValue(value: string, maxLength: number): string {
@@ -747,6 +756,9 @@ export class SearchWorkflow {
   private shortlistController: ShortlistController;
   private terminationReason?: AgentSessionTerminationReason;
   private executionAbortController?: AbortController;
+  private readonly memoryStore?: import("./user-memory-store.js").UserMemoryStore;
+  private readonly workItemStore?: import("./work-item-store.js").WorkItemStore;
+  private workItemId?: string;
 
   constructor(
     private db: SeekuDatabase,
@@ -755,6 +767,9 @@ export class SearchWorkflow {
   ) {
     this.sessionId = options.sessionId ?? randomUUID();
     this.transcript = [...(options.initialTranscript ?? [])];
+    this.memoryStore = options.memoryStore;
+    this.workItemStore = options.workItemStore;
+    this.workItemId = options.workItemId;
     this.chat = new ChatInterface(llmProvider);
     this.tui = new TerminalUI();
     this.scorer = new HybridScoringEngine(llmProvider);
@@ -876,7 +891,8 @@ export class SearchWorkflow {
       scorer: this.scorer,
       tools: this.tools,
       getSessionState: () => this.sessionState,
-      applySessionState: (next) => this.applySessionState(next)
+      applySessionState: (next) => this.applySessionState(next),
+      memoryStore: this.memoryStore
     });
     this.emitSessionEvent(
       "session_started",
@@ -897,6 +913,10 @@ export class SearchWorkflow {
 
   getSessionId(): string {
     return this.sessionId;
+  }
+
+  getWorkItemId(): string | undefined {
+    return this.workItemId;
   }
 
   getSessionSnapshot(): AgentSessionSnapshot {
@@ -1330,6 +1350,17 @@ export class SearchWorkflow {
     this.terminationReason = undefined;
     this.executionAbortController = new AbortController();
 
+    // Memory-aware bootstrap: hydrate and offer to adopt preferences
+    let memorySeededConditions: Partial<SearchConditions> = {};
+    if (this.memoryStore) {
+      const { runMemoryBootstrap } = await import("./memory-bootstrap.js");
+      const bootstrapResult = await runMemoryBootstrap(
+        this.memoryStore,
+        (prompt) => this.chat.askFreeform(prompt)
+      );
+      memorySeededConditions = bootstrapResult.seededConditions;
+    }
+
     try {
       let nextPrompt = initialPrompt?.trim();
       this.setSessionStatus("waiting-input", "等待新的搜索需求。", { primaryWhyCode: "awaiting_user_input", whySummary: "等待用户输入新的搜索需求。" });
@@ -1346,7 +1377,20 @@ export class SearchWorkflow {
 
         this.appendTranscriptEntry("user", initialInput);
 
-        const clarifyOutcome = await this.runClarifyLoop(initialInput);
+        // Create work item for this session on first user input
+        if (!this.workItemId && this.workItemStore) {
+          try {
+            const title = initialInput.length > 80 ? initialInput.slice(0, 77) + "..." : initialInput;
+            const workItem = await this.workItemStore.create({ title });
+            this.workItemId = workItem.id;
+          } catch {
+            // Work item creation is best-effort; session proceeds without it.
+          }
+        }
+
+        const clarifyOutcome = await this.runClarifyLoop(initialInput, memorySeededConditions);
+        // Seeded conditions only apply to the first clarify loop
+        memorySeededConditions = {};
         if (!clarifyOutcome) {
           this.setTerminationReason("completed");
           this.setSessionStatus("completed", "会话已结束。");
@@ -1435,10 +1479,35 @@ export class SearchWorkflow {
     this.setSessionStatus("waiting-input", `runtime session 已准备好当前 shortlist（${candidates.length} 人）。`);
   }
 
-  private async runClarifyLoop(initialInput: string): Promise<SearchConditions | null> {
+  private async runClarifyLoop(initialInput: string, seededConditions?: Partial<SearchConditions>): Promise<SearchConditions | null> {
+    const { extractPreferenceFromText, mergePreferenceCandidates } = await import("./preference-capture.js");
     let query = initialInput.trim();
     this.setSessionStatus("clarifying", "正在理解你的搜索目标。");
-    let conditions = await this.extractDraftFromQuery(query);
+    let extracted = await this.extractDraftFromQuery(query);
+
+    // Merge seeded memory conditions as defaults — user input overrides
+    if (seededConditions && Object.keys(seededConditions).length > 0) {
+      const merged: Partial<SearchConditions> = {
+        ...seededConditions,
+        skills: unionDedupeStrings(seededConditions.skills, extracted.skills),
+        locations: unionDedupeStrings(seededConditions.locations, extracted.locations),
+        mustHave: unionDedupeStrings(seededConditions.mustHave, extracted.mustHave),
+        exclude: unionDedupeStrings(seededConditions.exclude, extracted.exclude),
+        // User input takes precedence for scalar fields
+        role: extracted.role ?? seededConditions.role,
+        experience: extracted.experience ?? seededConditions.experience,
+        sourceBias: extracted.sourceBias ?? seededConditions.sourceBias,
+        preferFresh: extracted.preferFresh || seededConditions.preferFresh || false
+      };
+      extracted = normalizeConditions(merged);
+    }
+
+    let conditions = extracted;
+
+    // Track preferences explicitly stated by the user across all utterances.
+    // Initial query is user-stated text, so extract directly from it.
+    let userStatedCandidate = extractPreferenceFromText(query);
+
     let nextState = setSessionUserGoal(this.sessionState, query);
     nextState = recordClarification(nextState, query, conditions);
     this.applySessionState(nextState);
@@ -1458,6 +1527,7 @@ export class SearchWorkflow {
 
       if (decision.action === "search") {
         this.setSessionStatus("searching", "澄清完成，准备开始搜索。");
+        await this.maybeCapturePreference(userStatedCandidate, "clarify");
         return conditions;
       }
 
@@ -1469,11 +1539,17 @@ export class SearchWorkflow {
       if (!instruction) {
         console.log(chalk.dim("未继续补充，我先按当前条件搜索。"));
         this.setSessionStatus("searching", "未收到更多补充，按当前条件开始搜索。");
+        await this.maybeCapturePreference(userStatedCandidate, "clarify");
         return conditions;
       }
 
       this.setSessionStatus("clarifying", "正在补充搜索条件。");
       this.spinner.start("正在补充搜索条件...");
+
+      // Extract what user explicitly stated in this clarification
+      const delta = extractPreferenceFromText(instruction);
+      userStatedCandidate = mergePreferenceCandidates(userStatedCandidate, delta);
+
       conditions = normalizeConditions(
         await this.chat.reviseConditions(conditions, instruction, "edit")
       );
@@ -1483,6 +1559,7 @@ export class SearchWorkflow {
   }
 
   private async runSearchLoop(initialConditions: SearchConditions): Promise<SearchLoopOutcome> {
+    const { extractPreferenceFromText } = await import("./preference-capture.js");
     let conditions = normalizeConditions(initialConditions);
     let sortMode: SortMode = "overall";
     let shortlistPresentation:
@@ -1556,6 +1633,10 @@ export class SearchWorkflow {
           return { type: "restart" };
         }
 
+        // Capture preferences from user-stated refine text
+        const refineCandidate = extractPreferenceFromText(prompt);
+        await this.maybeCapturePreference(refineCandidate, "refine");
+
         conditions = await this.conditionRevisionService.revise(conditions, prompt);
         shortlistPresentation = undefined;
         sortMode = "overall";
@@ -1608,6 +1689,11 @@ export class SearchWorkflow {
             ...this.sessionState.recoveryState,
             compareSuggestedRefinement: undefined
           }));
+
+          // Capture preferences from user-stated refine text
+          const refineCandidate = extractPreferenceFromText(compareOutcome.prompt);
+          await this.maybeCapturePreference(refineCandidate, "refine");
+
           conditions = await this.conditionRevisionService.revise(
             conditions,
             compareOutcome.prompt,
@@ -1637,6 +1723,10 @@ export class SearchWorkflow {
         continue;
       }
 
+      // Capture preferences from user-stated refine text
+      const refineCandidate = extractPreferenceFromText(result.prompt || "");
+      await this.maybeCapturePreference(refineCandidate, "refine");
+
       conditions = await this.conditionRevisionService.revise(conditions, result.prompt || "", candidates);
       this.applySessionState(setRecoveryState(this.sessionState, {
         ...this.sessionState.recoveryState,
@@ -1653,6 +1743,22 @@ export class SearchWorkflow {
     const extracted = await this.chat.extractConditions(query);
     this.spinner.stop();
     return normalizeConditions(extracted);
+  }
+
+  private async maybeCapturePreference(
+    candidate: import("./preference-capture.js").PreferenceCandidate,
+    sourceContext: "clarify" | "refine"
+  ): Promise<void> {
+    if (!this.memoryStore) {
+      return;
+    }
+
+    const { captureExplicitPreference } = await import("./preference-capture.js");
+    await captureExplicitPreference(
+      this.memoryStore,
+      { candidate, sourceContext },
+      (prompt) => this.chat.askFreeform(prompt)
+    );
   }
 
   private getClarificationTurnCount(): number {

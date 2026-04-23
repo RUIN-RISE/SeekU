@@ -6,6 +6,8 @@ import { runPromptWithUserExit } from "./prompt-abort.js";
 import type { PersistedCliSessionSummary } from "./session-ledger.js";
 import type { PersistedCliSessionRecord } from "./session-ledger.js";
 import type { ResumePanelItem } from "./resume-resolver.js";
+import type { TaskResumeItem } from "./resume-panel-types.js";
+import type { WorkboardViewModel } from "./workboard-view-model.js";
 import {
   ClarifyAction,
   DetailAction,
@@ -80,8 +82,10 @@ export class TerminalUI {
 
     console.log("");
     console.log(chalk.dim("也可以直接输入 attach <sessionId>。"));
+    console.log(chalk.dim("输入 memory 管理记忆偏好。"));
   }
 
+  /** Legacy compatibility — B5 replaced with displayTaskResumePanel */
   displayResumePanel(items: ResumePanelItem[]) {
     process.stdout.write("\x1Bc");
     this.displayBanner();
@@ -113,6 +117,54 @@ export class TerminalUI {
 
     console.log("");
     console.log(chalk.dim("也可以直接输入 attach <sessionId>。"));
+    console.log(chalk.dim("输入 memory 管理记忆偏好。"));
+  }
+
+  displayTaskResumePanel(items: TaskResumeItem[]) {
+    process.stdout.write("\x1Bc");
+    this.displayBanner();
+    console.log(chalk.bold("继续一个任务："));
+    console.log(`[1] ${chalk.green("新开任务")}`);
+
+    items.forEach((item, index) => {
+      const stamp = new Date(item.updatedAt).toLocaleString("zh-CN", {
+        hour12: false
+      });
+      const resumabilityBadge = item.resumability === "resumable"
+        ? chalk.green("可继续")
+        : item.resumability === "read_only"
+          ? chalk.yellow("只读")
+          : chalk.dim("blocked");
+      const cacheHint = item.cacheOnly ? chalk.dim(" · local cache") : "";
+
+      // Line 1: title + resumability
+      const title = chalk.bold(item.title);
+      console.log(
+        `[${index + 2}] ${resumabilityBadge}  ${title}${cacheHint}`
+      );
+
+      // Line 2: stage + blocked + next action + timestamp
+      const parts: string[] = [];
+      parts.push(item.subtitle);
+      if (item.blocked && item.blockerLabel) {
+        parts.push(chalk.yellow(`阻塞：${item.blockerLabel}`));
+      }
+      if (item.nextActionTitle) {
+        parts.push(chalk.dim(`下一步：${item.nextActionTitle}`));
+      }
+      // Kind labels for non-work-item items
+      if (item.kind === "legacy_session") {
+        parts.push(chalk.dim("legacy"));
+      } else if (item.kind === "degraded_work_item") {
+        parts.push(chalk.dim("degraded"));
+      }
+      parts.push(chalk.dim(stamp));
+      console.log(`    ${parts.join(" · ")}`);
+    });
+
+    console.log("");
+    console.log(chalk.dim("也可以直接输入 attach <sessionId>。"));
+    console.log(chalk.dim("输入 memory 管理记忆偏好。"));
   }
 
   async promptResumePanelChoice(defaultChoice = "1"): Promise<string> {
@@ -237,6 +289,42 @@ export class TerminalUI {
     console.log(`${chalk.cyan("Why")}      ${why}`);
     console.log(`${chalk.cyan("Movement")} ${movement}`);
     console.log(`${chalk.cyan("Focus")}    ${focus}`);
+    console.log("");
+  }
+
+  displayTaskWorkboard(viewModel: WorkboardViewModel) {
+    console.log("");
+    console.log(chalk.bold("Task Workboard"));
+    console.log(chalk.dim("-".repeat(48)));
+
+    console.log(`${chalk.cyan("任务")}     ${viewModel.title}`);
+    console.log(`${chalk.cyan("阶段")}     ${viewModel.stageLabel}`);
+    console.log(`${chalk.cyan("状态")}     ${viewModel.summary}`);
+
+    if (viewModel.blocked && viewModel.blockerLabel) {
+      console.log(`${chalk.red("阻塞")}     ${chalk.yellow(viewModel.blockerLabel)}`);
+    }
+
+    if (viewModel.isLegacySession) {
+      console.log(chalk.dim("(legacy session — 无关联工作项)"));
+    }
+
+    if (viewModel.isDegraded) {
+      console.log(chalk.yellow("(degraded — 工作项关联丢失，使用快照数据)"));
+    }
+
+    console.log(chalk.dim("-".repeat(48)));
+    console.log(`${chalk.green("下一步")}   ${viewModel.nextActionTitle}`);
+    console.log(`          ${viewModel.nextActionDescription}`);
+    if (viewModel.nextActionPrompt) {
+      console.log(`          ${chalk.dim(`建议输入：${viewModel.nextActionPrompt}`)}`);
+    }
+
+    console.log(chalk.dim("-".repeat(48)));
+    console.log(`${chalk.dim(`更新于 ${viewModel.updatedAtLabel}`)}`);
+    if (viewModel.sourceLabel) {
+      console.log(`${chalk.dim(`来源：${viewModel.sourceLabel}`)}`);
+    }
     console.log("");
   }
 

@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { TerminalUI } from "../tui.js";
 import type { AgentSessionSnapshot, AgentTranscriptEntry } from "../agent-session-events.js";
 import type { ResumePanelItem } from "../resume-resolver.js";
+import type { TaskResumeItem } from "../resume-panel-types.js";
+import type { WorkboardViewModel } from "../workboard-view-model.js";
 import type { PersistedCliSessionRecord } from "../session-ledger.js";
 
 describe("TerminalUI banner", () => {
@@ -433,3 +435,233 @@ describe("TerminalUI displayRestoredSession", () => {
     expect(output).toContain("当前没有可显示的历史消息");
   });
 });
+
+// ============================================================================
+// B6: displayTaskResumePanel TUI regression tests
+// ============================================================================
+
+function makeTaskResumeItem(overrides: Partial<TaskResumeItem> = {}): TaskResumeItem {
+  return {
+    kind: "work_item",
+    sessionId: "s-1",
+    title: "找 AI 工程师",
+    subtitle: "短名单就绪",
+    stage: "shortlist_ready",
+    blocked: false,
+    updatedAt: "2026-04-22T10:00:00.000Z",
+    resumability: "resumable",
+    record: {} as any,
+    ...overrides
+  };
+}
+
+describe("B6: displayTaskResumePanel", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("renders work_item with title and next action", () => {
+    const ui = new TerminalUI();
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    const items: TaskResumeItem[] = [
+      makeTaskResumeItem({ title: "找 AI 工程师", nextActionTitle: "比较候选人" })
+    ];
+
+    ui.displayTaskResumePanel(items);
+
+    const output = logSpy.mock.calls.map((call) => call.join(" ")).join("\n");
+    expect(output).toContain("找 AI 工程师");
+    expect(output).toContain("比较候选人");
+    expect(output).toContain("可继续");
+  });
+
+  it("renders degraded_work_item with degraded label", () => {
+    const ui = new TerminalUI();
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    const items: TaskResumeItem[] = [
+      makeTaskResumeItem({ kind: "degraded_work_item", sessionId: "s-deg" })
+    ];
+
+    ui.displayTaskResumePanel(items);
+
+    const output = logSpy.mock.calls.map((call) => call.join(" ")).join("\n");
+    expect(output).toContain("degraded");
+  });
+
+  it("renders legacy_session with legacy label", () => {
+    const ui = new TerminalUI();
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    const items: TaskResumeItem[] = [
+      makeTaskResumeItem({ kind: "legacy_session", sessionId: "s-leg" })
+    ];
+
+    ui.displayTaskResumePanel(items);
+
+    const output = logSpy.mock.calls.map((call) => call.join(" ")).join("\n");
+    expect(output).toContain("legacy");
+  });
+
+  it("renders blocked item with blocker label", () => {
+    const ui = new TerminalUI();
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    const items: TaskResumeItem[] = [
+      makeTaskResumeItem({ blocked: true, blockerLabel: "搜索条件过宽" })
+    ];
+
+    ui.displayTaskResumePanel(items);
+
+    const output = logSpy.mock.calls.map((call) => call.join(" ")).join("\n");
+    expect(output).toContain("阻塞");
+    expect(output).toContain("搜索条件过宽");
+  });
+
+  it("renders cacheOnly item with local cache hint", () => {
+    const ui = new TerminalUI();
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    const items: TaskResumeItem[] = [
+      makeTaskResumeItem({ cacheOnly: true })
+    ];
+
+    ui.displayTaskResumePanel(items);
+
+    const output = logSpy.mock.calls.map((call) => call.join(" ")).join("\n");
+    expect(output).toContain("local cache");
+  });
+
+  it("numbers items from [2] and preserves [1] for new task", () => {
+    const ui = new TerminalUI();
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    const items: TaskResumeItem[] = [
+      makeTaskResumeItem({ sessionId: "s-a" }),
+      makeTaskResumeItem({ sessionId: "s-b" })
+    ];
+
+    ui.displayTaskResumePanel(items);
+
+    const output = logSpy.mock.calls.map((call) => call.join(" ")).join("\n");
+    expect(output).toContain("新开任务");
+    expect(output).toContain("[1]");
+    expect(output).toContain("[2]");
+    expect(output).toContain("[3]");
+  });
+});
+
+// ============================================================================
+// B6: displayTaskWorkboard TUI regression tests
+// ============================================================================
+
+function makeWorkboardViewModel(overrides: Partial<WorkboardViewModel> = {}): WorkboardViewModel {
+  return {
+    title: "找 AI 工程师",
+    stage: "shortlist_ready",
+    stageLabel: "短名单就绪",
+    blocked: false,
+    summary: "已有 3 位候选人进入短名单",
+    nextActionTitle: "比较候选人",
+    nextActionDescription: "从短名单中选取 2-3 人进入比较",
+    nextActionPrompt: "比较 A 和 B",
+    updatedAtLabel: "2 分钟前",
+    isLegacySession: false,
+    ...overrides
+  };
+}
+
+describe("B6: displayTaskWorkboard", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("renders normal task-centric workboard", () => {
+    const ui = new TerminalUI();
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    ui.displayTaskWorkboard(makeWorkboardViewModel());
+
+    const output = logSpy.mock.calls.map((call) => call.join(" ")).join("\n");
+    expect(output).toContain("找 AI 工程师");
+    expect(output).toContain("短名单就绪");
+    expect(output).toContain("已有 3 位候选人进入短名单");
+    expect(output).toContain("比较候选人");
+    expect(output).toContain("Task Workboard");
+  });
+
+  it("renders blocked task with blocker label", () => {
+    const ui = new TerminalUI();
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    ui.displayTaskWorkboard(makeWorkboardViewModel({
+      blocked: true,
+      blockerLabel: "搜索条件过宽"
+    }));
+
+    const output = logSpy.mock.calls.map((call) => call.join(" ")).join("\n");
+    expect(output).toContain("阻塞");
+    expect(output).toContain("搜索条件过宽");
+  });
+
+  it("renders legacy workboard", () => {
+    const ui = new TerminalUI();
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    ui.displayTaskWorkboard(makeWorkboardViewModel({
+      isLegacySession: true,
+      title: "找杭州后端"
+    }));
+
+    const output = logSpy.mock.calls.map((call) => call.join(" ")).join("\n");
+    expect(output).toContain("legacy session");
+    expect(output).toContain("找杭州后端");
+  });
+
+  it("renders degraded workboard", () => {
+    const ui = new TerminalUI();
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    ui.displayTaskWorkboard(makeWorkboardViewModel({
+      isDegraded: true,
+      title: "Session abcdef01"
+    }));
+
+    const output = logSpy.mock.calls.map((call) => call.join(" ")).join("\n");
+    expect(output).toContain("degraded");
+    expect(output).toContain("工作项关联丢失");
+  });
+
+  it("renders sourceLabel when present", () => {
+    const ui = new TerminalUI();
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    ui.displayTaskWorkboard(makeWorkboardViewModel({
+      sourceLabel: "快照推导"
+    }));
+
+    const output = logSpy.mock.calls.map((call) => call.join(" ")).join("\n");
+    expect(output).toContain("来源");
+    expect(output).toContain("快照推导");
+  });
+
+  it("omits sourceLabel line when absent", () => {
+    const ui = new TerminalUI();
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    ui.displayTaskWorkboard(makeWorkboardViewModel({
+      sourceLabel: undefined
+    }));
+
+    const output = logSpy.mock.calls.map((call) => call.join(" ")).join("\n");
+    expect(output).not.toContain("来源");
+  });
+});
+

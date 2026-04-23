@@ -7,6 +7,7 @@ export interface UpsertAgentSessionInput {
   sessionId: string;
   origin: AgentSessionOrigin;
   posture: AgentSessionPosture;
+  workItemId?: string | null;
   transcript: Record<string, unknown>[];
   latestSnapshot: Record<string, unknown> | null;
   resumeMeta?: Record<string, unknown> | null;
@@ -20,6 +21,7 @@ export async function upsertAgentSession(
     sessionId: input.sessionId,
     origin: input.origin,
     posture: input.posture,
+    workItemId: input.workItemId ?? null,
     transcript: input.transcript,
     latestSnapshot: input.latestSnapshot ?? {},
     resumeMeta: input.resumeMeta ?? null,

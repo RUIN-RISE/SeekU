@@ -1,12 +1,37 @@
-import type {
-  AgentResumeItemKind,
-  AgentResumability
-} from "./session-runtime-types.js";
+/**
+ * Resume resolver — builds task-centric resume panel items.
+ *
+ * B5 re-architecture: consumes B2 TaskProgress + B3 NextBestAction to
+ * produce TaskResumeItems sorted by work-item-centric ranking.
+ *
+ * Three item kinds:
+ * - work_item: session has workItemId and work item loaded successfully
+ * - degraded_work_item: session has workItemId but work item not found
+ * - legacy_session: session has no workItemId (pre-B1 data)
+ */
+
+import type { AgentResumability } from "./session-runtime-types.js";
 import type {
   CliSessionLedger,
   PersistedCliSessionRecord,
   PersistedCliResumeMeta
 } from "./session-ledger.js";
+import type { TaskResumeItem, TaskResumeItemKind } from "./resume-panel-types.js";
+import { compareResumeItems, rankResumeItem } from "./resume-panel-types.js";
+import type { TaskStage, TaskBlockerReason } from "./task-progress-types.js";
+import { deriveTaskProgress } from "./task-progress-derivation.js";
+import { deriveNextBestAction } from "./next-best-action.js";
+import { formatTaskStageLabel, formatBlockerLabel } from "./workboard-view-model.js";
+import type { WorkItemStore } from "./work-item-store.js";
+import type { WorkItemRecord } from "./work-item-types.js";
+
+// ============================================================================
+// Legacy Types (preserved for backward compatibility — B5 replaced these)
+// ============================================================================
+
+import type {
+  AgentResumeItemKind,
+} from "./session-runtime-types.js";
 
 export interface ResumePanelItem {
   sessionId: string;
@@ -29,27 +54,19 @@ export interface ResumeResolution {
   defaultSelection?: string;
 }
 
-function getPriority(
-  kind: AgentResumeItemKind,
-  resumability: AgentResumability
-): number {
-  if (resumability === "resumable" && kind === "interrupted_work_item") {
-    return 400;
-  }
+// ============================================================================
+// Legacy Helpers (still needed for preview/resume flow)
+// ============================================================================
 
-  if (resumability === "resumable" && kind === "stopped_session") {
-    return 300;
-  }
+const LEGACY_PRIORITY: Record<AgentResumeItemKind, Record<AgentResumability, number>> = {
+  interrupted_work_item: { resumable: 400, read_only: 0, not_resumable: 0 },
+  stopped_session: { resumable: 300, read_only: 200, not_resumable: 0 },
+  recent_session: { resumable: 100, read_only: 100, not_resumable: 0 },
+  new_session: { resumable: 0, read_only: 0, not_resumable: 0 }
+};
 
-  if (resumability === "read_only" && kind === "stopped_session") {
-    return 200;
-  }
-
-  if (kind === "recent_session") {
-    return 100;
-  }
-
-  return 0;
+function getLegacyPriority(kind: AgentResumeItemKind, resumability: AgentResumability): number {
+  return LEGACY_PRIORITY[kind]?.[resumability] ?? 0;
 }
 
 function getResumeMeta(record: PersistedCliSessionRecord): PersistedCliResumeMeta | undefined {
@@ -111,7 +128,7 @@ export function deriveResumeItemKind(
   return getResumeMeta(record)?.kind ?? "recent_session";
 }
 
-function buildLabel(record: PersistedCliSessionRecord): string {
+function buildLegacyLabel(record: PersistedCliSessionRecord): string {
   const resumeMeta = getResumeMeta(record);
   if (!resumeMeta) {
     return "无运行时快照";
@@ -130,10 +147,10 @@ export function toResumePanelItem(
 
   return {
     sessionId: record.sessionId,
-    label: buildLabel(record),
+    label: buildLegacyLabel(record),
     kind,
     resumability,
-    priority: getPriority(kind, resumability),
+    priority: getLegacyPriority(kind, resumability),
     updatedAt: record.updatedAt,
     status: resumeMeta?.status ?? runtime?.status ?? "unknown",
     statusSummary: resumeMeta?.statusSummary ?? runtime?.statusSummary ?? null,
@@ -145,6 +162,170 @@ export function toResumePanelItem(
   };
 }
 
+// ============================================================================
+// Task-Centric Item Builder
+// ============================================================================
+
+function deriveResumabilityFromRecord(record: PersistedCliSessionRecord): AgentResumability {
+  return getResumeMeta(record)?.resumability ?? "read_only";
+}
+
+function deriveTitleFromSnapshot(record: PersistedCliSessionRecord): string {
+  const goal = record.latestSnapshot?.userGoal;
+  if (goal) return goal;
+  return `Session ${record.sessionId.slice(0, 8)}`;
+}
+
+function buildTaskResumeItem(args: {
+  record: PersistedCliSessionRecord;
+  workItem: WorkItemRecord | null;
+}): TaskResumeItem {
+  const { record, workItem } = args;
+  const snapshot = record.latestSnapshot;
+  const resumeMeta = record.resumeMeta;
+  const resumability = deriveResumabilityFromRecord(record);
+
+  const progress = deriveTaskProgress({ workItem, snapshot, resumeMeta });
+  const action = deriveNextBestAction({ taskProgress: progress, workItem, snapshot, resumeMeta });
+
+  const title = workItem?.title || workItem?.goalSummary || deriveTitleFromSnapshot(record);
+
+  return {
+    kind: "work_item",
+    sessionId: record.sessionId,
+    workItemId: workItem?.id ?? record.workItemId ?? undefined,
+    title,
+    subtitle: formatTaskStageLabel(progress.stage),
+    stage: progress.stage,
+    blocked: progress.blocked,
+    blockerLabel: progress.blocked && progress.blockerReason
+      ? formatBlockerLabel(progress.blockerReason)
+      : undefined,
+    nextActionTitle: action.title,
+    updatedAt: record.updatedAt,
+    resumability,
+    sourceLabel: progress.derivedFrom,
+    record,
+    cacheOnly: record.cacheOnly
+  };
+}
+
+function buildDegradedTaskResumeItem(record: PersistedCliSessionRecord): TaskResumeItem {
+  const snapshot = record.latestSnapshot;
+  const resumeMeta = record.resumeMeta;
+  const resumability = deriveResumabilityFromRecord(record);
+
+  const progress = deriveTaskProgress({ workItem: null, snapshot, resumeMeta });
+  const action = deriveNextBestAction({ taskProgress: progress, workItem: null, snapshot, resumeMeta });
+
+  return {
+    kind: "degraded_work_item",
+    sessionId: record.sessionId,
+    workItemId: record.workItemId ?? undefined,
+    title: deriveTitleFromSnapshot(record),
+    subtitle: `${formatTaskStageLabel(progress.stage)} · 工作项关联丢失`,
+    stage: progress.stage,
+    blocked: progress.blocked,
+    blockerLabel: progress.blocked && progress.blockerReason
+      ? formatBlockerLabel(progress.blockerReason)
+      : undefined,
+    nextActionTitle: action.title,
+    updatedAt: record.updatedAt,
+    resumability,
+    sourceLabel: progress.derivedFrom,
+    record,
+    cacheOnly: record.cacheOnly
+  };
+}
+
+function buildLegacyTaskResumeItem(record: PersistedCliSessionRecord): TaskResumeItem {
+  const snapshot = record.latestSnapshot;
+  const resumeMeta = record.resumeMeta;
+  const resumability = deriveResumabilityFromRecord(record);
+
+  const progress = deriveTaskProgress({ workItem: null, snapshot, resumeMeta });
+  const action = deriveNextBestAction({ taskProgress: progress, workItem: null, snapshot, resumeMeta });
+
+  return {
+    kind: "legacy_session",
+    sessionId: record.sessionId,
+    title: deriveTitleFromSnapshot(record),
+    subtitle: `${formatTaskStageLabel(progress.stage)} · legacy session`,
+    stage: progress.stage,
+    blocked: progress.blocked,
+    blockerLabel: progress.blocked && progress.blockerReason
+      ? formatBlockerLabel(progress.blockerReason)
+      : undefined,
+    nextActionTitle: action.title,
+    updatedAt: record.updatedAt,
+    resumability,
+    sourceLabel: progress.derivedFrom,
+    record,
+    cacheOnly: record.cacheOnly
+  };
+}
+
+// ============================================================================
+// Task-Centric Resolution
+// ============================================================================
+
+export interface TaskResumeResolution {
+  items: TaskResumeItem[];
+  defaultSelection?: string;
+}
+
+export async function resolveTaskResumeItems(
+  ledger: CliSessionLedger,
+  workItemStore: WorkItemStore | null,
+  displayLimit = 8
+): Promise<TaskResumeResolution> {
+  // Fetch a wider window so B5 ranking can surface older-but-important items
+  // that would be pre-trimmed by a recency-only DB query.
+  const fetchLimit = Math.max(displayLimit * 4, 32);
+  const summaries = await ledger.listRecent(fetchLimit);
+  const records = await Promise.all(
+    summaries.map((summary) => ledger.load(summary.sessionId))
+  );
+
+  const items: TaskResumeItem[] = await Promise.all(
+    records
+      .filter((record): record is PersistedCliSessionRecord => Boolean(record))
+      .map(async (record) => {
+        // Work-item-backed session.
+        if (record.workItemId && workItemStore) {
+          try {
+            const workItem = await workItemStore.get(record.workItemId);
+            if (workItem) {
+              return buildTaskResumeItem({ record, workItem });
+            }
+          } catch {
+            // DB error — fall through to degraded.
+          }
+          return buildDegradedTaskResumeItem(record);
+        }
+
+        // Session has workItemId but no store available — degraded.
+        if (record.workItemId) {
+          return buildDegradedTaskResumeItem(record);
+        }
+
+        // Legacy session.
+        return buildLegacyTaskResumeItem(record);
+      })
+  );
+
+  const sorted = [...items].sort(compareResumeItems).slice(0, displayLimit);
+
+  return {
+    items: sorted,
+    defaultSelection: sorted[0]?.sessionId
+  };
+}
+
+// ============================================================================
+// Legacy Sorting (preserved for backward compatibility — B5 replaced these)
+// ============================================================================
+
 export function sortResumePanelItems(items: ResumePanelItem[]): ResumePanelItem[] {
   return [...items].sort((left, right) => {
     if (right.priority !== left.priority) {
@@ -154,6 +335,10 @@ export function sortResumePanelItems(items: ResumePanelItem[]): ResumePanelItem[
     return right.updatedAt.localeCompare(left.updatedAt);
   });
 }
+
+// ============================================================================
+// Legacy Resolution (preserved for backward compatibility — B5 replaced these)
+// ============================================================================
 
 export async function resolveResumeItems(
   ledger: CliSessionLedger,

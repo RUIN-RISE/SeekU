@@ -20,6 +20,7 @@ import { formatConditionsAsPrompt } from "./search-conditions.js";
 import { buildComparisonEvidence } from "./comparison-formatters.js";
 import { buildResultWarning } from "./result-warning.js";
 import type { CompareLoopOutcome } from "./comparison-controller.js";
+import type { UserMemoryStore } from "./user-memory-store.js";
 
 interface SearchLoopOutcome {
   type: "refine" | "restart" | "quit" | "restore";
@@ -88,6 +89,7 @@ export interface ShortlistControllerDependencies {
   };
   getSessionState: () => AgentSessionState;
   applySessionState: (next: AgentSessionState) => void;
+  memoryStore?: UserMemoryStore;
 }
 
 export class ShortlistController {
@@ -345,6 +347,9 @@ export class ShortlistController {
           reuseViewport: true
         });
       }
+
+      // Capture optional negative feedback for removed candidates
+      await this.captureRemovalFeedback(targets);
 
       return continueWith({
         statusMessage: {
@@ -822,6 +827,39 @@ export class ShortlistController {
     }
 
     return sources.join(" / ");
+  }
+
+  // ============================================================================
+  // Feedback Capture
+  // ============================================================================
+
+  private async captureRemovalFeedback(targets: HydratedCandidate[]): Promise<void> {
+    if (!this.deps.memoryStore) {
+      return;
+    }
+
+    const { recordCandidateFeedback, promptForFeedbackReason, checkAndApplyInference } = await import("./feedback-capture.js");
+
+    for (const target of targets) {
+      const reason = await promptForFeedbackReason(
+        target.name || "候选人",
+        (prompt) => this.deps.chat.askFreeform(prompt) as Promise<string>
+      );
+      // Always record the negative feedback event — reason is optional enrichment
+      await recordCandidateFeedback({
+        memoryStore: this.deps.memoryStore,
+        feedback: {
+          personId: target.personId,
+          sentiment: "negative",
+          reasonCode: reason?.reasonCode,
+          reasonDetail: reason?.reasonDetail,
+          contextSource: "shortlist_remove"
+        }
+      });
+    }
+
+    // Check for inferred preferences after recording feedback
+    await checkAndApplyInference(this.deps.memoryStore);
   }
 }
 

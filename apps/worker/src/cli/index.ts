@@ -4,7 +4,8 @@ import { SearchWorkflow } from "./workflow.js";
 import chalk from "chalk";
 import { TerminalUI } from "./tui.js";
 import { CliSessionLedger, type PersistedCliSessionRecord } from "./session-ledger.js";
-import { resolveResumeItems, toResumePanelItem } from "./resume-resolver.js";
+import { resolveTaskResumeItems, toResumePanelItem } from "./resume-resolver.js";
+import type { TaskResumeItem } from "./resume-panel-types.js";
 import { isUserExitError } from "./prompt-abort.js";
 import type { AgentSessionTerminationReason } from "./session-runtime-types.js";
 import {
@@ -12,6 +13,11 @@ import {
   isWorkflowInterruptedError,
   type InterruptionSignalSource
 } from "./workflow-interruption.js";
+import { UserIdentityProvider } from "./user-identity-provider.js";
+import { UserMemoryStore } from "./user-memory-store.js";
+import { WorkItemStore } from "./work-item-store.js";
+import { runMemoryManagementSession } from "./memory-command.js";
+import { hydrateMemoryContextSafely } from "./memory-context.js";
 
 interface RunInteractiveSearchOptions {
   attachSessionId?: string;
@@ -20,6 +26,7 @@ interface RunInteractiveSearchOptions {
 type LauncherAction =
   | { type: "new" }
   | { type: "attach"; sessionId: string }
+  | { type: "memory" }
   | { type: "quit" };
 
 export async function runWorkflowSession(options: {
@@ -81,6 +88,10 @@ function parseLauncherAction(input: string, sessionCount: number): LauncherActio
     return { type: "quit" };
   }
 
+  if (normalized === "memory" || normalized === "m" || normalized === "mem") {
+    return { type: "memory" };
+  }
+
   const attachMatch = normalized.match(/^attach\s+([0-9a-f-]+)$/i);
   if (attachMatch?.[1]) {
     return {
@@ -102,15 +113,25 @@ function parseLauncherAction(input: string, sessionCount: number): LauncherActio
 
 async function promptLauncher(
   ui: TerminalUI,
-  ledger: CliSessionLedger
+  ledger: CliSessionLedger,
+  workItemStore: WorkItemStore
 ): Promise<LauncherAction> {
-  const resolution = await resolveResumeItems(ledger, 8);
+  const resolution = await resolveTaskResumeItems(ledger, workItemStore, 8);
   if (resolution.items.length === 0) {
+    // Minimal launcher when no resume items — still allow memory management
+    ui.displayBanner();
+    console.log(chalk.green("[1] 新开任务"));
+    console.log(chalk.dim("输入 memory 管理记忆偏好。"));
+    console.log("");
+
+    const raw = await ui.promptSessionLauncherChoice("1");
+    const action = parseLauncherAction(raw, 0);
+    if (action) return action;
     return { type: "new" };
   }
 
   while (true) {
-    ui.displayResumePanel(resolution.items);
+    ui.displayTaskResumePanel(resolution.items);
     const raw = await ui.promptResumePanelChoice("1");
     const action = parseLauncherAction(raw, resolution.items.length);
     if (!action) {
@@ -118,7 +139,7 @@ async function promptLauncher(
       continue;
     }
 
-    if (action.type === "new" || action.type === "quit") {
+    if (action.type === "new" || action.type === "quit" || action.type === "memory") {
       return action;
     }
 
@@ -138,20 +159,50 @@ function buildWorkflowFromRecord(args: {
   db: ReturnType<typeof createDatabaseConnection>["db"];
   llmProvider: LLMProvider;
   record: PersistedCliSessionRecord;
+  memoryStore: UserMemoryStore;
+  workItemStore: WorkItemStore;
 }): SearchWorkflow {
-  const { db, llmProvider, record } = args;
+  const { db, llmProvider, record, memoryStore, workItemStore } = args;
   return new SearchWorkflow(db, llmProvider, {
     sessionId: record.sessionId,
-    initialTranscript: record.transcript
+    initialTranscript: record.transcript,
+    memoryStore,
+    workItemStore,
+    workItemId: record.workItemId ?? undefined
   });
 }
 
 async function presentRecordPreview(options: {
   ui: TerminalUI;
   record: PersistedCliSessionRecord;
+  workItemStore: WorkItemStore;
+  memoryStore: UserMemoryStore;
 }): Promise<"new" | "quit" | "resume"> {
-  const { ui, record } = options;
+  const { ui, record, workItemStore, memoryStore } = options;
   const resumability = toResumePanelItem(record).resumability;
+
+  async function displayWorkboard() {
+    const memoryContext = await hydrateMemoryContextSafely(memoryStore);
+    if (record.workItemId) {
+      const workItem = await workItemStore.get(record.workItemId);
+      const viewModel = workItemStore.getWorkboardModel(
+        workItem,
+        record.latestSnapshot,
+        record.resumeMeta,
+        memoryContext,
+        workItem ? undefined : record.workItemId
+      );
+      ui.displayTaskWorkboard(viewModel);
+    } else {
+      const viewModel = workItemStore.getWorkboardModel(
+        null,
+        record.latestSnapshot,
+        record.resumeMeta,
+        memoryContext
+      );
+      ui.displayTaskWorkboard(viewModel);
+    }
+  }
 
   if (resumability === "resumable") {
     while (true) {
@@ -164,7 +215,7 @@ async function presentRecordPreview(options: {
 
       if (raw === "workboard") {
         ui.displayResumePreview(record);
-        ui.displayWorkboardSnapshot(record.latestSnapshot);
+        await displayWorkboard();
         console.log(chalk.dim("按 Enter 返回。"));
         await ui.promptContinue();
         continue;
@@ -193,7 +244,7 @@ async function presentRecordPreview(options: {
 
     if (!raw || raw === "workboard") {
       ui.displayReadOnlyPreview(record);
-      ui.displayWorkboardSnapshot(record.latestSnapshot);
+      await displayWorkboard();
       console.log(chalk.dim("按 Enter 返回。"));
       await ui.promptContinue();
       continue;
@@ -222,14 +273,16 @@ async function presentRestoredSession(options: {
   ledger: CliSessionLedger;
   db: ReturnType<typeof createDatabaseConnection>["db"];
   llmProvider: LLMProvider;
+  workItemStore: WorkItemStore;
+  memoryStore: UserMemoryStore;
 }): Promise<void> {
-  const { ui, record, ledger, db, llmProvider } = options;
-  const action = await presentRecordPreview({ ui, record });
+  const { ui, record, ledger, db, llmProvider, workItemStore, memoryStore } = options;
+  const action = await presentRecordPreview({ ui, record, workItemStore, memoryStore });
   if (action === "quit") {
     return;
   }
   if (action === "new") {
-    const workflow = new SearchWorkflow(db, llmProvider);
+    const workflow = new SearchWorkflow(db, llmProvider, { memoryStore, workItemStore });
     await runWorkflowSession({
       workflow,
       ledger
@@ -246,13 +299,27 @@ async function presentRestoredSession(options: {
   const workflow = buildWorkflowFromRecord({
     db,
     llmProvider,
-    record
+    record,
+    memoryStore,
+    workItemStore
   });
   await runWorkflowSession({
     workflow,
     ledger,
     initialPrompt: continuation
   });
+}
+
+function createMemoryStore(db: ReturnType<typeof createDatabaseConnection>["db"]): UserMemoryStore {
+  const identityProvider = new UserIdentityProvider();
+  identityProvider.resolve();
+  return new UserMemoryStore(db, identityProvider);
+}
+
+function createWorkItemStore(db: ReturnType<typeof createDatabaseConnection>["db"]): WorkItemStore {
+  const identityProvider = new UserIdentityProvider();
+  identityProvider.resolve();
+  return new WorkItemStore(db, identityProvider);
 }
 
 /**
@@ -270,6 +337,8 @@ export async function runInteractiveSearch(
     close = connection.close;
     const ledger = new CliSessionLedger({ db: connection.db });
     const ui = new TerminalUI();
+    const memoryStore = createMemoryStore(connection.db);
+    const workItemStore = createWorkItemStore(connection.db);
 
     let launcherAction: LauncherAction;
     if (options.attachSessionId?.trim()) {
@@ -280,7 +349,7 @@ export async function runInteractiveSearch(
     } else if (initialPrompt?.trim()) {
       launcherAction = { type: "new" };
     } else {
-      launcherAction = await promptLauncher(ui, ledger);
+      launcherAction = await promptLauncher(ui, ledger, workItemStore);
     }
 
     if (launcherAction.type === "attach") {
@@ -296,7 +365,20 @@ export async function runInteractiveSearch(
         record,
         ledger,
         db: connection.db,
-        llmProvider
+        llmProvider,
+        workItemStore,
+        memoryStore
+      });
+      return;
+    }
+
+    if (launcherAction.type === "memory") {
+      const enquirer = await import("enquirer");
+      const { Input } = enquirer.default as unknown as { Input: any };
+      await runMemoryManagementSession(memoryStore, async (prompt) => {
+        const input = new Input({ message: prompt });
+        const result = await input.run();
+        return result?.trim() || null;
       });
       return;
     }
@@ -308,7 +390,10 @@ export async function runInteractiveSearch(
     console.log(chalk.bold.blue("\n✨ Welcome to Seeku Search Assistant"));
     console.log(chalk.dim("Describe the role naturally. I will help you clarify, shortlist, and refine. Press Ctrl+C to exit.\n"));
 
-    const workflow = new SearchWorkflow(connection.db, llmProvider);
+    const workflow = new SearchWorkflow(connection.db, llmProvider, {
+      memoryStore,
+      workItemStore
+    });
     await runWorkflowSession({
       workflow,
       ledger,

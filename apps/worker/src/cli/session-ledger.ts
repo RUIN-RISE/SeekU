@@ -44,6 +44,7 @@ export interface PersistedCliSessionRecord {
   sessionId: string;
   origin: "cli";
   posture: CliSessionPosture;
+  workItemId?: string | null;
   transcript: AgentTranscriptEntry[];
   latestSnapshot: AgentSessionSnapshot | null;
   createdAt: string;
@@ -64,6 +65,7 @@ interface DbAgentSessionRecord {
   sessionId: string;
   origin: "cli";
   posture: CliSessionPosture;
+  workItemId?: string | null;
   transcript: Record<string, unknown>[];
   latestSnapshot: Record<string, unknown> | null;
   resumeMeta?: Record<string, unknown> | null;
@@ -300,6 +302,7 @@ function coercePersistedRecord(payload: unknown): PersistedCliSessionRecord | nu
     sessionId,
     origin,
     posture,
+    workItemId: typeof payload.workItemId === "string" ? payload.workItemId : null,
     transcript: coerceTranscript(payload.transcript),
     latestSnapshot: coerceSnapshot(payload.latestSnapshot),
     createdAt,
@@ -355,6 +358,7 @@ function serializeWorkflowRecord(
     sessionId: workflow.getSessionId(),
     origin: "cli",
     posture,
+    workItemId: workflow.getWorkItemId() ?? existing?.workItemId ?? null,
     transcript: workflow.getTranscript(),
     latestSnapshot,
     createdAt: existing?.createdAt ?? now,
@@ -533,6 +537,7 @@ export class CliSessionLedger {
       sessionId: enrichedRecord.sessionId,
       origin: "cli",
       posture: enrichedRecord.posture,
+      workItemId: enrichedRecord.workItemId ?? null,
       transcript: enrichedRecord.transcript as unknown as Record<string, unknown>[],
       latestSnapshot: enrichedRecord.latestSnapshot as unknown as Record<string, unknown> | null,
       resumeMeta: enrichedRecord.resumeMeta as unknown as Record<string, unknown> | null | undefined
@@ -569,6 +574,7 @@ export class CliSessionLedger {
             sessionId: record.sessionId,
             origin: "cli",
             posture: record.posture,
+            workItemId: record.workItemId ?? null,
             transcript: coerceTranscript(record.transcript),
             latestSnapshot: snapshot,
             createdAt: record.createdAt.toISOString(),

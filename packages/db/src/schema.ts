@@ -109,6 +109,7 @@ export const agentSessions = pgTable("agent_sessions", {
   sessionId: uuid("session_id").primaryKey(),
   origin: agentSessionOrigin("origin").default("cli").notNull(),
   posture: agentSessionPosture("posture").default("active").notNull(),
+  workItemId: uuid("work_item_id").references(() => workItems.id, { onDelete: "set null" }),
   transcript: jsonb("transcript")
     .$type<Record<string, unknown>[]>()
     .default(sql`'[]'::jsonb`)
@@ -119,6 +120,23 @@ export const agentSessions = pgTable("agent_sessions", {
     .notNull(),
   resumeMeta: jsonb("resume_meta")
     .$type<Record<string, unknown> | null>(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+});
+
+export const workItemStatus = pgEnum("work_item_status", [
+  "active",
+  "completed",
+  "abandoned"
+]);
+
+export const workItems = pgTable("work_items", {
+  id: uuid("id").default(sql`uuid_generate_v4()`).primaryKey(),
+  userId: text("user_id").notNull(),
+  title: text("title"),
+  goalSummary: text("goal_summary"),
+  status: workItemStatus("status").default("active").notNull(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
 });
@@ -354,3 +372,76 @@ export type ClaimMethod = typeof claimMethod.enumValues[number];
 export type ClaimStatus = typeof claimStatus.enumValues[number];
 export type ProfileClaim = typeof profileClaims.$inferSelect;
 export type NewProfileClaim = typeof profileClaims.$inferInsert;
+
+// User memory tables for agent product
+
+export const userMemoryKind = pgEnum("user_memory_kind", [
+  "preference",
+  "feedback",
+  "hiring_context"
+]);
+
+export const userMemoryScopeKind = pgEnum("user_memory_scope_kind", [
+  "global",
+  "role",
+  "location",
+  "work_item"
+]);
+
+export const userMemorySource = pgEnum("user_memory_source", [
+  "explicit",
+  "inferred"
+]);
+
+export const userMemories = pgTable("user_memories", {
+  id: uuid("id").default(sql`uuid_generate_v4()`).primaryKey(),
+  userId: text("user_id").notNull(),
+  kind: userMemoryKind("kind").notNull(),
+  scopeKind: userMemoryScopeKind("scope_kind").notNull(),
+  scopeValue: text("scope_value"),
+  content: jsonb("content").$type<Record<string, unknown>>().notNull(),
+  source: userMemorySource("source").notNull(),
+  confidence: numeric("confidence", { precision: 3, scale: 2 }).default("1.0").notNull(),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true })
+});
+
+export const userPreferences = pgTable("user_preferences", {
+  userId: text("user_id").primaryKey(),
+  memoryPaused: boolean("memory_paused").default(false).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+});
+
+export const feedbackSentiment = pgEnum("feedback_sentiment", [
+  "positive",
+  "negative",
+  "neutral"
+]);
+
+export const candidateFeedbackMemories = pgTable("candidate_feedback_memories", {
+  id: uuid("id").default(sql`uuid_generate_v4()`).primaryKey(),
+  userId: text("user_id").notNull(),
+  personId: uuid("person_id").notNull(),
+  sentiment: feedbackSentiment("sentiment").notNull(),
+  reasonCode: text("reason_code"),
+  reasonDetail: text("reason_detail"),
+  contextSource: text("context_source").default("shortlist").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+});
+
+export type UserMemoryKind = typeof userMemoryKind.enumValues[number];
+export type UserMemoryScopeKind = typeof userMemoryScopeKind.enumValues[number];
+export type UserMemorySource = typeof userMemorySource.enumValues[number];
+export type UserMemory = typeof userMemories.$inferSelect;
+export type NewUserMemory = typeof userMemories.$inferInsert;
+export type UserPreference = typeof userPreferences.$inferSelect;
+export type NewUserPreference = typeof userPreferences.$inferInsert;
+export type FeedbackSentiment = typeof feedbackSentiment.enumValues[number];
+export type CandidateFeedbackMemory = typeof candidateFeedbackMemories.$inferSelect;
+export type NewCandidateFeedbackMemory = typeof candidateFeedbackMemories.$inferInsert;
+export type WorkItemStatus = typeof workItemStatus.enumValues[number];
+export type WorkItem = typeof workItems.$inferSelect;
+export type NewWorkItem = typeof workItems.$inferInsert;

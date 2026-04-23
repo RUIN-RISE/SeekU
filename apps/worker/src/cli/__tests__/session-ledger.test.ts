@@ -173,6 +173,26 @@ describe("CliSessionLedger cache-only", () => {
     });
   });
 
+  it("workItemId survives cache save/load roundtrip", async () => {
+    const ledger = new CliSessionLedger({ cacheDir });
+    const record: PersistedCliSessionRecord = {
+      sessionId: "22222222-2222-2222-2222-222222222222",
+      origin: "cli",
+      posture: "stopped",
+      workItemId: "33333333-3333-3333-3333-333333333333",
+      transcript: [],
+      latestSnapshot: null,
+      createdAt: "2026-04-19T00:00:00.000Z",
+      updatedAt: "2026-04-19T00:05:00.000Z"
+    };
+
+    await ledger.save(record);
+    const loaded = await ledger.load(record.sessionId);
+
+    expect(loaded).not.toBeNull();
+    expect(loaded!.workItemId).toBe("33333333-3333-3333-3333-333333333333");
+  });
+
   it("lists recent cache sessions in descending updated order", async () => {
     const ledger = new CliSessionLedger({ cacheDir });
 

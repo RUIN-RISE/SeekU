@@ -9,6 +9,8 @@ export * from "./schema.js";
 export * from "./repositories.js";
 export * from "./profile-cache.js";
 export * from "./agent-sessions.js";
+export * from "./user-memories.js";
+export * from "./work-items.js";
 
 // Re-export search-related types
 export type {
