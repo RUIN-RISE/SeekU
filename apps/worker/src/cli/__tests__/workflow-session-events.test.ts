@@ -90,6 +90,7 @@ function createWorkflowHarness() {
     displayShortlist: vi.fn(),
     promptShortlistAction: vi.fn(),
     promptCompareAction: vi.fn(),
+    renderShellHeader: vi.fn(),
     displayNoResults: vi.fn(),
     displayPoolCleared: vi.fn()
   };

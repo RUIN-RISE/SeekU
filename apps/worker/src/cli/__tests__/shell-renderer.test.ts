@@ -1,9 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { ShellRenderer } from "../shell-renderer.js";
 import type { ContextBarData } from "../workboard-view-model.js";
 
-// Capture console.log output
 function captureOutput(fn: () => void): string[] {
   const lines: string[] = [];
   const origLog = console.log;
@@ -57,12 +56,13 @@ describe("ShellRenderer", () => {
       blocked: false
     };
 
-    it("contains stage label and next action", () => {
+    it("contains stage label, summary, and next action", () => {
       const output = captureOutput(() =>
         renderer.renderContextBar(contextBar)
       );
       const combined = output.join("\n");
       expect(combined).toContain("短名单就绪");
+      expect(combined).toContain("已形成 3 人短名单");
       expect(combined).toContain("对比候选人");
     });
 
@@ -88,23 +88,32 @@ describe("ShellRenderer", () => {
   });
 
   describe("renderInputBar", () => {
-    it("shortlist contains refine, compare, sort descriptions", () => {
+    it("shortlist shows canonical command names", () => {
       const output = captureOutput(() =>
         renderer.renderInputBar("shortlist")
       );
       const combined = output.join("\n");
-      expect(combined).toContain("调整搜索条件");
-      expect(combined).toContain("进入对比模式");
-      expect(combined).toContain("排序短名单");
+      expect(combined).toContain("/refine");
+      expect(combined).toContain("/compare");
+      expect(combined).toContain("/sort");
     });
 
-    it("home contains resume and new descriptions", () => {
+    it("home shows canonical command names", () => {
       const output = captureOutput(() =>
         renderer.renderInputBar("home")
       );
       const combined = output.join("\n");
-      expect(combined).toContain("继续选中任务");
-      expect(combined).toContain("新开任务");
+      expect(combined).toContain("/resume");
+      expect(combined).toContain("/new");
+    });
+
+    it("does not show alias-only shortcuts", () => {
+      const output = captureOutput(() =>
+        renderer.renderInputBar("home")
+      );
+      const combined = output.join("\n");
+      // Should not have /r (which is refine alias, not resume)
+      expect(combined).not.toContain("/r ");
     });
 
     it("limits to 7 commands", () => {
@@ -112,9 +121,57 @@ describe("ShellRenderer", () => {
         renderer.renderInputBar("shortlist")
       );
       const combined = output.join("\n");
-      // Should not have more than 7 command hints
       const hintCount = (combined.match(/\//g) || []).length;
       expect(hintCount).toBeLessThanOrEqual(7);
+    });
+  });
+
+  describe("renderShellTop", () => {
+    it("outputs header + context bar + separator", () => {
+      const output = captureOutput(() =>
+        renderer.renderShellTop({
+          stage: "shortlist",
+          taskTitle: "找 AI 工程师",
+          contextBar: {
+            stageLabel: "短名单就绪",
+            summary: "已形成 3 人短名单",
+            nextActionTitle: "对比候选人",
+            blocked: false
+          }
+        })
+      );
+      const combined = output.join("\n");
+      expect(combined).toContain("Seeku CLI");
+      expect(combined).toContain("短名单就绪");
+      expect(combined).toContain("已形成 3 人短名单");
+    });
+
+    it("works without contextBar", () => {
+      const output = captureOutput(() =>
+        renderer.renderShellTop({ stage: "clarify" })
+      );
+      const combined = output.join("\n");
+      expect(combined).toContain("Seeku CLI");
+    });
+  });
+
+  describe("renderShellBottom", () => {
+    it("outputs context bar + input bar + bottom border", () => {
+      const output = captureOutput(() =>
+        renderer.renderShellBottom({
+          stage: "shortlist",
+          contextBar: {
+            stageLabel: "短名单就绪",
+            summary: "已形成 3 人短名单",
+            nextActionTitle: "对比候选人",
+            blocked: false
+          }
+        })
+      );
+      const combined = output.join("\n");
+      expect(combined).toContain("短名单就绪");
+      expect(combined).toContain("/refine");
+      expect(combined).toContain("└");
     });
   });
 
@@ -137,7 +194,7 @@ describe("ShellRenderer", () => {
       expect(combined).toContain("Seeku CLI");
       expect(combined).toContain("找 AI 工程师");
       expect(combined).toContain("短名单就绪");
-      expect(combined).toContain("对比候选人");
+      expect(combined).toContain("/refine");
     });
 
     it("renders without context bar", () => {

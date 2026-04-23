@@ -46,7 +46,8 @@ export interface ShortlistControllerDependencies {
     displayUndo(entry: SearchConditions | null): void;
     displayHistory(history: any[]): void;
     promptShortlistAction(options: any): Promise<ResultListCommand>;
-    promptDetailAction(name: string): Promise<string>;
+    promptDetailAction(name: string, contextBar?: any): Promise<string>;
+    renderShellHeader(args: { stage: string; taskTitle?: string; status?: string; contextBar?: any }): void;
   };
   chat: {
     askFreeform(prompt: string): Promise<string | null>;
@@ -546,6 +547,13 @@ export class ShortlistController {
       return { type: "back" };
     }
 
+    const detailContextBar = {
+      stageLabel: "候选人详情",
+      summary: `查看 ${selected.name} 的深度画像`,
+      nextActionTitle: "返回短名单",
+      blocked: false
+    };
+    this.deps.tui.renderShellHeader({ stage: "detail", taskTitle: selected.name, contextBar: detailContextBar });
     console.log(
       this.deps.renderer.renderProfile(
         selected._hydrated.person,
@@ -571,7 +579,7 @@ export class ShortlistController {
     );
 
     while (true) {
-      const action = await this.deps.tui.promptDetailAction(selected.name);
+      const action = await this.deps.tui.promptDetailAction(selected.name, detailContextBar);
       if (action === "back") {
         return { type: "back" };
       }

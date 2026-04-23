@@ -3,6 +3,9 @@
  *
  * Phase 2 of CLI upgrade: render header + context bar + input bar
  * before enquirer prompt. Single snapshot, no dynamic refresh during prompt.
+ *
+ * Split into renderShellTop / renderShellBottom so the body zone
+ * (rendered by each stage) sits between them without being cleared.
  */
 
 import chalk from "chalk";
@@ -31,6 +34,17 @@ export interface ShellRenderArgs {
 // Shell Renderer
 // ============================================================================
 
+const STAGE_LABELS: Record<CliStage, string> = {
+  home: "首页",
+  clarify: "条件澄清",
+  search: "检索中",
+  shortlist: "短名单",
+  detail: "候选人详情",
+  compare: "对比决策",
+  decision: "推荐就绪",
+  global: "全局"
+};
+
 export class ShellRenderer {
   /**
    * Render the header zone.
@@ -48,20 +62,8 @@ export class ShellRenderer {
       parts.push(args.taskTitle);
     }
 
-    // Stage label
-    const stageLabels: Record<CliStage, string> = {
-      home: "首页",
-      clarify: "条件澄清",
-      search: "检索中",
-      shortlist: "短名单",
-      detail: "候选人详情",
-      compare: "对比决策",
-      decision: "推荐就绪",
-      global: "全局"
-    };
-    parts.push(stageLabels[args.stage] || args.stage);
+    parts.push(STAGE_LABELS[args.stage] || args.stage);
 
-    // Status
     if (args.status) {
       parts.push(args.status);
     }
@@ -72,7 +74,6 @@ export class ShellRenderer {
 
     console.log(chalk.dim("┌") + " " + chalk.bold(content) + " " + chalk.dim("─".repeat(padding) + "┐"));
 
-    // Guide hint (Phase 8 mascot placeholder)
     if (args.guideHint) {
       console.log(chalk.dim("│") + " " + chalk.cyan(args.guideHint) + " ".repeat(width - args.guideHint.length - 3) + chalk.dim("│"));
     }
@@ -80,12 +81,17 @@ export class ShellRenderer {
 
   /**
    * Render the context bar zone.
-   * Format: │ 阶段: [stage]  下一步: [action]  阻塞: [blocker] │
+   * Format: │ 阶段: [stage]  摘要: [summary]  下一步: [action]  阻塞: [blocker] │
    */
   renderContextBar(data: ContextBarData): void {
     const parts: string[] = [];
 
     parts.push(`阶段: ${data.stageLabel}`);
+
+    if (data.summary) {
+      parts.push(`摘要: ${data.summary}`);
+    }
+
     parts.push(`下一步: ${data.nextActionTitle}`);
 
     if (data.blocked && data.blockerLabel) {
@@ -101,18 +107,13 @@ export class ShellRenderer {
 
   /**
    * Render the input bar zone (bottom bar with command hints).
-   * Format: │ /refine 调整  /compare 对比  /sort 排序  /task 状态 │
+   * Uses canonical command names, not aliases, to avoid conflicts.
    */
   renderInputBar(stage: CliStage): void {
     const commands = getCommandsForStage(stage);
-
-    // Limit to 5-7 commands for density
     const displayCommands = commands.slice(0, 7);
 
-    const hints = displayCommands.map(cmd => {
-      const alias = cmd.aliases[0] || cmd.name[0];
-      return `/${alias} ${cmd.description}`;
-    });
+    const hints = displayCommands.map(cmd => `/${cmd.name} ${cmd.description}`);
 
     const content = hints.join("  ");
     const width = Math.max(content.length + 4, 60);
@@ -122,14 +123,11 @@ export class ShellRenderer {
   }
 
   /**
-   * Render the complete shell (header + context bar + input bar).
-   * Called before enquirer prompt in non-shortlist stages.
+   * Render shell top half: header + context bar + separator.
+   * Called BEFORE the body zone (stage-specific content).
+   * Does NOT clear screen — caller controls that.
    */
-  renderShell(args: ShellRenderArgs): void {
-    // Clear screen for clean render
-    console.clear();
-
-    // Header
+  renderShellTop(args: ShellRenderArgs): void {
     this.renderHeader({
       taskTitle: args.taskTitle,
       stage: args.stage,
@@ -137,29 +135,43 @@ export class ShellRenderer {
       guideHint: args.guideHint
     });
 
-    // Separator
-    console.log(chalk.dim("├" + "─".repeat(59) + "┤"));
-
-    // Body placeholder (rendered by each stage)
-    // This is where stage-specific content goes
-
-    // Context bar (if provided)
     if (args.contextBar) {
-      console.log(chalk.dim("├" + "─".repeat(59) + "┤"));
       this.renderContextBar(args.contextBar);
     }
 
-    // Input bar
     console.log(chalk.dim("├" + "─".repeat(59) + "┤"));
+  }
+
+  /**
+   * Render shell bottom half: context bar + input bar + bottom border.
+   * Called AFTER the body zone, before enquirer prompt.
+   */
+  renderShellBottom(args: ShellRenderArgs): void {
+    console.log(chalk.dim("├" + "─".repeat(59) + "┤"));
+
+    if (args.contextBar) {
+      this.renderContextBar(args.contextBar);
+      console.log(chalk.dim("├" + "─".repeat(59) + "┤"));
+    }
+
     this.renderInputBar(args.stage);
-
-    // Bottom border
     console.log(chalk.dim("└" + "─".repeat(59) + "┘"));
-
-    // Blank line before prompt
     console.log("");
+  }
+
+  /**
+   * Render the complete shell in one call.
+   * Use only when there is no body zone to preserve
+   * (e.g., clarify stage before options list).
+   * Does NOT clear screen.
+   */
+  renderShell(args: ShellRenderArgs): void {
+    this.renderShellTop(args);
+
+    // Body placeholder (rendered by each stage)
+
+    this.renderShellBottom(args);
   }
 }
 
-// Singleton instance for convenience
 export const shellRenderer = new ShellRenderer();

@@ -129,9 +129,23 @@ export class ComparisonController {
     }
     console.log(this.deps.renderer.renderComparison(comparisonResult, conditions));
     this.deps.setSessionStatus("waiting-input", "compare 已完成，等待下一步操作。");
+    this.deps.tui.renderShellHeader({
+      stage: "compare",
+      contextBar: {
+        stageLabel: "对比决策",
+        summary: `正在比较 ${targets.length} 位候选人`,
+        nextActionTitle: comparisonResult.outcome.recommendationMode === "no-recommendation" ? "调整条件" : "确认推荐",
+        blocked: false
+      }
+    });
 
     while (true) {
-      const action = await this.deps.tui.promptCompareAction();
+      const action = await this.deps.tui.promptCompareAction({
+        stageLabel: "对比决策",
+        summary: `正在比较 ${targets.length} 位候选人`,
+        nextActionTitle: comparisonResult.outcome.recommendationMode === "no-recommendation" ? "调整条件" : "确认推荐",
+        blocked: false
+      });
       if (action === "back") {
         return "back";
       }

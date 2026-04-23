@@ -18,6 +18,7 @@ import { UserMemoryStore } from "./user-memory-store.js";
 import { WorkItemStore } from "./work-item-store.js";
 import { runMemoryManagementSession } from "./memory-command.js";
 import { hydrateMemoryContextSafely } from "./memory-context.js";
+import { toContextBar } from "./workboard-view-model.js";
 
 interface RunInteractiveSearchOptions {
   attachSessionId?: string;
@@ -181,41 +182,40 @@ async function presentRecordPreview(options: {
   const { ui, record, workItemStore, memoryStore } = options;
   const resumability = toResumePanelItem(record).resumability;
 
-  async function displayWorkboard() {
+  async function buildViewModel() {
     const memoryContext = await hydrateMemoryContextSafely(memoryStore);
     if (record.workItemId) {
       const workItem = await workItemStore.get(record.workItemId);
-      const viewModel = workItemStore.getWorkboardModel(
+      return workItemStore.getWorkboardModel(
         workItem,
         record.latestSnapshot,
         record.resumeMeta,
         memoryContext,
         workItem ? undefined : record.workItemId
       );
-      ui.displayTaskWorkboard(viewModel);
-    } else {
-      const viewModel = workItemStore.getWorkboardModel(
-        null,
-        record.latestSnapshot,
-        record.resumeMeta,
-        memoryContext
-      );
-      ui.displayTaskWorkboard(viewModel);
     }
+    return workItemStore.getWorkboardModel(
+      null,
+      record.latestSnapshot,
+      record.resumeMeta,
+      memoryContext
+    );
   }
 
   if (resumability === "resumable") {
     while (true) {
-      ui.displayResumePreview(record);
-      const raw = (await ui.promptResumableAction()).trim().toLowerCase();
+      const viewModel = await buildViewModel();
+      const contextBar = toContextBar(viewModel);
+      ui.displayResumePreview(record, contextBar);
+      const raw = (await ui.promptResumableAction(contextBar)).trim().toLowerCase();
 
       if (!raw || raw === "resume") {
         return "resume";
       }
 
       if (raw === "workboard") {
-        ui.displayResumePreview(record);
-        await displayWorkboard();
+        ui.displayResumePreview(record, contextBar);
+        ui.displayTaskWorkboard(viewModel);
         console.log(chalk.dim("按 Enter 返回。"));
         await ui.promptContinue();
         continue;
@@ -239,12 +239,14 @@ async function presentRecordPreview(options: {
   }
 
   while (true) {
-    ui.displayReadOnlyPreview(record);
-    const raw = (await ui.promptReadOnlyAction()).trim().toLowerCase();
+    const viewModel = await buildViewModel();
+    const contextBar = toContextBar(viewModel);
+    ui.displayReadOnlyPreview(record, contextBar);
+    const raw = (await ui.promptReadOnlyAction(contextBar)).trim().toLowerCase();
 
     if (!raw || raw === "workboard") {
-      ui.displayReadOnlyPreview(record);
-      await displayWorkboard();
+      ui.displayReadOnlyPreview(record, contextBar);
+      ui.displayTaskWorkboard(viewModel);
       console.log(chalk.dim("按 Enter 返回。"));
       await ui.promptContinue();
       continue;

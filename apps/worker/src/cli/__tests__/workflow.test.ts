@@ -129,6 +129,7 @@ function createWorkflowHarness() {
     displayExportSuccess: vi.fn(),
     displayUndo: vi.fn(),
     displayPoolCleared: vi.fn(),
+    renderShellHeader: vi.fn(),
     promptCompareAction: vi.fn(),
     promptShortlistAction: vi.fn(),
     promptDetailAction: vi.fn()

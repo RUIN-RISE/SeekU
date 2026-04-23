@@ -10,6 +10,7 @@ import type { TaskResumeItem } from "./resume-panel-types.js";
 import type { WorkboardViewModel } from "./workboard-view-model.js";
 import { shellRenderer } from "./shell-renderer.js";
 import type { ContextBarData } from "./workboard-view-model.js";
+import type { CliStage } from "./command-spec.js";
 import {
   ClarifyAction,
   DetailAction,
@@ -46,6 +47,19 @@ interface ShortlistViewOptions {
 
 export class TerminalUI {
   private shortlistViewportHeight = 0;
+
+  /**
+   * Render shell header + context bar before body content.
+   * Called by controllers before stage-specific rendering.
+   */
+  renderShellHeader(args: {
+    stage: CliStage;
+    taskTitle?: string;
+    status?: string;
+    contextBar?: ContextBarData;
+  }): void {
+    shellRenderer.renderShellTop(args);
+  }
 
   displayBanner() {
     process.stdout.write("\x1Bc");
@@ -187,29 +201,39 @@ export class TerminalUI {
     return items[index - 2] ?? null;
   }
 
-  displayResumePreview(record: PersistedCliSessionRecord) {
+  displayResumePreview(record: PersistedCliSessionRecord, contextBar?: ContextBarData) {
     process.stdout.write("\x1Bc");
-    this.displayBanner();
+    shellRenderer.renderShellTop({
+      stage: "home",
+      taskTitle: record.latestSnapshot?.userGoal ?? undefined,
+      status: "可继续",
+      contextBar
+    });
     console.log(chalk.bold("可继续的 runtime work item"));
     console.log(chalk.dim("可用命令：resume / workboard / transcript / q\n"));
     this.displayRecordSummary(record);
   }
 
-  async promptResumableAction(): Promise<string> {
-    shellRenderer.renderShell({ stage: "shortlist", status: "可继续" });
+  async promptResumableAction(contextBar?: ContextBarData): Promise<string> {
+    shellRenderer.renderShellBottom({ stage: "home", status: "可继续", contextBar });
     return this.promptLine("resume>", "resume");
   }
 
-  displayReadOnlyPreview(record: PersistedCliSessionRecord) {
+  displayReadOnlyPreview(record: PersistedCliSessionRecord, contextBar?: ContextBarData) {
     process.stdout.write("\x1Bc");
-    this.displayBanner();
+    shellRenderer.renderShellTop({
+      stage: "home",
+      taskTitle: record.latestSnapshot?.userGoal ?? undefined,
+      status: "只读",
+      contextBar
+    });
     console.log(chalk.bold("只读 session"));
     console.log(chalk.dim("可用命令：workboard / transcript / new / q\n"));
     this.displayRecordSummary(record);
   }
 
-  async promptReadOnlyAction(): Promise<string> {
-    shellRenderer.renderShell({ stage: "shortlist", status: "只读" });
+  async promptReadOnlyAction(contextBar?: ContextBarData): Promise<string> {
+    shellRenderer.renderShellBottom({ stage: "home", status: "只读", contextBar });
     return this.promptLine("restored>", "workboard");
   }
 
@@ -398,6 +422,13 @@ export class TerminalUI {
 
   displayClarifiedDraft(draft: SearchDraft) {
     const { conditions, missing } = draft;
+    const clarifyContextBar: ContextBarData = {
+      stageLabel: "条件澄清",
+      summary: missing.length > 0 ? `还缺：${missing.join("、")}` : "条件已充分",
+      nextActionTitle: missing.length > 0 ? "补充条件" : "直接搜索",
+      blocked: false
+    };
+    shellRenderer.renderShellTop({ stage: "clarify", contextBar: clarifyContextBar });
     console.log(`\n${chalk.bold("我先帮你收敛一下：")}`);
     console.log(`- ${chalk.blue("角色")}：${conditions.role || chalk.dim("暂未明确")}`);
     console.log(`- ${chalk.blue("技术栈")}：${conditions.skills.length > 0 ? conditions.skills.join(" / ") : chalk.dim("暂未明确")}`);
@@ -419,8 +450,8 @@ export class TerminalUI {
     console.log(`[q] 退出`);
   }
 
-  async promptClarifyAction(): Promise<ClarifyAction> {
-    shellRenderer.renderShell({ stage: "clarify" });
+  async promptClarifyAction(contextBar?: ContextBarData): Promise<ClarifyAction> {
+    shellRenderer.renderShellBottom({ stage: "clarify", contextBar });
     const raw = await this.promptLine(">", "1");
     const normalized = raw.trim().toLowerCase();
 
@@ -620,8 +651,8 @@ export class TerminalUI {
     return this.promptShortlistHotkeys(state);
   }
 
-  async promptDetailAction(name: string): Promise<DetailAction> {
-    shellRenderer.renderShell({ stage: "detail", taskTitle: name });
+  async promptDetailAction(name: string, contextBar?: ContextBarData): Promise<DetailAction> {
+    shellRenderer.renderShellBottom({ stage: "detail", taskTitle: name, contextBar });
     console.log(chalk.dim(`动作：back 返回 | o 打开 (Bonjour) | why 评分依据 | refine 进一步收敛 | q 退出`));
     const raw = await this.promptLine(`${name}>`, "back");
     const normalized = raw.trim().toLowerCase();
@@ -649,8 +680,8 @@ export class TerminalUI {
     return "back";
   }
 
-  async promptCompareAction(): Promise<CompareAction> {
-    shellRenderer.renderShell({ stage: "compare" });
+  async promptCompareAction(contextBar?: ContextBarData): Promise<CompareAction> {
+    shellRenderer.renderShellBottom({ stage: "compare", contextBar });
     console.log(chalk.dim("动作：back 返回 shortlist | refine 直接收敛 | clear 清空对比池 | q 退出"));
     const raw = await this.promptLine("compare>", "back");
     const normalized = raw.trim().toLowerCase();
