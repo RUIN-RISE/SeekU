@@ -8,6 +8,8 @@ import type { PersistedCliSessionRecord } from "./session-ledger.js";
 import type { ResumePanelItem } from "./resume-resolver.js";
 import type { TaskResumeItem } from "./resume-panel-types.js";
 import type { WorkboardViewModel } from "./workboard-view-model.js";
+import { shellRenderer } from "./shell-renderer.js";
+import type { ContextBarData } from "./workboard-view-model.js";
 import {
   ClarifyAction,
   DetailAction,
@@ -194,6 +196,7 @@ export class TerminalUI {
   }
 
   async promptResumableAction(): Promise<string> {
+    shellRenderer.renderShell({ stage: "shortlist", status: "可继续" });
     return this.promptLine("resume>", "resume");
   }
 
@@ -206,6 +209,7 @@ export class TerminalUI {
   }
 
   async promptReadOnlyAction(): Promise<string> {
+    shellRenderer.renderShell({ stage: "shortlist", status: "只读" });
     return this.promptLine("restored>", "workboard");
   }
 
@@ -416,6 +420,7 @@ export class TerminalUI {
   }
 
   async promptClarifyAction(): Promise<ClarifyAction> {
+    shellRenderer.renderShell({ stage: "clarify" });
     const raw = await this.promptLine(">", "1");
     const normalized = raw.trim().toLowerCase();
 
@@ -616,6 +621,7 @@ export class TerminalUI {
   }
 
   async promptDetailAction(name: string): Promise<DetailAction> {
+    shellRenderer.renderShell({ stage: "detail", taskTitle: name });
     console.log(chalk.dim(`动作：back 返回 | o 打开 (Bonjour) | why 评分依据 | refine 进一步收敛 | q 退出`));
     const raw = await this.promptLine(`${name}>`, "back");
     const normalized = raw.trim().toLowerCase();
@@ -644,6 +650,7 @@ export class TerminalUI {
   }
 
   async promptCompareAction(): Promise<CompareAction> {
+    shellRenderer.renderShell({ stage: "compare" });
     console.log(chalk.dim("动作：back 返回 shortlist | refine 直接收敛 | clear 清空对比池 | q 退出"));
     const raw = await this.promptLine("compare>", "back");
     const normalized = raw.trim().toLowerCase();

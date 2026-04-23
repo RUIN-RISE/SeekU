@@ -244,3 +244,33 @@ export function buildDegradedWorkboardViewModel(input: BuildDegradedWorkboardVie
     sessionStatus: progress.sessionStatus
   };
 }
+
+// ============================================================================
+// Context Bar Data (Phase 2 CLI Upgrade)
+// ============================================================================
+
+/**
+ * Compact context bar data for shell renderer.
+ * Extracted from WorkboardViewModel for the unified 4-zone layout.
+ */
+export interface ContextBarData {
+  stageLabel: string;
+  summary: string;
+  nextActionTitle: string;
+  blocked: boolean;
+  blockerLabel?: string;
+}
+
+/**
+ * Extract context bar data from WorkboardViewModel.
+ * Used by shell-renderer to render the context bar zone.
+ */
+export function toContextBar(viewModel: WorkboardViewModel): ContextBarData {
+  return {
+    stageLabel: viewModel.stageLabel,
+    summary: viewModel.summary,
+    nextActionTitle: viewModel.nextActionTitle,
+    blocked: viewModel.blocked,
+    blockerLabel: viewModel.blockerLabel
+  };
+}
