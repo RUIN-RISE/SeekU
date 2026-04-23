@@ -25,8 +25,9 @@ interface RunInteractiveSearchOptions {
 }
 
 type LauncherAction =
-  | { type: "new" }
+  | { type: "new"; initialPrompt?: string }
   | { type: "attach"; sessionId: string }
+  | { type: "show_task"; sessionId: string }
   | { type: "memory" }
   | { type: "quit" };
 
@@ -79,8 +80,22 @@ export async function runWorkflowSession(options: {
   }
 }
 
-function parseLauncherAction(input: string, sessionCount: number): LauncherAction | null {
+export function parseLauncherAction(input: string, sessionCount: number, defaultSessionId?: string): LauncherAction | null {
   const normalized = input.trim();
+
+  // Natural language input (doesn't start with / or number)
+  if (!normalized.startsWith("/") && !/^\d+$/.test(normalized) && normalized.length > 0) {
+    // Check for known keywords first
+    if (normalized === "1" || normalized === "q" || normalized === "quit" || normalized === "exit" || normalized === "memory" || normalized === "m" || normalized === "mem") {
+      // Fall through to keyword handling
+    } else if (normalized.startsWith("attach ")) {
+      // Fall through to attach handling
+    } else {
+      // Treat as natural language for new task
+      return { type: "new", initialPrompt: normalized };
+    }
+  }
+
   if (!normalized || normalized === "1") {
     return { type: "new" };
   }
@@ -91,6 +106,21 @@ function parseLauncherAction(input: string, sessionCount: number): LauncherActio
 
   if (normalized === "memory" || normalized === "m" || normalized === "mem") {
     return { type: "memory" };
+  }
+
+  // /resume — attach to default selection
+  if (normalized === "/resume" && defaultSessionId) {
+    return { type: "attach", sessionId: defaultSessionId };
+  }
+
+  // /new — explicit new task
+  if (normalized === "/new") {
+    return { type: "new" };
+  }
+
+  // /task — show selected task workboard
+  if ((normalized === "/task" || normalized === "task") && defaultSessionId) {
+    return { type: "show_task", sessionId: defaultSessionId };
   }
 
   const attachMatch = normalized.match(/^attach\s+([0-9a-f-]+)$/i);
@@ -115,9 +145,13 @@ function parseLauncherAction(input: string, sessionCount: number): LauncherActio
 async function promptLauncher(
   ui: TerminalUI,
   ledger: CliSessionLedger,
-  workItemStore: WorkItemStore
+  workItemStore: WorkItemStore,
+  memoryStore: UserMemoryStore
 ): Promise<LauncherAction> {
   const resolution = await resolveTaskResumeItems(ledger, workItemStore, 8);
+  const defaultSessionId = resolution.defaultSelection;
+  const defaultItem = resolution.items[0];
+
   if (resolution.items.length === 0) {
     // Minimal launcher when no resume items — still allow memory management
     ui.displayBanner();
@@ -132,11 +166,41 @@ async function promptLauncher(
   }
 
   while (true) {
-    ui.displayTaskResumePanel(resolution.items);
+    // Use displayLauncherV2 with default selection highlighted
+    ui.displayLauncherV2({
+      items: resolution.items,
+      defaultSelection: defaultItem,
+      contextBar: defaultItem ? {
+        stageLabel: defaultItem.subtitle,
+        summary: defaultItem.title,
+        nextActionTitle: defaultItem.nextActionTitle ?? "继续任务",
+        blocked: defaultItem.blocked
+      } : undefined
+    });
+
     const raw = await ui.promptResumePanelChoice("1");
-    const action = parseLauncherAction(raw, resolution.items.length);
+    const action = parseLauncherAction(raw, resolution.items.length, defaultSessionId);
     if (!action) {
       ui.displayLauncherInputError();
+      continue;
+    }
+
+    // Handle show_task — display workboard and loop back to launcher
+    if (action.type === "show_task") {
+      const record = await ledger.load(action.sessionId);
+      if (record) {
+        const memoryContext = await hydrateMemoryContextSafely(memoryStore);
+        const viewModel = workItemStore.getWorkboardModel(
+          record.workItemId ? await workItemStore.get(record.workItemId) : null,
+          record.latestSnapshot,
+          record.resumeMeta,
+          memoryContext
+        );
+        ui.displayTaskWorkboard(viewModel);
+        console.log(chalk.dim("按 Enter 返回 launcher。"));
+        await ui.promptContinue();
+        continue; // Loop back to launcher
+      }
       continue;
     }
 
@@ -144,11 +208,49 @@ async function promptLauncher(
       return action;
     }
 
+    // Handle attach — check resumability before returning
     if (action.sessionId.startsWith("__index__:")) {
       const index = Number.parseInt(action.sessionId.slice("__index__:".length), 10);
       const item = resolution.items[index];
       if (item) {
+        // Only resumable items can be attached for execution
+        if (item.resumability !== "resumable") {
+          // Show workboard for read-only, don't allow resume
+          const record = await ledger.load(item.sessionId);
+          if (record) {
+            const memoryContext = await hydrateMemoryContextSafely(memoryStore);
+            const viewModel = workItemStore.getWorkboardModel(
+              record.workItemId ? await workItemStore.get(record.workItemId) : null,
+              record.latestSnapshot,
+              record.resumeMeta,
+              memoryContext
+            );
+            ui.displayTaskWorkboard(viewModel);
+            console.log(chalk.dim("只读 session，按 Enter 返回 launcher。"));
+            await ui.promptContinue();
+            continue;
+          }
+        }
         return { type: "attach", sessionId: item.sessionId };
+      }
+    }
+
+    // Direct sessionId attach — check resumability
+    const attachRecord = await ledger.load(action.sessionId);
+    if (attachRecord) {
+      const attachItem = toResumePanelItem(attachRecord);
+      if (attachItem.resumability !== "resumable") {
+        const memoryContext = await hydrateMemoryContextSafely(memoryStore);
+        const viewModel = workItemStore.getWorkboardModel(
+          attachRecord.workItemId ? await workItemStore.get(attachRecord.workItemId) : null,
+          attachRecord.latestSnapshot,
+          attachRecord.resumeMeta,
+          memoryContext
+        );
+        ui.displayTaskWorkboard(viewModel);
+        console.log(chalk.dim("此 session 不可继续，按 Enter 返回 launcher。"));
+        await ui.promptContinue();
+        continue;
       }
     }
 
@@ -173,6 +275,9 @@ function buildWorkflowFromRecord(args: {
   });
 }
 
+/**
+ * @deprecated Phase 3 — replaced by flat launcher. Keep body intact for rollback.
+ */
 async function presentRecordPreview(options: {
   ui: TerminalUI;
   record: PersistedCliSessionRecord;
@@ -269,6 +374,9 @@ async function presentRecordPreview(options: {
   }
 }
 
+/**
+ * @deprecated Phase 3 — replaced by flat launcher. Keep body intact for rollback.
+ */
 async function presentRestoredSession(options: {
   ui: TerminalUI;
   record: PersistedCliSessionRecord;
@@ -349,9 +457,9 @@ export async function runInteractiveSearch(
         sessionId: options.attachSessionId.trim()
       };
     } else if (initialPrompt?.trim()) {
-      launcherAction = { type: "new" };
+      launcherAction = { type: "new", initialPrompt };
     } else {
-      launcherAction = await promptLauncher(ui, ledger, workItemStore);
+      launcherAction = await promptLauncher(ui, ledger, workItemStore, memoryStore);
     }
 
     if (launcherAction.type === "attach") {
@@ -362,15 +470,15 @@ export async function runInteractiveSearch(
         return;
       }
 
-      await presentRestoredSession({
-        ui,
-        record,
-        ledger,
+      // Direct resume — build workflow and run, no preview sub-loop
+      const workflow = buildWorkflowFromRecord({
         db: connection.db,
         llmProvider,
-        workItemStore,
-        memoryStore
+        record,
+        memoryStore,
+        workItemStore
       });
+      await runWorkflowSession({ workflow, ledger });
       return;
     }
 
@@ -399,7 +507,7 @@ export async function runInteractiveSearch(
     await runWorkflowSession({
       workflow,
       ledger,
-      initialPrompt
+      initialPrompt: ("initialPrompt" in launcherAction ? launcherAction.initialPrompt : undefined) ?? initialPrompt
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error occurred";

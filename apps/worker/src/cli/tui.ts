@@ -137,8 +137,7 @@ export class TerminalUI {
   }
 
   displayTaskResumePanel(items: TaskResumeItem[]) {
-    process.stdout.write("\x1Bc");
-    this.displayBanner();
+    shellRenderer.renderShellTop({ stage: "home" });
     console.log(chalk.bold("继续一个任务："));
     console.log(`[1] ${chalk.green("新开任务")}`);
 
@@ -184,7 +183,64 @@ export class TerminalUI {
   }
 
   async promptResumePanelChoice(defaultChoice = "1"): Promise<string> {
+    shellRenderer.renderShellBottom({ stage: "home" });
     return this.promptLine("launcher>", defaultChoice);
+  }
+
+  /**
+   * Phase 3: Launcher V2 display with shell integration.
+   * Renders shell header + task list + bottom bar.
+   */
+  displayLauncherV2(options: {
+    items: TaskResumeItem[];
+    defaultSelection: TaskResumeItem;
+    contextBar?: ContextBarData;
+  }): void {
+    const { items, defaultSelection, contextBar } = options;
+
+    shellRenderer.renderShellTop({ stage: "home", contextBar });
+
+    console.log(chalk.bold("继续一个任务："));
+    console.log(`[1] ${chalk.green("新开任务")}`);
+
+    items.forEach((item, index) => {
+      const stamp = new Date(item.updatedAt).toLocaleString("zh-CN", {
+        hour12: false
+      });
+      const resumabilityBadge = item.resumability === "resumable"
+        ? chalk.green("可继续")
+        : item.resumability === "read_only"
+          ? chalk.yellow("只读")
+          : chalk.dim("blocked");
+      const cacheHint = item.cacheOnly ? chalk.dim(" · local cache") : "";
+      const isDefault = item.sessionId === defaultSelection.sessionId;
+      const marker = isDefault ? chalk.cyan("❯ ") : "  ";
+
+      const title = chalk.bold(item.title);
+      console.log(
+        `${marker}[${index + 2}] ${resumabilityBadge}  ${title}${cacheHint}`
+      );
+
+      const parts: string[] = [];
+      parts.push(item.subtitle);
+      if (item.blocked && item.blockerLabel) {
+        parts.push(chalk.yellow(`阻塞：${item.blockerLabel}`));
+      }
+      if (item.nextActionTitle) {
+        parts.push(chalk.dim(`下一步：${item.nextActionTitle}`));
+      }
+      if (item.kind === "legacy_session") {
+        parts.push(chalk.dim("legacy"));
+      } else if (item.kind === "degraded_work_item") {
+        parts.push(chalk.dim("degraded"));
+      }
+      parts.push(chalk.dim(stamp));
+      console.log(`    ${parts.join(" · ")}`);
+    });
+
+    console.log("");
+    console.log(chalk.dim("也可以直接输入 attach <sessionId>。"));
+    console.log(chalk.dim("输入 memory 管理记忆偏好。"));
   }
 
   resolveResumePanelSelection(raw: string, items: ResumePanelItem[]): ResumePanelItem | null {
