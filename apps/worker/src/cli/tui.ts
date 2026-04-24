@@ -68,7 +68,7 @@ export class TerminalUI {
 
   displayBanner() {
     process.stdout.write("\x1Bc");
-    console.log(chalk.cyan(`${MASCOT} Seeku`) + chalk.dim(" — 人才搜索助手"));
+    console.log(chalk.cyan("Seeku") + chalk.dim(" — 人才搜索助手"));
   }
 
   displayCommandPalette(stage: CliStage) {
@@ -155,8 +155,6 @@ export class TerminalUI {
       console.log(`[${index + 2}] ${title}  ${resumabilityBadge}`);
     });
 
-    console.log("");
-    console.log(chalk.dim("输入任务编号或 /help 查看命令"));
   }
 
   async promptResumePanelChoice(defaultChoice = "1"): Promise<string> {
@@ -196,8 +194,6 @@ export class TerminalUI {
       console.log(`${marker}[${index + 2}] ${title}  ${resumabilityBadge}`);
     });
 
-    console.log("");
-    console.log(chalk.dim("输入任务编号或 /help 查看命令"));
   }
 
   resolveResumePanelSelection(raw: string, items: ResumePanelItem[]): ResumePanelItem | null {
@@ -308,6 +304,10 @@ export class TerminalUI {
 
   async promptContinue(message = "continue>"): Promise<string> {
     return this.promptLine(message, "");
+  }
+
+  async promptReturnToLauncher(): Promise<string> {
+    return this.promptLine("按 Enter 返回", "");
   }
 
   displayWorkboardSnapshot(snapshot: AgentSessionSnapshot | null) {

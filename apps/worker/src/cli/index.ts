@@ -202,8 +202,7 @@ async function promptLauncher(
       if (!action) return { type: "new", initialPrompt: raw.trim() || undefined };
       if (action.type === "help") {
         ui.displayCommandPalette("home");
-        console.log(chalk.dim("按 Enter 返回 launcher。"));
-        await ui.promptContinue();
+        await ui.promptReturnToLauncher();
         continue;
       }
       if (action.type === "show_tasks") {
@@ -235,8 +234,7 @@ async function promptLauncher(
 
     if (action.type === "help") {
       ui.displayCommandPalette("home");
-      console.log(chalk.dim("按 Enter 返回 launcher。"));
-      await ui.promptContinue();
+      await ui.promptReturnToLauncher();
       continue;
     }
 

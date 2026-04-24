@@ -11,7 +11,7 @@ describe("TerminalUI banner", () => {
     vi.restoreAllMocks();
   });
 
-  it("displays mascot and tagline", () => {
+  it("displays compact product tagline", () => {
     const ui = new TerminalUI();
     const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
@@ -20,9 +20,9 @@ describe("TerminalUI banner", () => {
 
     const banner = logSpy.mock.calls.map((call) => call.join(" ")).join("\n");
     expect(stdoutSpy).toHaveBeenCalled();
-    expect(banner).toContain("◖•ᴗ•◗");
     expect(banner).toContain("Seeku");
     expect(banner).toContain("人才搜索助手");
+    expect(banner).not.toContain("◖•ᴗ•◗");
   });
 
   it("marks low-confidence shortlist output distinctly", () => {
@@ -506,7 +506,8 @@ describe("B6: displayTaskResumePanel", () => {
     const output = logSpy.mock.calls.map((call) => call.join(" ")).join("\n");
     expect(output).toContain("◖•ᴗ•◗");
     expect(output).toContain("找 AI 工程师");
-    expect(output).toContain("输入任务编号或 /help 查看命令");
+    expect(output).not.toContain("输入任务编号或 /help 查看命令");
+    expect(output.match(/◖•ᴗ•◗/g)).toHaveLength(1);
     expect(output).not.toContain("legacy");
     expect(output).not.toContain("local cache");
     expect(output).not.toContain("2026");
