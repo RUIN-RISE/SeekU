@@ -45,6 +45,7 @@ interface ShortlistViewOptions {
   uncertaintySummary?: string;
   statusMessage?: ShortlistStatusMessage;
   reuseViewport?: boolean;
+  guideHint?: string;
 }
 
 export class TerminalUI {
@@ -59,6 +60,7 @@ export class TerminalUI {
     taskTitle?: string;
     status?: string;
     contextBar?: ContextBarData;
+    guideHint?: string;
   }): void {
     shellRenderer.renderShellTop(args);
   }
@@ -590,6 +592,11 @@ export class TerminalUI {
           ? chalk.yellow
           : chalk.cyan;
       lines.push(colorize(options.statusMessage.text));
+      lines.push(chalk.dim("-".repeat(72)));
+    }
+
+    if (options.guideHint) {
+      lines.push(chalk.dim(`💡 ${options.guideHint}`));
       lines.push(chalk.dim("-".repeat(72)));
     }
 

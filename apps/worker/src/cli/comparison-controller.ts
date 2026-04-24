@@ -9,6 +9,7 @@ import {
 } from "./agent-state.js";
 import chalk from "chalk";
 import { isCommandAction } from "./command-router.js";
+import { getGuideHint } from "./guide.js";
 import type { AgentSessionWhyCode } from "./session-runtime-types.js";
 import type { ComparisonResult, GlobalCommandResult, SearchConditions } from "./types.js";
 import type { ProfileManager } from "./profile-manager.js";
@@ -134,6 +135,18 @@ export class ComparisonController {
       }
     }
     console.log(this.deps.renderer.renderComparison(comparisonResult, conditions));
+
+    // Show guide hint for decision complete if clear recommendation
+    if (comparisonResult.outcome.recommendationMode === "clear-recommendation" && comparisonResult.outcome.recommendedCandidateId) {
+      const recommendedCandidate = targets.find((t: any) => t.personId === comparisonResult.outcome.recommendedCandidateId);
+      if (recommendedCandidate) {
+        const decisionHint = getGuideHint("decision_complete", { candidateName: recommendedCandidate.name });
+        if (decisionHint) {
+          console.log(chalk.dim(`💡 ${decisionHint.text}`));
+        }
+      }
+    }
+
     this.deps.setSessionStatus("waiting-input", "compare 已完成，等待下一步操作。");
     this.deps.tui.renderShellHeader({
       stage: "compare",

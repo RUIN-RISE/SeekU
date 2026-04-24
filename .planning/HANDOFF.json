@@ -1,9 +1,9 @@
 {
   "version": "1.0",
-  "timestamp": "2026-04-24T09:20:00+08:00",
+  "timestamp": "2026-04-24T10:05:00+08:00",
   "context": "cli-upgrade",
-  "phase": "command-surface-hardening-and-raw-mode-decision",
-  "phase_name": "CLI command surface hardening + Phase 6 raw-mode decision",
+  "phase": "phase-8-mascot-visual-polish",
+  "phase_name": "Phase 8 mascot + visual polish",
   "phase_dir": null,
   "plan": null,
   "task": "batch-closeout",
@@ -11,44 +11,49 @@
   "status": "ready_for_review",
   "completed_tasks": [
     {
-      "id": "memory-overlay",
-      "name": "Wire /memory across shortlist, compare, detail, and launcher contexts",
-      "status": "done"
-    },
-    {
-      "id": "global-commands",
-      "name": "Make command-palette global commands actionable in active CLI views",
-      "status": "done"
-    },
-    {
-      "id": "phase-6-evaluation",
-      "name": "Document raw-mode evaluation and skip decision",
+      "id": "command-surface",
+      "name": "Commit command surface hardening and Phase 6 raw-mode decision",
       "status": "done",
-      "artifact": ".planning/PHASE_6_RAW_MODE_EVALUATION.md"
+      "commit": "9c4a9d1"
     },
     {
-      "id": "verification",
-      "name": "Run worker typecheck and CLI-focused Vitest suite",
+      "id": "guide-engine",
+      "name": "Add guide hint engine with implemented and reserved triggers",
+      "status": "done"
+    },
+    {
+      "id": "guide-integration",
+      "name": "Wire home_empty, first_shortlist, and decision_complete hints",
+      "status": "done"
+    },
+    {
+      "id": "phase8-tests",
+      "name": "Add guide and shell-renderer hint coverage",
       "status": "done"
     }
   ],
   "remaining_tasks": [
     {
-      "id": "review-or-commit",
-      "name": "Review or commit the staged CLI command surface batch",
+      "id": "stage-phase8",
+      "name": "Stage Phase 8 files only",
       "status": "not_started"
     },
     {
-      "id": "phase-8",
-      "name": "After this batch closes, start Phase 8 mascot + visual polish from .planning/CLI_UPGRADE_IMPLEMENTATION_PLAN.md",
+      "id": "verify-phase8",
+      "name": "Run worker typecheck and Phase 8 focused tests",
+      "status": "not_started"
+    },
+    {
+      "id": "commit-phase8",
+      "name": "Commit Phase 8 mascot + visual polish separately",
       "status": "not_started"
     }
   ],
   "blockers": [],
   "human_actions_pending": [
     {
-      "action": "Decide whether to commit the staged batch now",
-      "context": "The staged batch is coherent and verified. The untracked superpowers implementation plan is intentionally outside this batch.",
+      "action": "Review Phase 8 batch",
+      "context": "Phase 8 is intentionally separate from command-surface commit 9c4a9d1.",
       "blocking": false
     }
   ],
@@ -64,33 +69,27 @@
       "phase": "Phase 7"
     },
     {
-      "decision": "Keep Phase 8 as the next CLI upgrade step after this batch closes.",
-      "rationale": "The command surface and raw-mode decision are now stable enough to proceed to mascot + visual polish.",
+      "decision": "Treat blocked guide trigger as reserved, not a current integration gap.",
+      "rationale": "No blocked/no-results guide call site is part of this Phase 8 slice; implemented triggers are home_empty, first_shortlist, and decision_complete.",
       "phase": "Phase 8"
     }
   ],
   "uncommitted_files": [
-    ".planning/PHASE_6_RAW_MODE_EVALUATION.md",
     ".planning/.continue-here.md",
     ".planning/HANDOFF.json",
     ".planning/STATE.md",
-    "apps/worker/src/cli/__tests__/command-palette.test.ts",
-    "apps/worker/src/cli/__tests__/command-router.test.ts",
-    "apps/worker/src/cli/__tests__/index.test.ts",
-    "apps/worker/src/cli/__tests__/tui.test.ts",
-    "apps/worker/src/cli/__tests__/workflow.test.ts",
-    "apps/worker/src/cli/command-palette.ts",
+    "apps/worker/src/cli/__tests__/guide.test.ts",
+    "apps/worker/src/cli/__tests__/shell-renderer.test.ts",
+    "apps/worker/src/cli/guide.ts",
     "apps/worker/src/cli/comparison-controller.ts",
     "apps/worker/src/cli/index.ts",
     "apps/worker/src/cli/shortlist-controller.ts",
-    "apps/worker/src/cli/tui.ts",
-    "apps/worker/src/cli/types.ts",
-    "apps/worker/src/cli/workflow.ts"
+    "apps/worker/src/cli/tui.ts"
   ],
   "excluded_files": [
     "docs/superpowers/plans/2026-04-22-agent-product-memory-task-model-implementation-plan.md"
   ],
-  "next_action": "Review or commit the staged CLI command surface batch; then start Phase 8 mascot + visual polish.",
+  "next_action": "Stage Phase 8 files only, run typecheck and focused tests, then commit Phase 8 separately.",
   "verification": {
     "typecheck": "pnpm --filter @seeku/worker typecheck — pass",
     "vitest": "CLI-focused suite — 9 files, 209 tests passed",
@@ -99,5 +98,5 @@
       "Existing workflow-session [Pool Warning] messages"
     ]
   },
-  "context_notes": "Current GSD ROADMAP remains v1.8 Phase 14. Phase 8 refers to the CLI upgrade implementation plan, not the main GSD roadmap phase number."
+  "context_notes": "Command-surface batch is committed as 9c4a9d1. Current GSD ROADMAP remains v1.8 Phase 14; Phase 8 refers to CLI_UPGRADE_IMPLEMENTATION_PLAN.md."
 }

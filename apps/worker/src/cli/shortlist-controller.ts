@@ -23,6 +23,7 @@ import { buildResultWarning } from "./result-warning.js";
 import type { CompareLoopOutcome } from "./comparison-controller.js";
 import type { UserMemoryStore } from "./user-memory-store.js";
 import { isCommandAction, type CommandAction } from "./command-router.js";
+import { getGuideHint } from "./guide.js";
 
 interface SearchLoopOutcome {
   type: "refine" | "restart" | "quit" | "restore" | "new" | "tasks" | "globalCommand";
@@ -126,10 +127,15 @@ export class ShortlistController {
     const resultWarning = presentation?.resultWarning ?? buildResultWarning(candidates);
     let statusMessage: ShortlistStatusMessage | undefined;
     let reuseViewport = false;
+    let showGuideHint = true;
 
     await this.sortCandidates(candidates, sortMode, conditions);
 
     while (true) {
+      const guideHint = showGuideHint ? getGuideHint("first_shortlist")?.text : undefined;
+      if (showGuideHint) {
+        showGuideHint = false;
+      }
       this.deps.tui.displayShortlist(candidates, conditions, {
         sortMode,
         showingCount: visibleCount,
@@ -141,7 +147,8 @@ export class ShortlistController {
         lowConfidence: presentation?.lowConfidence,
         uncertaintySummary: presentation?.uncertaintySummary,
         statusMessage,
-        reuseViewport
+        reuseViewport,
+        guideHint
       });
 
       const command = await this.deps.tui.promptShortlistAction({

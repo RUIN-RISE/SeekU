@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.8
 milestone_name: CLI-First Session Ledger
 status: active milestone; Phase 14 is in progress
-stopped_at: CLI command surface hardening batch is staged and verified; next move is review/commit this batch before Phase 8 visual polish
-last_updated: "2026-04-24T09:20:00+08:00"
+stopped_at: Phase 8 mascot + visual polish is implemented in the worktree; next move is stage, verify, and commit it as a separate batch
+last_updated: "2026-04-24T10:05:00+08:00"
 progress:
   total_phases: 1
   completed_phases: 0
@@ -22,15 +22,15 @@ See:
 - `.planning/MILESTONES.md`
 
 **Core value:** Find the right AI talent through what they've done, not what they claim. Evidence-based matching over profile text matching.
-**Current focus:** `v1.8 CLI-First Session Ledger` is active; the current move is closing the staged CLI command surface hardening batch before any Phase 8 visual polish.
+**Current focus:** `v1.8 CLI-First Session Ledger` is active; the current move is closing Phase 8 mascot + visual polish as a separate CLI upgrade batch.
 
 ## Current Position
 
 - Active milestone: `v1.8 CLI-First Session Ledger`
 - Current phase: `Phase 14: CLI-First Session Ledger`
 - Current plan: `14-01` completed; `14-02` pending
-- Status: CLI command surface hardening batch is staged for review with `/memory`, global command handling, and Phase 6 raw-mode evaluation aligned
-- Last activity: 2026-04-24 — staged and verified the CLI command surface batch; Phase 6 raw-mode decision is to skip full raw-mode migration and Phase 7
+- Status: command surface hardening batch committed as `9c4a9d1`; Phase 8 mascot + visual polish is implemented and ready for separate verification/commit
+- Last activity: 2026-04-24 — committed command surface hardening and moved to Phase 8 mascot + visual polish
 
 ## Latest Shipped Milestone
 
@@ -76,4 +76,4 @@ See:
 ## Session Continuity
 
 Last session: 2026-04-24
-Stopped at: CLI command surface hardening batch is staged and verified. Review/commit this batch first; then route to Phase 8 visual polish from `.planning/CLI_UPGRADE_IMPLEMENTATION_PLAN.md`.
+Stopped at: Phase 8 mascot + visual polish is implemented in the worktree. Stage Phase 8 only, verify, then commit separately.

@@ -19,6 +19,7 @@ import { WorkItemStore } from "./work-item-store.js";
 import { runMemoryManagementSession } from "./memory-command.js";
 import { hydrateMemoryContextSafely } from "./memory-context.js";
 import { toContextBar } from "./workboard-view-model.js";
+import { getGuideHint } from "./guide.js";
 
 interface RunInteractiveSearchOptions {
   attachSessionId?: string;
@@ -155,6 +156,10 @@ async function promptLauncher(
   if (resolution.items.length === 0) {
     // Minimal launcher when no resume items — still allow memory management
     ui.displayBanner();
+    const homeHint = getGuideHint("home_empty");
+    if (homeHint) {
+      console.log(chalk.dim(`💡 ${homeHint.text}`));
+    }
     console.log(chalk.green("[1] 新开任务"));
     console.log(chalk.dim("输入 memory 管理记忆偏好。"));
     console.log("");

@@ -46,6 +46,14 @@ describe("ShellRenderer", () => {
       );
       expect(output.join("\n")).toContain("可继续");
     });
+
+    it("includes guideHint when provided", () => {
+      const output = captureOutput(() =>
+        renderer.renderHeader({ stage: "home", guideHint: "还没有进行中的任务。输入需求开始搜索。" })
+      );
+      const combined = output.join("\n");
+      expect(combined).toContain("还没有进行中的任务");
+    });
   });
 
   describe("renderContextBar", () => {
