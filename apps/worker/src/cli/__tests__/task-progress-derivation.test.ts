@@ -293,6 +293,15 @@ describe("deriveBlockerFromSnapshot", () => {
     expect(result.blocked).toBe(true);
     expect(result.blockerReason).toBe("boundary_failure");
   });
+
+  it("does not throw for legacy snapshots without recoveryState", () => {
+    const snapshot = createMockSnapshot() as any;
+    delete snapshot.recoveryState;
+
+    const result = deriveBlockerFromSnapshot(snapshot);
+
+    expect(result.blocked).toBe(false);
+  });
 });
 
 // ============================================================================

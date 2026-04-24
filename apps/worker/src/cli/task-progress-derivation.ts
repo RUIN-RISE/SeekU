@@ -237,7 +237,7 @@ export function deriveBlockerFromSnapshot(
   }
 
   // Recovery boundary diagnostic code present.
-  if (snapshot.recoveryState.boundaryDiagnosticCode) {
+  if (snapshot.recoveryState?.boundaryDiagnosticCode) {
     return { blocked: true, blockerReason: "boundary_failure" };
   }
 
