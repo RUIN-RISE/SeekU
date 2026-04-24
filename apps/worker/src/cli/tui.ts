@@ -306,7 +306,7 @@ export class TerminalUI {
   }
 
   displayLauncherInputError() {
-    console.log(chalk.yellow("无法识别该输入。请输入 1、列表编号，或 attach <sessionId>。"));
+    console.log(chalk.yellow("无法识别该输入。请输入 1、列表编号、attach <sessionId>，或 /help 查看命令。"));
   }
 
   async promptSessionLauncherChoice(defaultChoice = "1"): Promise<string> {

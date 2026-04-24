@@ -29,6 +29,9 @@ type LauncherAction =
   | { type: "new"; initialPrompt?: string }
   | { type: "attach"; sessionId: string }
   | { type: "show_task"; sessionId: string }
+  | { type: "show_transcript"; sessionId: string }
+  | { type: "show_tasks" }
+  | { type: "help" }
   | { type: "memory" }
   | { type: "quit" };
 
@@ -83,11 +86,28 @@ export async function runWorkflowSession(options: {
 
 export function parseLauncherAction(input: string, sessionCount: number, defaultSessionId?: string): LauncherAction | null {
   const normalized = input.trim();
+  const command = normalized.startsWith("/") ? normalized.slice(1) : normalized;
+  const knownHomeCommands = new Set([
+    "help",
+    "?",
+    "new",
+    "resume",
+    "task",
+    "tasks",
+    "workboard",
+    "transcript",
+    "memory",
+    "m",
+    "mem",
+    "quit",
+    "q",
+    "exit"
+  ]);
 
   // Natural language input (doesn't start with / or number)
   if (!normalized.startsWith("/") && !/^\d+$/.test(normalized) && normalized.length > 0) {
     // Check for known keywords first
-    if (normalized === "1" || normalized === "q" || normalized === "quit" || normalized === "exit" || normalized === "memory" || normalized === "m" || normalized === "mem" || normalized === "/memory" || normalized === "/m" || normalized === "/mem") {
+    if (normalized === "1" || knownHomeCommands.has(command)) {
       // Fall through to keyword handling
     } else if (normalized.startsWith("attach ")) {
       // Fall through to attach handling
@@ -101,27 +121,39 @@ export function parseLauncherAction(input: string, sessionCount: number, default
     return { type: "new" };
   }
 
-  if (normalized === "q" || normalized === "quit" || normalized === "exit") {
+  if (command === "help" || command === "?") {
+    return { type: "help" };
+  }
+
+  if (command === "q" || command === "quit" || command === "exit") {
     return { type: "quit" };
   }
 
-  if (normalized === "memory" || normalized === "m" || normalized === "mem" || normalized === "/memory" || normalized === "/m" || normalized === "/mem") {
+  if (command === "memory" || command === "m" || command === "mem") {
     return { type: "memory" };
   }
 
   // /resume — attach to default selection
-  if (normalized === "/resume" && defaultSessionId) {
+  if (normalized.startsWith("/") && command === "resume" && defaultSessionId) {
     return { type: "attach", sessionId: defaultSessionId };
   }
 
   // /new — explicit new task
-  if (normalized === "/new") {
+  if (normalized.startsWith("/") && command === "new") {
     return { type: "new" };
   }
 
   // /task — show selected task workboard
-  if ((normalized === "/task" || normalized === "task") && defaultSessionId) {
+  if ((command === "task" || command === "workboard") && defaultSessionId) {
     return { type: "show_task", sessionId: defaultSessionId };
+  }
+
+  if (command === "transcript" && defaultSessionId) {
+    return { type: "show_transcript", sessionId: defaultSessionId };
+  }
+
+  if (command === "tasks") {
+    return { type: "show_tasks" };
   }
 
   const attachMatch = normalized.match(/^attach\s+([0-9a-f-]+)$/i);
@@ -154,20 +186,31 @@ async function promptLauncher(
   const defaultItem = resolution.items[0];
 
   if (resolution.items.length === 0) {
-    // Minimal launcher when no resume items — still allow memory management
-    ui.displayBanner();
-    const homeHint = getGuideHint("home_empty");
-    if (homeHint) {
-      console.log(chalk.dim(`💡 ${homeHint.text}`));
-    }
-    console.log(chalk.green("[1] 新开任务"));
-    console.log(chalk.dim("输入 memory 管理记忆偏好。"));
-    console.log("");
+    while (true) {
+      // Minimal launcher when no resume items — still allow memory management
+      ui.displayBanner();
+      const homeHint = getGuideHint("home_empty");
+      if (homeHint) {
+        console.log(chalk.dim(`💡 ${homeHint.text}`));
+      }
+      console.log(chalk.green("[1] 新开任务"));
+      console.log(chalk.dim("输入 memory 管理记忆偏好。"));
+      console.log("");
 
-    const raw = await ui.promptSessionLauncherChoice("1");
-    const action = parseLauncherAction(raw, 0);
-    if (action) return action;
-    return { type: "new" };
+      const raw = await ui.promptSessionLauncherChoice("1");
+      const action = parseLauncherAction(raw, 0);
+      if (!action) return { type: "new", initialPrompt: raw.trim() || undefined };
+      if (action.type === "help") {
+        ui.displayCommandPalette("home");
+        console.log(chalk.dim("按 Enter 返回 launcher。"));
+        await ui.promptContinue();
+        continue;
+      }
+      if (action.type === "show_tasks") {
+        continue;
+      }
+      return action;
+    }
   }
 
   while (true) {
@@ -190,6 +233,17 @@ async function promptLauncher(
       continue;
     }
 
+    if (action.type === "help") {
+      ui.displayCommandPalette("home");
+      console.log(chalk.dim("按 Enter 返回 launcher。"));
+      await ui.promptContinue();
+      continue;
+    }
+
+    if (action.type === "show_tasks") {
+      continue;
+    }
+
     // Handle show_task — display workboard and loop back to launcher
     if (action.type === "show_task") {
       const record = await ledger.load(action.sessionId);
@@ -205,6 +259,16 @@ async function promptLauncher(
         console.log(chalk.dim("按 Enter 返回 launcher。"));
         await ui.promptContinue();
         continue; // Loop back to launcher
+      }
+      continue;
+    }
+
+    if (action.type === "show_transcript") {
+      const record = await ledger.load(action.sessionId);
+      if (record) {
+        ui.displayRestoredSession(record.transcript);
+        console.log(chalk.dim("按 Enter 返回 launcher。"));
+        await ui.promptContinue();
       }
       continue;
     }

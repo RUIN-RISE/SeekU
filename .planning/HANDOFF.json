@@ -1,14 +1,14 @@
 {
   "version": "1.0",
-  "timestamp": "2026-04-24T10:05:00+08:00",
+  "timestamp": "2026-04-24T11:15:00+08:00",
   "context": "cli-upgrade",
-  "phase": "phase-8-mascot-visual-polish",
-  "phase_name": "Phase 8 mascot + visual polish",
+  "phase": "launcher-command-fix-and-visual-brief",
+  "phase_name": "Launcher command fix + Claude Code visual simplification brief",
   "phase_dir": null,
   "plan": null,
-  "task": "batch-closeout",
+  "task": "user-feedback-followup",
   "total_tasks": null,
-  "status": "ready_for_review",
+  "status": "verified",
   "completed_tasks": [
     {
       "id": "command-surface",
@@ -30,30 +30,40 @@
       "id": "phase8-tests",
       "name": "Add guide and shell-renderer hint coverage",
       "status": "done"
+    },
+    {
+      "id": "launcher-help",
+      "name": "Fix launcher /help and ? command handling",
+      "status": "done"
+    },
+    {
+      "id": "launcher-advertised-commands",
+      "name": "Make advertised launcher commands parse consistently",
+      "status": "done"
+    },
+    {
+      "id": "visual-brief",
+      "name": "Create Claude Code frontend-skill visual simplification brief",
+      "status": "done"
     }
   ],
   "remaining_tasks": [
     {
-      "id": "stage-phase8",
-      "name": "Stage Phase 8 files only",
+      "id": "commit-and-push",
+      "name": "Commit and push launcher command fix plus visual brief",
       "status": "not_started"
     },
     {
-      "id": "verify-phase8",
-      "name": "Run worker typecheck and Phase 8 focused tests",
-      "status": "not_started"
-    },
-    {
-      "id": "commit-phase8",
-      "name": "Commit Phase 8 mascot + visual polish separately",
+      "id": "claude-visual-pass",
+      "name": "Ask Claude Code to implement the visual simplification brief with frontend-skill",
       "status": "not_started"
     }
   ],
   "blockers": [],
   "human_actions_pending": [
     {
-      "action": "Review Phase 8 batch",
-      "context": "Phase 8 is intentionally separate from command-surface commit 9c4a9d1.",
+      "action": "Send visual brief to Claude Code",
+      "context": "Frontend/visual implementation is intentionally delegated to Claude Code with frontend-skill.",
       "blocking": false
     }
   ],
@@ -78,25 +88,21 @@
     ".planning/.continue-here.md",
     ".planning/HANDOFF.json",
     ".planning/STATE.md",
-    "apps/worker/src/cli/__tests__/guide.test.ts",
-    "apps/worker/src/cli/__tests__/shell-renderer.test.ts",
-    "apps/worker/src/cli/guide.ts",
-    "apps/worker/src/cli/comparison-controller.ts",
     "apps/worker/src/cli/index.ts",
-    "apps/worker/src/cli/shortlist-controller.ts",
-    "apps/worker/src/cli/tui.ts"
+    "apps/worker/src/cli/tui.ts",
+    "apps/worker/src/cli/__tests__/launcher-v2.test.ts",
+    "docs/superpowers/specs/2026-04-24-cli-visual-simplification-claude-brief.md"
   ],
   "excluded_files": [
     "docs/superpowers/plans/2026-04-22-agent-product-memory-task-model-implementation-plan.md"
   ],
-  "next_action": "Stage Phase 8 files only, run typecheck and focused tests, then commit Phase 8 separately.",
+  "next_action": "Commit and push the verified launcher command fix plus visual simplification brief, then hand visual implementation to Claude Code.",
   "verification": {
     "typecheck": "pnpm --filter @seeku/worker typecheck — pass",
-    "vitest": "CLI-focused suite — 9 files, 209 tests passed",
+    "vitest": "Focused CLI suite — 8 files, 168 tests passed",
     "known_non_failing_output": [
-      "Vitest environmentMatchGlobs deprecation warning",
-      "Existing workflow-session [Pool Warning] messages"
+      "Vitest environmentMatchGlobs deprecation warning"
     ]
   },
-  "context_notes": "Command-surface batch is committed as 9c4a9d1. Current GSD ROADMAP remains v1.8 Phase 14; Phase 8 refers to CLI_UPGRADE_IMPLEMENTATION_PLAN.md."
+  "context_notes": "Phase 8 guide hints shipped, but user feedback says mascot and visual system are not yet sufficient. This batch fixes command correctness and creates a Claude Code visual implementation brief rather than doing the frontend pass here."
 }

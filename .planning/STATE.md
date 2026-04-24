@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.8
 milestone_name: CLI-First Session Ledger
 status: active milestone; Phase 14 is in progress
-stopped_at: Phase 8 mascot + visual polish is implemented in the worktree; next move is stage, verify, and commit it as a separate batch
-last_updated: "2026-04-24T10:05:00+08:00"
+stopped_at: User feedback follow-up is in progress; launcher slash-command mismatch is fixed and Claude Code visual simplification brief is drafted
+last_updated: "2026-04-24T11:15:00+08:00"
 progress:
   total_phases: 1
   completed_phases: 0
@@ -22,15 +22,15 @@ See:
 - `.planning/MILESTONES.md`
 
 **Core value:** Find the right AI talent through what they've done, not what they claim. Evidence-based matching over profile text matching.
-**Current focus:** `v1.8 CLI-First Session Ledger` is active; the current move is closing Phase 8 mascot + visual polish as a separate CLI upgrade batch.
+**Current focus:** `v1.8 CLI-First Session Ledger` is active; the immediate CLI upgrade follow-up is fixing launcher command correctness and handing visual simplification to Claude Code.
 
 ## Current Position
 
 - Active milestone: `v1.8 CLI-First Session Ledger`
 - Current phase: `Phase 14: CLI-First Session Ledger`
 - Current plan: `14-01` completed; `14-02` pending
-- Status: command surface hardening batch committed as `9c4a9d1`; Phase 8 mascot + visual polish is implemented and ready for separate verification/commit
-- Last activity: 2026-04-24 — committed command surface hardening and moved to Phase 8 mascot + visual polish
+- Status: Phase 8 guide hints shipped; user feedback identified remaining visual/noise issues. Launcher `/help` and advertised global commands are being fixed, and a Claude Code frontend-skill brief is drafted for the visual pass.
+- Last activity: 2026-04-24 — fixed launcher slash-command mismatch and drafted `docs/superpowers/specs/2026-04-24-cli-visual-simplification-claude-brief.md`.
 
 ## Latest Shipped Milestone
 
@@ -76,4 +76,4 @@ See:
 ## Session Continuity
 
 Last session: 2026-04-24
-Stopped at: Phase 8 mascot + visual polish is implemented in the worktree. Stage Phase 8 only, verify, then commit separately.
+Stopped at: launcher command fix and Claude Code visual simplification brief are in the worktree; run focused validation, commit/push, then hand visual implementation to Claude Code with `frontend-skill`.

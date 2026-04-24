@@ -36,6 +36,18 @@ describe("parseLauncherAction", () => {
     });
   });
 
+  describe("/help command", () => {
+    it("returns help for /help", () => {
+      const action = parseLauncherAction("/help", 3, defaultSessionId);
+      expect(action).toEqual({ type: "help" });
+    });
+
+    it("returns help for ?", () => {
+      const action = parseLauncherAction("?", 3, defaultSessionId);
+      expect(action).toEqual({ type: "help" });
+    });
+  });
+
   describe("memory command", () => {
     it("returns open_memory for 'memory'", () => {
       const action = parseLauncherAction("memory", 3, defaultSessionId);
@@ -98,6 +110,21 @@ describe("parseLauncherAction", () => {
     it("returns show_task with default sessionId for /task", () => {
       const action = parseLauncherAction("/task", 3, defaultSessionId);
       expect(action).toEqual({ type: "show_task", sessionId: defaultSessionId });
+    });
+
+    it("returns show_task with default sessionId for /workboard", () => {
+      const action = parseLauncherAction("/workboard", 3, defaultSessionId);
+      expect(action).toEqual({ type: "show_task", sessionId: defaultSessionId });
+    });
+
+    it("returns show_transcript with default sessionId for /transcript", () => {
+      const action = parseLauncherAction("/transcript", 3, defaultSessionId);
+      expect(action).toEqual({ type: "show_transcript", sessionId: defaultSessionId });
+    });
+
+    it("returns show_tasks for /tasks", () => {
+      const action = parseLauncherAction("/tasks", 3, defaultSessionId);
+      expect(action).toEqual({ type: "show_tasks" });
     });
   });
 
