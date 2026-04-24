@@ -243,8 +243,16 @@ export interface ShortlistStatusMessage {
   text: string;
 }
 
+export interface GlobalCommandResult {
+  type: "globalCommand";
+  command: string;
+  args?: string;
+}
+
 export interface ResultListCommand {
-  type: "view" | "compare" | "refine" | "sort" | "showMore" | "quit" | "help" | "add" | "remove" | "togglePool" | "pool" | "clear" | "history" | "undo" | "show" | "open" | "back" | "export" | "moveSelection";
+  type: "view" | "compare" | "refine" | "sort" | "showMore" | "quit" | "help" | "add" | "remove" | "togglePool" | "pool" | "clear" | "history" | "undo" | "show" | "open" | "back" | "export" | "moveSelection" | "memory" | "globalCommand";
+  command?: string;
+  args?: string;
   indexes?: number[];
   sortMode?: SortMode;
   exportFormat?: ExportFormat;

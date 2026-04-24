@@ -1,96 +1,103 @@
 {
   "version": "1.0",
-  "timestamp": "2026-04-18T06:15:32.234Z",
-  "context": "research",
-  "phase": null,
-  "phase_name": "github-expansion-bonjour-fresh-auth",
+  "timestamp": "2026-04-24T09:20:00+08:00",
+  "context": "cli-upgrade",
+  "phase": "command-surface-hardening-and-raw-mode-decision",
+  "phase_name": "CLI command surface hardening + Phase 6 raw-mode decision",
   "phase_dir": null,
   "plan": null,
-  "task": 3,
-  "total_tasks": 5,
-  "status": "paused",
+  "task": "batch-closeout",
+  "total_tasks": null,
+  "status": "ready_for_review",
   "completed_tasks": [
     {
-      "id": 1,
-      "name": "Ship CLI-first session ledger",
-      "status": "done",
-      "commit": "5bde1df"
+      "id": "memory-overlay",
+      "name": "Wire /memory across shortlist, compare, detail, and launcher contexts",
+      "status": "done"
     },
     {
-      "id": 2,
-      "name": "Add fresh-auth probe flow and seed builder wiring",
-      "status": "done",
-      "commit": "8c150c1"
+      "id": "global-commands",
+      "name": "Make command-palette global commands actionable in active CLI views",
+      "status": "done"
     },
     {
-      "id": 3,
-      "name": "Add seed exclusion attribution and verify empty-seed behavior",
+      "id": "phase-6-evaluation",
+      "name": "Document raw-mode evaluation and skip decision",
       "status": "done",
-      "commit": "9ad4aff",
-      "progress": "Verified bonjour-fresh-auth-probe-test9; 8 fresh candidates were excluded by historical auto-exclude inputs from bonjour-fresh-auth-probe-test2 probe import handles."
+      "artifact": ".planning/PHASE_6_RAW_MODE_EVALUATION.md"
+    },
+    {
+      "id": "verification",
+      "name": "Run worker typecheck and CLI-focused Vitest suite",
+      "status": "done"
     }
   ],
   "remaining_tasks": [
     {
-      "id": 4,
-      "name": "Decide next expansion after exclusion attribution",
+      "id": "review-or-commit",
+      "name": "Review or commit the staged CLI command surface batch",
       "status": "not_started"
     },
     {
-      "id": 5,
-      "name": "Optionally compress blocked-handle attribution into a top offenders summary or rerun with adjusted exclude policy",
+      "id": "phase-8",
+      "name": "After this batch closes, start Phase 8 mascot + visual polish from .planning/CLI_UPGRADE_IMPLEMENTATION_PLAN.md",
       "status": "not_started"
     }
   ],
-  "blockers": [
-    {
-      "description": "Fresh-auth seed generation can collapse to zero because historical auto-exclude inputs dominate the latest fresh inputs.",
-      "type": "technical",
-      "workaround": "Inspect output/bonjour-raw/2026-04-18/bonjour-fresh-auth-probe-test9/recent-seed-blocked-handles.json and blocked-reasons.json before changing the builder or rerunning."
-    },
-    {
-      "description": "Some legacy .planning documents still contain placeholder markers and should not be treated as completion evidence.",
-      "type": "technical",
-      "workaround": "Ignore placeholder-bearing files in .planning/phases and older github-expansion notes unless they are actively refreshed."
-    }
-  ],
+  "blockers": [],
   "human_actions_pending": [
     {
-      "action": "Choose whether the next step is more reporting or a new authenticated crawl variant",
-      "context": "Current code path is committed and verified; remaining work is direction-setting rather than unfinished implementation.",
-      "blocking": false
-    },
-    {
-      "action": "Push local Bonjour commits if desired",
-      "context": "Commits 8c150c1 and 9ad4aff are local only; only 5bde1df was pushed earlier.",
+      "action": "Decide whether to commit the staged batch now",
+      "context": "The staged batch is coherent and verified. The untracked superpowers implementation plan is intentionally outside this batch.",
       "blocking": false
     }
   ],
   "decisions": [
     {
-      "decision": "CLI remains the only formal product entry; web is not the primary surface.",
-      "rationale": "User explicitly rejected web as the formal entry and wants CLI-centered integration.",
-      "phase": "product"
+      "decision": "Skip full raw-mode migration for compare/detail/clarify/launcher prompts.",
+      "rationale": "Current enquirer prompts plus slash-command interception satisfy the primary UX need; raw-mode line editing adds cross-terminal and multi-byte risks.",
+      "phase": "Phase 6"
     },
     {
-      "decision": "Default historical excludes were narrowed to prior fresh-auth-consumed artifacts instead of all old frontier files.",
-      "rationale": "Blanket historical frontier exclusion over-pruned candidate discovery and made the experiment uninformative.",
-      "phase": "bonjour"
+      "decision": "Skip Phase 7 workflow/domain state-machine work for this CLI upgrade chain.",
+      "rationale": "Phase 7 was conditional on Phase 6 proving raw-mode migration necessary.",
+      "phase": "Phase 7"
     },
     {
-      "decision": "Fresh seed discovery uses a recency window and small latest-cluster cap.",
-      "rationale": "Using all available same-day seed files kept re-consuming the same handles and hid whether the experiment was seeing anything new.",
-      "phase": "bonjour"
-    },
-    {
-      "decision": "Blocked-handle attribution report must distinguish auto excludes, recent seed excludes, and manual excludes.",
-      "rationale": "The initial report blamed recent seed dedupe by default, but the verified zero-output case was actually caused by auto-excluded historical probe imports.",
-      "phase": "bonjour"
+      "decision": "Keep Phase 8 as the next CLI upgrade step after this batch closes.",
+      "rationale": "The command surface and raw-mode decision are now stable enough to proceed to mascot + visual polish.",
+      "phase": "Phase 8"
     }
   ],
   "uncommitted_files": [
-    "apps/web/next-env.d.ts"
+    ".planning/PHASE_6_RAW_MODE_EVALUATION.md",
+    ".planning/.continue-here.md",
+    ".planning/HANDOFF.json",
+    ".planning/STATE.md",
+    "apps/worker/src/cli/__tests__/command-palette.test.ts",
+    "apps/worker/src/cli/__tests__/command-router.test.ts",
+    "apps/worker/src/cli/__tests__/index.test.ts",
+    "apps/worker/src/cli/__tests__/tui.test.ts",
+    "apps/worker/src/cli/__tests__/workflow.test.ts",
+    "apps/worker/src/cli/command-palette.ts",
+    "apps/worker/src/cli/comparison-controller.ts",
+    "apps/worker/src/cli/index.ts",
+    "apps/worker/src/cli/shortlist-controller.ts",
+    "apps/worker/src/cli/tui.ts",
+    "apps/worker/src/cli/types.ts",
+    "apps/worker/src/cli/workflow.ts"
   ],
-  "next_action": "Start by reading the test9 summary and blocked-handle report, then decide whether to compress that data into a top blocked summary or loosen the auto-exclude policy for the next fresh-auth probe.",
-  "context_notes": "The current repo branch is main at 9ad4aff. No active phase directory was detected, so this handoff is stored as a research/default pause state under .planning. No background processes need to be preserved. Worker typecheck passed. Treat apps/web/next-env.d.ts as unrelated user work and do not include it in future Bonjour commits unless explicitly requested. Placeholder-bearing planning docs were detected under .planning/phases and older github-expansion notes; do not use them as completion proof."
+  "excluded_files": [
+    "docs/superpowers/plans/2026-04-22-agent-product-memory-task-model-implementation-plan.md"
+  ],
+  "next_action": "Review or commit the staged CLI command surface batch; then start Phase 8 mascot + visual polish.",
+  "verification": {
+    "typecheck": "pnpm --filter @seeku/worker typecheck — pass",
+    "vitest": "CLI-focused suite — 9 files, 209 tests passed",
+    "known_non_failing_output": [
+      "Vitest environmentMatchGlobs deprecation warning",
+      "Existing workflow-session [Pool Warning] messages"
+    ]
+  },
+  "context_notes": "Current GSD ROADMAP remains v1.8 Phase 14. Phase 8 refers to the CLI upgrade implementation plan, not the main GSD roadmap phase number."
 }

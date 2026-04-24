@@ -93,6 +93,7 @@ import {
   type AgentSessionEvent,
   type AgentSessionSnapshot
 } from "./agent-session-events.js";
+import { parseCommand, routeCommand, type CommandAction } from "./command-router.js";
 import type {
   AgentSessionStatus,
   AgentSessionTerminationReason
@@ -109,6 +110,7 @@ import { ProfileGenerator } from "./profile-generator.js";
 import { TerminalRenderer } from "./renderer.js";
 import { HybridScoringEngine } from "./scorer.js";
 import { TerminalUI } from "./tui.js";
+import { hydrateMemoryContextSafely } from "./memory-context.js";
 import { withRetry } from "./retry.js";
 import { buildSearchAttemptReport, type SearchAttemptReport } from "./search-attempt-report.js";
 import {
@@ -137,9 +139,12 @@ import {
   SearchRecoveryState,
   SortMode
 } from "./types.js";
+import type { GlobalCommandResult } from "./types.js";
 
 interface SearchLoopOutcome {
-  type: "refine" | "restart" | "quit" | "restore";
+  type: "refine" | "restart" | "quit" | "restore" | "new" | "tasks" | "globalCommand";
+  command?: string;
+  args?: string;
   prompt?: string;
   conditions?: SearchConditions;  // For undo: directly restore conditions
 }
@@ -756,6 +761,7 @@ export class SearchWorkflow {
   private shortlistController: ShortlistController;
   private terminationReason?: AgentSessionTerminationReason;
   private executionAbortController?: AbortController;
+  private launcherRequest?: "new" | "tasks";
   private readonly memoryStore?: import("./user-memory-store.js").UserMemoryStore;
   private readonly workItemStore?: import("./work-item-store.js").WorkItemStore;
   private workItemId?: string;
@@ -877,7 +883,8 @@ export class SearchWorkflow {
       emitSessionEvent: (type, summary, data) => this.emitSessionEvent(type as any, summary, data),
       refreshCandidateQueryExplanation: (candidate, conditions) => this.searchExecutor.refreshCandidateQueryExplanation(candidate as any, conditions),
       decorateComparisonResult: (result, conditions) => this.recoveryHandler.applyBoundaryContextToComparisonResult(result, conditions),
-      buildCompareRefinePrompt: (conditions) => this.recoveryHandler.buildCompareRefinePrompt(conditions)
+      buildCompareRefinePrompt: (conditions) => this.recoveryHandler.buildCompareRefinePrompt(conditions),
+      runMemoryOverlay: () => this.runMemoryOverlay()
     });
     this.shortlistController = new ShortlistController({
       tui: this.tui,
@@ -892,7 +899,8 @@ export class SearchWorkflow {
       tools: this.tools,
       getSessionState: () => this.sessionState,
       applySessionState: (next) => this.applySessionState(next),
-      memoryStore: this.memoryStore
+      memoryStore: this.memoryStore,
+      runMemoryOverlay: () => this.runMemoryOverlay()
     });
     this.emitSessionEvent(
       "session_started",
@@ -936,6 +944,10 @@ export class SearchWorkflow {
 
   getTerminationReason(): AgentSessionTerminationReason | undefined {
     return this.terminationReason;
+  }
+
+  getLauncherRequest(): "new" | "tasks" | undefined {
+    return this.launcherRequest;
   }
 
   interrupt(reason: AgentSessionTerminationReason = "interrupted"): void {
@@ -1122,6 +1134,107 @@ export class SearchWorkflow {
     }
 
     return event;
+  }
+
+  private async runMemoryOverlay(): Promise<void> {
+    if (!this.memoryStore) {
+      console.log(chalk.yellow("\n/memory 暂时不可用。"));
+      return;
+    }
+    const { runMemoryManagementSession } = await import("./memory-command.js");
+    const enquirer = await import("enquirer");
+    const { Input } = enquirer.default as unknown as { Input: any };
+    await runMemoryManagementSession(this.memoryStore, async (prompt) => {
+      const input = new Input({ message: prompt });
+      const result = await input.run();
+      return result?.trim() || null;
+    });
+  }
+
+  private async handleGlobalCommand(action: CommandAction | GlobalCommandResult): Promise<"continue" | "quit"> {
+    if (action.type === "unknown") {
+      console.log(chalk.yellow(`\n未识别的命令：/${action.name}`));
+      return "continue";
+    }
+    const command = action.command;
+    if (command === "help") {
+      this.tui.displayCommandPalette(this.stageForCurrentState());
+      return "continue";
+    }
+    if (command === "quit") {
+      return "quit";
+    }
+    if (command === "memory") {
+      await this.runMemoryOverlay();
+      return "continue";
+    }
+    if (command === "new" || command === "tasks") {
+      this.launcherRequest = command;
+      return "quit";
+    }
+    if (command === "task" || command === "workboard") {
+      await this.renderCurrentWorkboard();
+      return "continue";
+    }
+    if (command === "transcript") {
+      this.tui.displayRestoredSession(this.getTranscript());
+      return "continue";
+    }
+    console.log(chalk.yellow(`\n/${command} 当前视图暂不支持。`));
+    return "continue";
+  }
+
+  private stageForCurrentState(): "clarify" | "search" | "shortlist" | "compare" | "decision" {
+    switch (this.sessionState.runtime.status) {
+      case "clarifying":
+      case "waiting-input":
+        return "clarify";
+      case "searching":
+      case "recovering":
+        return "search";
+      case "comparing":
+        return "compare";
+      case "completed":
+        return "decision";
+      default:
+        return "shortlist";
+    }
+  }
+
+  private async renderCurrentWorkboard(): Promise<void> {
+    const memoryContext = this.memoryStore
+      ? await hydrateMemoryContextSafely(this.memoryStore)
+      : null;
+    if (!this.workItemStore) {
+      this.tui.displayTaskWorkboard({
+        title: this.sessionState.userGoal || `Session ${this.sessionId.slice(0, 8)}`,
+        stage: "intake",
+        stageLabel: this.sessionState.runtime.status,
+        blocked: this.sessionState.runtime.status === "blocked",
+        blockerLabel: this.sessionState.runtime.whySummary || this.sessionState.runtime.primaryWhyCode,
+        summary: this.sessionState.runtime.statusSummary || "当前会话状态",
+        nextActionTitle: "继续当前任务",
+        nextActionDescription: this.sessionState.runtime.whySummary || "返回当前视图继续操作。",
+        updatedAtLabel: "刚刚",
+        sourceLabel: "当前会话",
+        isLegacySession: true,
+        sessionStatus: this.sessionState.runtime.status
+      });
+      return;
+    }
+
+    const snapshot = this.getSessionSnapshot();
+    const workItem = this.workItemId
+      ? await this.workItemStore.get(this.workItemId)
+      : null;
+    const viewModel = this.workItemStore.getWorkboardModel(
+      workItem,
+      snapshot,
+      undefined,
+      memoryContext,
+      this.workItemId && !workItem ? this.workItemId : undefined
+    );
+    this.tui.displayTaskWorkboard(viewModel);
   }
 
   private setSessionStatus(
@@ -1543,6 +1656,19 @@ export class SearchWorkflow {
         return conditions;
       }
 
+      const parsedCommand = parseCommand(instruction);
+      if (parsedCommand) {
+        if (parsedCommand.kind === "palette") {
+          this.tui.displayCommandPalette("clarify");
+          continue;
+        }
+        const commandResult = await this.handleGlobalCommand(routeCommand(parsedCommand, "clarify"));
+        if (commandResult === "quit") {
+          return null;
+        }
+        continue;
+      }
+
       this.setSessionStatus("clarifying", "正在补充搜索条件。");
       this.spinner.start("正在补充搜索条件...");
 
@@ -1681,8 +1807,18 @@ export class SearchWorkflow {
           }
         );
         preloadPromise?.catch(() => {});
-        if (compareOutcome === "quit") {
+        if (compareOutcome === "quit" || compareOutcome === "new" || compareOutcome === "tasks") {
+          if (compareOutcome === "new" || compareOutcome === "tasks") {
+            this.launcherRequest = compareOutcome;
+          }
           return { type: "quit" };
+        }
+        if (typeof compareOutcome !== "string" && compareOutcome.type === "globalCommand") {
+          const commandResult = await this.handleGlobalCommand(compareOutcome);
+          if (commandResult === "quit") {
+            return { type: "quit" };
+          }
+          continue;
         }
         if (typeof compareOutcome !== "string" && compareOutcome.type === "refine") {
           this.applySessionState(setRecoveryState(this.sessionState, {
@@ -1709,6 +1845,23 @@ export class SearchWorkflow {
 
       if (result.type === "quit") {
         return result;
+      }
+
+      if (result.type === "new" || result.type === "tasks") {
+        this.launcherRequest = result.type;
+        return { type: "quit" };
+      }
+
+      if (result.type === "globalCommand") {
+        const commandResult = await this.handleGlobalCommand({
+          type: "globalCommand",
+          command: result.command || "",
+          args: result.args
+        });
+        if (commandResult === "quit") {
+          return { type: "quit" };
+        }
+        continue;
       }
 
       if (result.type === "restart") {

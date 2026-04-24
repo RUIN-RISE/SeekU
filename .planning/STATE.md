@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.8
 milestone_name: CLI-First Session Ledger
 status: active milestone; Phase 14 is in progress
-stopped_at: Phase 14 plan 01 is executing; next move is continue implementing CLI-first session ledger
-last_updated: "2026-04-18T04:45:00.000Z"
+stopped_at: CLI command surface hardening batch is staged and verified; next move is review/commit this batch before Phase 8 visual polish
+last_updated: "2026-04-24T09:20:00+08:00"
 progress:
   total_phases: 1
   completed_phases: 0
@@ -22,15 +22,15 @@ See:
 - `.planning/MILESTONES.md`
 
 **Core value:** Find the right AI talent through what they've done, not what they claim. Evidence-based matching over profile text matching.
-**Current focus:** `v1.8 CLI-First Session Ledger` is active; the current move is restoring formal session ownership and attach/resume flow to the CLI.
+**Current focus:** `v1.8 CLI-First Session Ledger` is active; the current move is closing the staged CLI command surface hardening batch before any Phase 8 visual polish.
 
 ## Current Position
 
 - Active milestone: `v1.8 CLI-First Session Ledger`
 - Current phase: `Phase 14: CLI-First Session Ledger`
 - Current plan: `14-01` completed; `14-02` pending
-- Status: first implementation batch landed for startup picker, local ledger, and read-only attach shell
-- Last activity: 2026-04-18 — completed `14-01` foundation work and opened remaining Phase 14 batches
+- Status: CLI command surface hardening batch is staged for review with `/memory`, global command handling, and Phase 6 raw-mode evaluation aligned
+- Last activity: 2026-04-24 — staged and verified the CLI command surface batch; Phase 6 raw-mode decision is to skip full raw-mode migration and Phase 7
 
 ## Latest Shipped Milestone
 
@@ -75,5 +75,5 @@ See:
 
 ## Session Continuity
 
-Last session: 2026-04-18
-Stopped at: Phase `14-01` landed the first CLI-first session ledger foundation; next route is `14-02` database-backed resume and transcript tightening.
+Last session: 2026-04-24
+Stopped at: CLI command surface hardening batch is staged and verified. Review/commit this batch first; then route to Phase 8 visual polish from `.planning/CLI_UPGRADE_IMPLEMENTATION_PLAN.md`.

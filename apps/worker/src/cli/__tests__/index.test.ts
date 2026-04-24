@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { runWorkflowSession } from "../index.js";
+import { runWorkflowSession, parseLauncherAction } from "../index.js";
 import { SearchWorkflow } from "../workflow.js";
 
 describe("runWorkflowSession", () => {
@@ -97,5 +97,30 @@ describe("B7: SearchWorkflow options preservation", () => {
     });
 
     expect(workflow.getWorkItemId()).toBeUndefined();
+  });
+});
+
+describe("Phase 5: memory overlay returns to launcher", () => {
+  it("memory action in parseLauncherAction does not terminate", () => {
+    const action = parseLauncherAction("memory", 0, undefined);
+    expect(action).toEqual({ type: "memory" });
+  });
+
+  it("memory action does not equal quit", () => {
+    const action = parseLauncherAction("m", 3, "s-default");
+    expect(action).toEqual({ type: "memory" });
+    expect(action!.type).not.toBe("quit");
+  });
+
+  it("routes slash memory aliases to memory action", () => {
+    expect(parseLauncherAction("/memory", 3, "s-default")).toEqual({ type: "memory" });
+    expect(parseLauncherAction("/m", 3, "s-default")).toEqual({ type: "memory" });
+    expect(parseLauncherAction("/mem", 3, "s-default")).toEqual({ type: "memory" });
+  });
+
+  it("after memory, launcher can still accept new/quit", () => {
+    expect(parseLauncherAction("memory", 0, undefined)?.type).toBe("memory");
+    expect(parseLauncherAction("1", 0, undefined)?.type).toBe("new");
+    expect(parseLauncherAction("q", 0, undefined)?.type).toBe("quit");
   });
 });

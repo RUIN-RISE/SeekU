@@ -3,6 +3,7 @@ import {
   type SortMode,
   type ShortlistStatusMessage,
   type ResultListCommand,
+  type GlobalCommandResult,
   type ComparisonEntry,
   type ExportCandidateRecord,
   type SearchConditions
@@ -24,13 +25,15 @@ import type { UserMemoryStore } from "./user-memory-store.js";
 import { isCommandAction, type CommandAction } from "./command-router.js";
 
 interface SearchLoopOutcome {
-  type: "refine" | "restart" | "quit" | "restore";
+  type: "refine" | "restart" | "quit" | "restore" | "new" | "tasks" | "globalCommand";
+  command?: string;
+  args?: string;
   prompt?: string;
   conditions?: SearchConditions;
 }
 
 interface DetailOutcome {
-  type: "back" | "refine" | "quit";
+  type: "back" | "refine" | "quit" | "new" | "tasks";
   prompt?: string;
 }
 
@@ -93,6 +96,7 @@ export interface ShortlistControllerDependencies {
   getSessionState: () => AgentSessionState;
   applySessionState: (next: AgentSessionState) => void;
   memoryStore?: UserMemoryStore;
+  runMemoryOverlay?: () => Promise<void>;
 }
 
 export class ShortlistController {
@@ -200,6 +204,40 @@ export class ShortlistController {
       this.deps.tui.displayHelp();
       this.deps.tui.displayCommandPalette("shortlist");
       return continueWith();
+    }
+
+    if (command.type === "memory") {
+      if (this.deps.runMemoryOverlay) {
+        await this.deps.runMemoryOverlay();
+        this.deps.tui.resetShortlistViewport();
+      } else {
+        console.log(chalk.yellow("\n/memory 暂时不可用。"));
+      }
+      return continueWith({ reuseViewport: true });
+    }
+
+    if (command.type === "globalCommand") {
+      const globalOutcome = await this.handleGlobalCommand({
+        type: "stage",
+        command: command.command || "",
+        args: command.args || ""
+      });
+      if (!globalOutcome) {
+        return continueWith({
+          statusMessage: {
+            tone: "warning",
+            text: `/${command.command || "command"} 当前视图暂不支持。`
+          },
+          reuseViewport: true
+        });
+      }
+      if (globalOutcome.type === "globalCommand") {
+        return { type: "done", result: globalOutcome };
+      }
+      if (globalOutcome.type === "back") {
+        return continueWith({ reuseViewport: true });
+      }
+      return { type: "done", result: { type: globalOutcome.type, prompt: globalOutcome.prompt } };
     }
 
     if (command.type === "back") {
@@ -479,7 +517,13 @@ export class ShortlistController {
       if (compareOutcome === "quit") {
         return { type: "done", result: { type: "quit" } };
       }
+      if (compareOutcome === "new" || compareOutcome === "tasks") {
+        return { type: "done", result: { type: compareOutcome } };
+      }
       if (typeof compareOutcome !== "string" && compareOutcome.type === "refine") {
+        return { type: "done", result: compareOutcome };
+      }
+      if (typeof compareOutcome !== "string" && compareOutcome.type === "globalCommand") {
         return { type: "done", result: compareOutcome };
       }
 
@@ -506,6 +550,10 @@ export class ShortlistController {
 
       if (detailOutcome.type === "quit") {
         return { type: "done", result: { type: "quit" } };
+      }
+
+      if (detailOutcome.type === "new" || detailOutcome.type === "tasks") {
+        return { type: "done", result: { type: detailOutcome.type } };
       }
 
       return { type: "done", result: { type: "refine", prompt: detailOutcome.prompt } };
@@ -556,30 +604,32 @@ export class ShortlistController {
       nextActionTitle: "返回短名单",
       blocked: false
     };
-    this.deps.tui.renderShellHeader({ stage: "detail", taskTitle: selected.name, contextBar: detailContextBar });
-    console.log(
-      this.deps.renderer.renderProfile(
-        selected._hydrated.person,
-        selected._hydrated.evidence,
-        profile,
-        selected.matchReason,
-        {
-          conditionAudit: selected.conditionAudit,
-          queryReasons: selected.queryReasons,
-          matchStrength: selected.matchStrength,
-          recoveryMode: sessionState.recoveryState.phase === "low_confidence_shortlist" ? "low-confidence" : undefined,
-          recoverySummary:
-            sessionState.recoveryState.phase === "low_confidence_shortlist"
-              ? sessionState.openUncertainties[0]
-              : undefined,
-          sources: selected.sources,
-          bonjourUrl: selected.bonjourUrl,
-          primaryLinks: selected.primaryLinks,
-          lastSyncedAt: selected.lastSyncedAt,
-          latestEvidenceAt: selected.latestEvidenceAt
-        }
-      )
+    const renderedProfile = this.deps.renderer.renderProfile(
+      selected._hydrated.person,
+      selected._hydrated.evidence,
+      profile,
+      selected.matchReason,
+      {
+        conditionAudit: selected.conditionAudit,
+        queryReasons: selected.queryReasons,
+        matchStrength: selected.matchStrength,
+        recoveryMode: sessionState.recoveryState.phase === "low_confidence_shortlist" ? "low-confidence" : undefined,
+        recoverySummary:
+          sessionState.recoveryState.phase === "low_confidence_shortlist"
+            ? sessionState.openUncertainties[0]
+            : undefined,
+        sources: selected.sources,
+        bonjourUrl: selected.bonjourUrl,
+        primaryLinks: selected.primaryLinks,
+        lastSyncedAt: selected.lastSyncedAt,
+        latestEvidenceAt: selected.latestEvidenceAt
+      }
     );
+    const rerenderDetail = () => {
+      this.deps.tui.renderShellHeader({ stage: "detail", taskTitle: selected.name, contextBar: detailContextBar });
+      console.log(renderedProfile);
+    };
+    rerenderDetail();
 
     while (true) {
       const action = await this.deps.tui.promptDetailAction(selected.name, detailContextBar);
@@ -595,8 +645,20 @@ export class ShortlistController {
             continue;
           }
           if (action.command === "memory") {
-            console.log(chalk.yellow("\n/memory 当前还未接入详情视图，会在下一阶段改成 overlay。"));
+            if (this.deps.runMemoryOverlay) {
+              await this.deps.runMemoryOverlay();
+              rerenderDetail();
+            } else {
+              console.log(chalk.yellow("\n/memory 暂时不可用。"));
+            }
             continue;
+          }
+          const globalOutcome = await this.handleGlobalCommand(action);
+          if (globalOutcome) {
+            if (globalOutcome.type === "globalCommand") {
+              continue;
+            }
+            return globalOutcome;
           }
           continue;
         }
@@ -610,6 +672,14 @@ export class ShortlistController {
         if (action.command === "back" || action.command === "open" || action.command === "why" || action.command === "refine") {
           resolvedAction = action.command;
         } else {
+          const globalOutcome = await this.handleGlobalCommand(action);
+          if (globalOutcome) {
+            if (globalOutcome.type === "globalCommand") {
+              continue;
+            }
+            return globalOutcome;
+          }
+          console.log(chalk.yellow(`\n/${action.command} 当前视图暂不支持。`));
           continue;
         }
       }
@@ -659,6 +729,22 @@ export class ShortlistController {
         return { type: "refine", prompt };
       }
     }
+  }
+
+  async handleGlobalCommand(action: CommandAction): Promise<DetailOutcome | GlobalCommandResult | null> {
+    if (action.type === "unknown") {
+      return null;
+    }
+    if (action.command === "new") {
+      return { type: "new" };
+    }
+    if (action.command === "tasks") {
+      return { type: "tasks" };
+    }
+    if (action.command === "task" || action.command === "workboard" || action.command === "transcript") {
+      return { type: "globalCommand", command: action.command, args: action.args };
+    }
+    return null;
   }
 
   private getSortModeLabel(sortMode: SortMode): string {

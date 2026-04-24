@@ -86,7 +86,7 @@ export function parseLauncherAction(input: string, sessionCount: number, default
   // Natural language input (doesn't start with / or number)
   if (!normalized.startsWith("/") && !/^\d+$/.test(normalized) && normalized.length > 0) {
     // Check for known keywords first
-    if (normalized === "1" || normalized === "q" || normalized === "quit" || normalized === "exit" || normalized === "memory" || normalized === "m" || normalized === "mem") {
+    if (normalized === "1" || normalized === "q" || normalized === "quit" || normalized === "exit" || normalized === "memory" || normalized === "m" || normalized === "mem" || normalized === "/memory" || normalized === "/m" || normalized === "/mem") {
       // Fall through to keyword handling
     } else if (normalized.startsWith("attach ")) {
       // Fall through to attach handling
@@ -104,7 +104,7 @@ export function parseLauncherAction(input: string, sessionCount: number, default
     return { type: "quit" };
   }
 
-  if (normalized === "memory" || normalized === "m" || normalized === "mem") {
+  if (normalized === "memory" || normalized === "m" || normalized === "mem" || normalized === "/memory" || normalized === "/m" || normalized === "/mem") {
     return { type: "memory" };
   }
 
@@ -451,50 +451,56 @@ export async function runInteractiveSearch(
     const workItemStore = createWorkItemStore(connection.db);
 
     let launcherAction: LauncherAction;
-    if (options.attachSessionId?.trim()) {
-      launcherAction = {
-        type: "attach",
-        sessionId: options.attachSessionId.trim()
-      };
-    } else if (initialPrompt?.trim()) {
-      launcherAction = { type: "new", initialPrompt };
-    } else {
-      launcherAction = await promptLauncher(ui, ledger, workItemStore, memoryStore);
-    }
+    while (true) {
+      if (options.attachSessionId?.trim()) {
+        launcherAction = {
+          type: "attach",
+          sessionId: options.attachSessionId.trim()
+        };
+      } else if (initialPrompt?.trim()) {
+        launcherAction = { type: "new", initialPrompt };
+        initialPrompt = undefined; // Clear so loop re-prompts
+      } else {
+        launcherAction = await promptLauncher(ui, ledger, workItemStore, memoryStore);
+      }
 
-    if (launcherAction.type === "attach") {
-      const record = await ledger.load(launcherAction.sessionId);
-      if (!record) {
-        ui.displaySessionNotFound(launcherAction.sessionId);
-        process.exitCode = 1;
+      if (launcherAction.type === "attach") {
+        const record = await ledger.load(launcherAction.sessionId);
+        if (!record) {
+          ui.displaySessionNotFound(launcherAction.sessionId);
+          process.exitCode = 1;
+          return;
+        }
+
+        // Direct resume — build workflow and run, no preview sub-loop
+        const workflow = buildWorkflowFromRecord({
+          db: connection.db,
+          llmProvider,
+          record,
+          memoryStore,
+          workItemStore
+        });
+        await runWorkflowSession({ workflow, ledger });
         return;
       }
 
-      // Direct resume — build workflow and run, no preview sub-loop
-      const workflow = buildWorkflowFromRecord({
-        db: connection.db,
-        llmProvider,
-        record,
-        memoryStore,
-        workItemStore
-      });
-      await runWorkflowSession({ workflow, ledger });
-      return;
-    }
+      if (launcherAction.type === "memory") {
+        const enquirer = await import("enquirer");
+        const { Input } = enquirer.default as unknown as { Input: any };
+        await runMemoryManagementSession(memoryStore, async (prompt) => {
+          const input = new Input({ message: prompt });
+          const result = await input.run();
+          return result?.trim() || null;
+        });
+        continue; // Return to launcher
+      }
 
-    if (launcherAction.type === "memory") {
-      const enquirer = await import("enquirer");
-      const { Input } = enquirer.default as unknown as { Input: any };
-      await runMemoryManagementSession(memoryStore, async (prompt) => {
-        const input = new Input({ message: prompt });
-        const result = await input.run();
-        return result?.trim() || null;
-      });
-      return;
-    }
+      if (launcherAction.type === "quit") {
+        return;
+      }
 
-    if (launcherAction.type === "quit") {
-      return;
+      // new task or show_task — exit loop
+      break;
     }
 
     console.log(chalk.bold.blue("\n✨ Welcome to Seeku Search Assistant"));
@@ -509,6 +515,9 @@ export async function runInteractiveSearch(
       ledger,
       initialPrompt: ("initialPrompt" in launcherAction ? launcherAction.initialPrompt : undefined) ?? initialPrompt
     });
+    if (workflow.getLauncherRequest()) {
+      return runInteractiveSearch(undefined, { ...options, attachSessionId: undefined });
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error occurred";
     console.error(chalk.red("\n❌ Unable to start interactive search."));

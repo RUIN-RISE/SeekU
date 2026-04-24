@@ -10,7 +10,7 @@ import {
 import chalk from "chalk";
 import { isCommandAction } from "./command-router.js";
 import type { AgentSessionWhyCode } from "./session-runtime-types.js";
-import type { ComparisonResult, SearchConditions } from "./types.js";
+import type { ComparisonResult, GlobalCommandResult, SearchConditions } from "./types.js";
 import type { ProfileManager } from "./profile-manager.js";
 import type { SearchAgentTools } from "./agent-tools.js";
 import type { TerminalRenderer } from "./renderer.js";
@@ -21,6 +21,9 @@ export type CompareLoopOutcome =
   | "back"
   | "clear"
   | "quit"
+  | "new"
+  | "tasks"
+  | GlobalCommandResult
   | { type: "refine"; prompt: string };
 
 export interface ComparisonControllerDependencies {
@@ -29,6 +32,7 @@ export interface ComparisonControllerDependencies {
   renderer: TerminalRenderer;
   tui: TerminalUI;
   chat: ChatInterface;
+  runMemoryOverlay?: () => Promise<void>;
   getSessionState: () => AgentSessionState;
   applySessionState: (next: AgentSessionState) => void;
   setSessionStatus: (status: string, summary?: string | null, why?: { primaryWhyCode?: AgentSessionWhyCode; whySummary?: string | null }) => void;
@@ -160,8 +164,26 @@ export class ComparisonController {
             continue;
           }
           if (action.command === "memory") {
-            console.log(chalk.yellow("\n/memory 当前还未接入 compare 视图，会在下一阶段改成 overlay。"));
+            if (this.deps.runMemoryOverlay) {
+              await this.deps.runMemoryOverlay();
+              console.log(this.deps.renderer.renderComparison(comparisonResult, conditions));
+              this.deps.tui.renderShellHeader({
+                stage: "compare",
+                contextBar: {
+                  stageLabel: "对比决策",
+                  summary: `正在比较 ${targets.length} 位候选人`,
+                  nextActionTitle: comparisonResult.outcome.recommendationMode === "no-recommendation" ? "调整条件" : "确认推荐",
+                  blocked: false
+                }
+              });
+            } else {
+              console.log(chalk.yellow("\n/memory 暂时不可用。"));
+            }
             continue;
+          }
+          const globalOutcome = this.resolveGlobalCommand(action.command, action.args);
+          if (globalOutcome) {
+            return globalOutcome;
           }
           continue;
         }
@@ -175,6 +197,11 @@ export class ComparisonController {
         if (action.command === "back" || action.command === "clear" || action.command === "refine") {
           resolvedAction = action.command;
         } else {
+          const globalOutcome = this.resolveGlobalCommand(action.command, action.args);
+          if (globalOutcome) {
+            return globalOutcome;
+          }
+          console.log(chalk.yellow(`\n/${action.command} 当前视图暂不支持。`));
           continue;
         }
       }
@@ -207,5 +234,15 @@ export class ComparisonController {
         };
       }
     }
+  }
+
+  private resolveGlobalCommand(command: string, args = ""): CompareLoopOutcome | null {
+    if (command === "new" || command === "tasks") {
+      return command;
+    }
+    if (command === "task" || command === "workboard" || command === "transcript") {
+      return { type: "globalCommand", command, args };
+    }
+    return null;
   }
 }

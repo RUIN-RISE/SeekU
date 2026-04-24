@@ -130,6 +130,8 @@ function createWorkflowHarness() {
     displayExportSuccess: vi.fn(),
     displayUndo: vi.fn(),
     displayPoolCleared: vi.fn(),
+    displayRestoredSession: vi.fn(),
+    displayTaskWorkboard: vi.fn(),
     renderShellHeader: vi.fn(),
     promptCompareAction: vi.fn(),
     promptShortlistAction: vi.fn(),
@@ -1013,6 +1015,38 @@ describe("SearchWorkflow shortlist command handling", () => {
     logSpy.mockRestore();
   });
 
+  it("returns a global task command from compare view", async () => {
+    const { workflow, handleShortlistCommand, mockTui } = createWorkflowHarness();
+    const first = createCandidate();
+    const second = createCandidate({ personId: "person-2", name: "Lin" });
+
+    (workflow as any).comparePool = [first, second];
+    (workflow as any).tools.prepareComparison = vi.fn(async () => ({
+      targets: [first, second],
+      entries: [
+        createComparisonEntry({ shortlistIndex: 1, candidate: first, profile: first.profile }),
+        createComparisonEntry({ shortlistIndex: 2, candidate: second, profile: second.profile })
+      ]
+    }));
+    mockTui.promptCompareAction.mockResolvedValue({
+      type: "immediate",
+      command: "task",
+      args: ""
+    });
+
+    const result = await handleShortlistCommand(
+      { type: "compare" },
+      [first, second],
+      BASE_CONDITIONS,
+      { sortMode: "overall", visibleCount: 2, selectedIndex: 0 }
+    );
+
+    expect(result).toEqual({
+      type: "done",
+      result: { type: "globalCommand", command: "task", args: "" }
+    });
+  });
+
   it("uses a candidate-scoped boundary prompt in detail refine mode", async () => {
     const { workflow, showCandidateDetail, mockChat, mockTui, mockRenderer } = createWorkflowHarness();
     const candidate = createCandidate({ name: "Ada" });
@@ -1064,6 +1098,24 @@ describe("SearchWorkflow shortlist command handling", () => {
 
     expect(mockRenderer.renderWhyMatched).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ type: "back" });
+    logSpy.mockRestore();
+  });
+
+  it("returns tasks command from detail view", async () => {
+    const { workflow, showCandidateDetail, mockTui } = createWorkflowHarness();
+    const candidate = createCandidate({ name: "Ada" });
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    (workflow as any).profileManager.loadProfileForCandidate = vi.fn(async () => candidate.profile);
+    mockTui.promptDetailAction.mockResolvedValueOnce({
+      type: "immediate",
+      command: "tasks",
+      args: ""
+    });
+
+    const result = await showCandidateDetail(candidate, BASE_CONDITIONS);
+
+    expect(result).toEqual({ type: "tasks" });
     logSpy.mockRestore();
   });
 

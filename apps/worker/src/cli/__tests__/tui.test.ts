@@ -765,4 +765,40 @@ describe("Phase 4: / command interception in prompts", () => {
       exportFormat: "md"
     });
   });
+
+  it("parses /memory as memory command in shortlist", () => {
+    const ui = new TerminalUI();
+    const result = (ui as any).parseShortlistCommand("/memory");
+    expect(result).toEqual({ type: "memory" });
+  });
+
+  it("parses /mem as memory command in shortlist", () => {
+    const ui = new TerminalUI();
+    const result = (ui as any).parseShortlistCommand("/mem");
+    expect(result).toEqual({ type: "memory" });
+  });
+
+  it("parses /m as memory command in shortlist", () => {
+    const ui = new TerminalUI();
+    const result = (ui as any).parseShortlistCommand("/m");
+    expect(result).toEqual({ type: "memory" });
+  });
+
+  it("keeps bare m as show more in shortlist", () => {
+    const ui = new TerminalUI();
+    const result = (ui as any).parseShortlistCommand("m");
+    expect(result).toEqual({ type: "showMore" });
+  });
+
+  it("parses /task as a global command in shortlist", () => {
+    const ui = new TerminalUI();
+    const result = (ui as any).parseShortlistCommand("/task");
+    expect(result).toEqual({ type: "globalCommand", command: "task" });
+  });
+
+  it("parses /tasks as a global command in shortlist", () => {
+    const ui = new TerminalUI();
+    const result = (ui as any).parseShortlistCommand("/tasks");
+    expect(result).toEqual({ type: "globalCommand", command: "tasks" });
+  });
 });

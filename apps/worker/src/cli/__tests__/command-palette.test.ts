@@ -49,4 +49,24 @@ describe("renderCommandPalette", () => {
 
     logSpy.mockRestore();
   });
+
+  it("renders memory in non-home stages", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    renderCommandPalette("shortlist");
+
+    const output = logSpy.mock.calls.map(c => c[0]).join("\n");
+    expect(output).toContain("memory");
+
+    logSpy.mockRestore();
+  });
+
+  it("renders memory in compare stage", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    renderCommandPalette("compare");
+
+    const output = logSpy.mock.calls.map(c => c[0]).join("\n");
+    expect(output).toContain("memory");
+
+    logSpy.mockRestore();
+  });
 });

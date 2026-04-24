@@ -140,6 +140,14 @@ describe("command-router", () => {
       const action = routeCommand(parsed, "clarify");
       expect(action).toEqual({ type: "stage", command: "restart", args: "" });
     });
+
+    it("routes /memory as immediate in any stage", () => {
+      for (const stage of ["home", "clarify", "shortlist", "detail", "compare"] as const) {
+        const parsed = { kind: "command" as const, name: "memory", args: "" };
+        const action = routeCommand(parsed, stage);
+        expect(action).toEqual({ type: "immediate", command: "memory", args: "" });
+      }
+    });
   });
 
   describe("isImmediateCommand", () => {
@@ -149,6 +157,10 @@ describe("command-router", () => {
 
     it("returns true for /quit", () => {
       expect(isImmediateCommand(parseCommand("/quit"))).toBe(true);
+    });
+
+    it("returns true for /memory", () => {
+      expect(isImmediateCommand(parseCommand("/memory"))).toBe(true);
     });
 
     it("returns false for /refine", () => {

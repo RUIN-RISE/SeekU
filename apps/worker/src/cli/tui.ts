@@ -1194,7 +1194,9 @@ export class TerminalUI {
   }
 
   private parseShortlistCommand(raw: string): ResultListCommand {
-    const trimmed = raw.trim().replace(/^[:/]\s*/, "");
+    const rawTrimmed = raw.trim();
+    const isSlashCommand = rawTrimmed.startsWith("/");
+    const trimmed = rawTrimmed.replace(/^[:/]\s*/, "");
     const normalized = trimmed.toLowerCase();
 
     if (!trimmed || normalized === "v" || normalized === "view") {
@@ -1209,12 +1211,23 @@ export class TerminalUI {
       return { type: "refine" };
     }
 
-    if (normalized === "m" || normalized === "more") {
+    if ((normalized === "m" && !isSlashCommand) || normalized === "more") {
       return { type: "showMore" };
     }
 
     if (normalized === "h" || normalized === "help" || normalized === "?") {
       return { type: "help" };
+    }
+
+    if (normalized === "memory" || normalized === "mem" || (normalized === "m" && isSlashCommand)) {
+      return { type: "memory" };
+    }
+
+    if (
+      isSlashCommand
+      && ["task", "tasks", "workboard", "transcript", "new"].includes(normalized)
+    ) {
+      return { type: "globalCommand", command: normalized };
     }
 
     if (normalized === "pool" || normalized === "p") {
