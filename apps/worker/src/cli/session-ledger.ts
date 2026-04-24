@@ -533,15 +533,23 @@ export class CliSessionLedger {
       return { ...enrichedRecord, cacheOnly: true };
     }
 
-    await upsertAgentSession(this.options.db, {
-      sessionId: enrichedRecord.sessionId,
-      origin: "cli",
-      posture: enrichedRecord.posture,
-      workItemId: enrichedRecord.workItemId ?? null,
-      transcript: enrichedRecord.transcript as unknown as Record<string, unknown>[],
-      latestSnapshot: enrichedRecord.latestSnapshot as unknown as Record<string, unknown> | null,
-      resumeMeta: enrichedRecord.resumeMeta as unknown as Record<string, unknown> | null | undefined
-    } as any);
+    try {
+      await upsertAgentSession(this.options.db, {
+        sessionId: enrichedRecord.sessionId,
+        origin: "cli",
+        posture: enrichedRecord.posture,
+        workItemId: enrichedRecord.workItemId ?? null,
+        transcript: enrichedRecord.transcript as unknown as Record<string, unknown>[],
+        latestSnapshot: enrichedRecord.latestSnapshot as unknown as Record<string, unknown> | null,
+        resumeMeta: enrichedRecord.resumeMeta as unknown as Record<string, unknown> | null | undefined
+      } as any);
+    } catch (error) {
+      if (!isRecoverableDbReadError(error)) {
+        throw error;
+      }
+      await this.saveToCache(enrichedRecord);
+      return { ...enrichedRecord, cacheOnly: true };
+    }
 
     try {
       await this.saveToCache(enrichedRecord);

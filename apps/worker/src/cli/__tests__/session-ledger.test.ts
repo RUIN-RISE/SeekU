@@ -276,11 +276,16 @@ describe("CliSessionLedger DB-first save", () => {
     vi.restoreAllMocks();
   });
 
-  it("throws when DB write fails", async () => {
+  it("falls back to cache when DB write is temporarily unavailable", async () => {
     const db = createMockDb({ upsertError: new Error("connection refused") });
     const ledger = new CliSessionLedger({ db, cacheDir });
 
-    await expect(ledger.save(BASE_RECORD)).rejects.toThrow("connection refused");
+    const saved = await ledger.save(BASE_RECORD);
+    const loaded = await ledger.load(BASE_RECORD.sessionId);
+
+    expect(saved.cacheOnly).toBe(true);
+    expect(loaded?.sessionId).toBe(BASE_RECORD.sessionId);
+    expect(loaded?.cacheOnly).toBe(true);
   });
 
   it("returns enriched record with resumeMeta after DB save succeeds", async () => {
@@ -501,11 +506,30 @@ describe("CliSessionLedger DB-first load", () => {
     expect(loaded?.cacheOnly).toBe(true);
   });
 
+  it("falls back to cache when DB save table is missing", async () => {
+    const db = createMockDb({ upsertError: new Error('relation "agent_sessions" does not exist') });
+    const ledger = new CliSessionLedger({ db, cacheDir });
+
+    const saved = await ledger.save(BASE_RECORD);
+    const loaded = await ledger.load(BASE_RECORD.sessionId);
+
+    expect(saved.cacheOnly).toBe(true);
+    expect(loaded?.sessionId).toBe(BASE_RECORD.sessionId);
+    expect(loaded?.cacheOnly).toBe(true);
+  });
+
   it("rethrows non-recoverable DB read errors", async () => {
     const db = createMockDb({ getError: new Error("invalid input syntax for type json") });
     const ledger = new CliSessionLedger({ db, cacheDir });
 
     await expect(ledger.load(BASE_RECORD.sessionId)).rejects.toThrow("invalid input syntax for type json");
+  });
+
+  it("rethrows non-recoverable DB save errors", async () => {
+    const db = createMockDb({ upsertError: new Error("invalid input syntax for type json") });
+    const ledger = new CliSessionLedger({ db, cacheDir });
+
+    await expect(ledger.save(BASE_RECORD)).rejects.toThrow("invalid input syntax for type json");
   });
 
   it("returns null for non-CLI DB session", async () => {
