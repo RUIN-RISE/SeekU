@@ -69,6 +69,8 @@ describe("TerminalUI banner", () => {
     expect(output).toContain("参考 shortlist");
     expect(output).toContain("有部分匹配");
     expect(output).toContain("原因");
+    expect(output).toContain("31%");
+    expect(output).not.toContain("31.0");
   });
 });
 

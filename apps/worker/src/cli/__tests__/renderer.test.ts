@@ -523,6 +523,8 @@ describe("TerminalRenderer", () => {
     expect(output).toContain("AI 建议");
     expect(output).toContain("建议动作");
     expect(output).toContain("Seeku 决策对比工作台 (Decision View)");
+    expect(output).toContain("综合匹配度 82%");
+    expect(output).not.toContain("综合匹配度 82.0");
     expect(output).not.toContain("Top Evidence");
     expect(output).not.toContain("Recommendation");
     expect(output).not.toContain("Next Click");

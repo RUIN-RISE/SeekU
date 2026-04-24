@@ -11,6 +11,7 @@ import {
 } from "./types.js";
 import chalk from "chalk";
 import boxen from "boxen";
+import { formatPercentScore } from "./score-format.js";
 
 type CompareOutcomeLabel = "明确推荐" | "条件式推荐" | "暂不推荐";
 type CompareConfidenceLabel = "高信心" | "中信心" | "低信心";
@@ -268,7 +269,7 @@ ${chalk.dim("下一步：back 返回 | o 打开 Bonjour | why 评分依据 | ref
 
         return [
           `${chalk.bold.blueBright(`${titlePrefix}${candidate.name}`)} ${chalk.dim("|")} ${candidate.headline || "暂无标题"}`,
-          `${decisionTagStyled} ${chalk.dim("·")} 综合匹配度 ${chalk.green(candidate.matchScore.toFixed(1))} ${chalk.dim("·")} ${sourceBadge} ${freshness}`,
+          `${decisionTagStyled} ${chalk.dim("·")} 综合匹配度 ${chalk.green(formatPercentScore(candidate.matchScore))} ${chalk.dim("·")} ${sourceBadge} ${freshness}`,
           `${chalk.bold("结构化判断")}：`,
           `  目标贴合：${structuredView.goalFit}`,
           `  证据强度：${structuredView.evidenceStrength}`,

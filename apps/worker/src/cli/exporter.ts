@@ -7,6 +7,7 @@ import {
   ExportFormat,
   ExportTarget
 } from "./types.js";
+import { formatPercentScore } from "./score-format.js";
 
 interface ExportRequest {
   format: ExportFormat;
@@ -91,7 +92,7 @@ export class ShortlistExporter {
         `- Headline: ${record.headline || "未知"}`,
         `- Location: ${record.location || "未知"}`,
         `- Company: ${record.company || "未知"}`,
-        `- Score: ${record.matchScore.toFixed(1)}`,
+        `- Score: ${formatPercentScore(record.matchScore)}`,
         `- Source: ${record.source}`,
         `- Freshness: ${record.freshness}`,
         `- Bonjour: ${record.bonjourUrl || "无"}`,
@@ -163,7 +164,7 @@ export class ShortlistExporter {
         record.headline || "",
         record.location || "",
         record.company || "",
-        record.matchScore.toFixed(1),
+        formatPercentScore(record.matchScore),
         record.source,
         record.freshness,
         record.bonjourUrl || "",

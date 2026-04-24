@@ -9,6 +9,7 @@ import type { ResumePanelItem } from "./resume-resolver.js";
 import type { TaskResumeItem } from "./resume-panel-types.js";
 import type { WorkboardViewModel } from "./workboard-view-model.js";
 import { MASCOT } from "./guide.js";
+import { formatPercentScore } from "./score-format.js";
 import { shellRenderer } from "./shell-renderer.js";
 import type { ContextBarData } from "./workboard-view-model.js";
 import { renderCommandPalette } from "./command-palette.js";
@@ -568,7 +569,7 @@ export class TerminalUI {
         : "";
 
       lines.push(
-        `${linePrefix} ${chalk.bold(`${index + 1}.`)} ${nameLabel}  ${chalk.green(candidate.matchScore.toFixed(1))}  ${matchStrengthBadge} ${sourceBadge} ${freshness}${poolBadge ? ` ${poolBadge}` : ""}`
+        `${linePrefix} ${chalk.bold(`${index + 1}.`)} ${nameLabel}  ${chalk.green(formatPercentScore(candidate.matchScore))}  ${matchStrengthBadge} ${sourceBadge} ${freshness}${poolBadge ? ` ${poolBadge}` : ""}`
       );
       lines.push(`${detailPrefix} ${chalk.dim(candidate.location || "地点未知")} · ${candidate.headline || "暂无标题"}`);
       if (linkHint) {
@@ -845,7 +846,7 @@ export class TerminalUI {
     console.log(chalk.bold(`\n对比池 (${candidates.length} 人)：`));
     console.log(chalk.dim("-".repeat(40)));
     candidates.forEach((candidate, index) => {
-      console.log(`${index + 1}. ${chalk.blueBright(candidate.name)} | ${chalk.green(candidate.matchScore.toFixed(1))}分 | ${candidate.location || "地点未知"}`);
+      console.log(`${index + 1}. ${chalk.blueBright(candidate.name)} | ${chalk.green(formatPercentScore(candidate.matchScore))} | ${candidate.location || "地点未知"}`);
       console.log(chalk.dim(`   ${candidate.matchReason || "与条件匹配"}`));
     });
     console.log(chalk.dim("-".repeat(40)));

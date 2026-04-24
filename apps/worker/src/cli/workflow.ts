@@ -74,6 +74,7 @@ import { ConditionRevisionService } from "./condition-revision-service.js";
 import { RecoveryHandler, type SearchRecoveryHandlingResult } from "./recovery-handler.js";
 import { ShortlistController } from "./shortlist-controller.js";
 import { suggestClosestCommand } from "./guide.js";
+import { formatPercentScore } from "./score-format.js";
 import { contextHasTermValue, buildSearchStateContextValue, findMatchedTermsValue } from "./search-context-helpers.js";
 import {
   type AgentInterventionResult,
@@ -532,7 +533,7 @@ export function buildQueryMatchExplanation(
   pushReason(buildRelevantEvidenceReasonValue(evidence, conditions));
 
   if (reasons.length === 0 && typeof options.score === "number") {
-    pushReason(`综合相关度 ${options.score.toFixed(1)} 分`);
+    pushReason(`综合相关度 ${formatPercentScore(options.score)}`);
   }
 
   if (reasons.length === 0) {
