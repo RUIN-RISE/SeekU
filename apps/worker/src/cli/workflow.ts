@@ -73,6 +73,7 @@ import { SearchExecutor, type SearchExecutionResult, type SearchExecutionDiagnos
 import { ConditionRevisionService } from "./condition-revision-service.js";
 import { RecoveryHandler, type SearchRecoveryHandlingResult } from "./recovery-handler.js";
 import { ShortlistController } from "./shortlist-controller.js";
+import { suggestClosestCommand } from "./guide.js";
 import { contextHasTermValue, buildSearchStateContextValue, findMatchedTermsValue } from "./search-context-helpers.js";
 import {
   type AgentInterventionResult,
@@ -1153,7 +1154,9 @@ export class SearchWorkflow {
 
   private async handleGlobalCommand(action: CommandAction | GlobalCommandResult): Promise<"continue" | "quit"> {
     if (action.type === "unknown") {
-      console.log(chalk.yellow(`\n未识别的命令：/${action.name}`));
+      const suggestion = suggestClosestCommand(action.name, this.stageForCurrentState());
+      const suffix = suggestion ? ` — 你是想说 /${suggestion} 吗？` : "";
+      console.log(chalk.yellow(`\n未识别的命令：/${action.name}${suffix}`));
       return "continue";
     }
     const command = action.command;

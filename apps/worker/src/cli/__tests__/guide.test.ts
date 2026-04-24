@@ -1,18 +1,20 @@
 import { describe, expect, it } from "vitest";
 
-import { getGuideHint, type GuideTrigger } from "../guide.js";
+import { getGuideHint, suggestClosestCommand, MASCOT, type GuideTrigger } from "../guide.js";
 
 describe("getGuideHint", () => {
-  it("returns hint for home_empty", () => {
+  it("returns hint for home_empty with mascot prefix", () => {
     const hint = getGuideHint("home_empty");
     expect(hint).not.toBeNull();
+    expect(hint!.text).toContain(MASCOT);
     expect(hint!.text).toContain("输入需求开始搜索");
     expect(hint!.trigger).toBe("home_empty");
   });
 
-  it("returns hint for first_shortlist", () => {
+  it("returns hint for first_shortlist with mascot prefix", () => {
     const hint = getGuideHint("first_shortlist");
     expect(hint).not.toBeNull();
+    expect(hint!.text).toContain(MASCOT);
     expect(hint!.text).toContain("↑↓");
     expect(hint!.text).toContain("Enter");
     expect(hint!.text).toContain("space");
@@ -49,5 +51,37 @@ describe("getGuideHint", () => {
       const hint = getGuideHint(trigger);
       expect(hint!.trigger).toBe(trigger);
     }
+  });
+});
+
+describe("suggestClosestCommand", () => {
+  it("suggests refine for refnie", () => {
+    expect(suggestClosestCommand("refnie")).toBe("refine");
+  });
+
+  it("suggests help for hepl", () => {
+    expect(suggestClosestCommand("hepl")).toBe("help");
+  });
+
+  it("suggests compare for compaer", () => {
+    expect(suggestClosestCommand("compaer")).toBe("compare");
+  });
+
+  it("suggests sort for srot", () => {
+    expect(suggestClosestCommand("srot")).toBe("sort");
+  });
+
+  it("returns null for completely unknown input", () => {
+    expect(suggestClosestCommand("xyzzy12345")).toBeNull();
+  });
+
+  it("returns exact match for valid command via alias", () => {
+    expect(suggestClosestCommand("r")).toBe("refine");
+  });
+
+  it("limits suggestions to commands available in the current stage", () => {
+    expect(suggestClosestCommand("sort", "compare")).not.toBe("sort");
+    expect(suggestClosestCommand("compaer", "detail")).not.toBe("compare");
+    expect(suggestClosestCommand("compaer", "shortlist")).toBe("compare");
   });
 });

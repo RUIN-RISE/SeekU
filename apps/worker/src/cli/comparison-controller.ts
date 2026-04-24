@@ -9,7 +9,7 @@ import {
 } from "./agent-state.js";
 import chalk from "chalk";
 import { isCommandAction } from "./command-router.js";
-import { getGuideHint } from "./guide.js";
+import { getGuideHint, suggestClosestCommand } from "./guide.js";
 import type { AgentSessionWhyCode } from "./session-runtime-types.js";
 import type { ComparisonResult, GlobalCommandResult, SearchConditions } from "./types.js";
 import type { ProfileManager } from "./profile-manager.js";
@@ -142,7 +142,7 @@ export class ComparisonController {
       if (recommendedCandidate) {
         const decisionHint = getGuideHint("decision_complete", { candidateName: recommendedCandidate.name });
         if (decisionHint) {
-          console.log(chalk.dim(`💡 ${decisionHint.text}`));
+          console.log(chalk.dim(decisionHint.text));
         }
       }
     }
@@ -202,7 +202,9 @@ export class ComparisonController {
         }
 
         if (action.type === "unknown") {
-          console.log(chalk.yellow(`\n未识别的命令：/${action.name}`));
+          const suggestion = suggestClosestCommand(action.name, "compare");
+          const suffix = suggestion ? ` — 你是想说 /${suggestion} 吗？` : "";
+          console.log(chalk.yellow(`\n未识别的命令：/${action.name}${suffix}`));
           this.deps.tui.displayCommandPalette("compare");
           continue;
         }

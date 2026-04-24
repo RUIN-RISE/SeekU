@@ -11,7 +11,7 @@ describe("TerminalUI banner", () => {
     vi.restoreAllMocks();
   });
 
-  it("uses truthful data-source copy", () => {
+  it("displays mascot and tagline", () => {
     const ui = new TerminalUI();
     const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
@@ -20,9 +20,9 @@ describe("TerminalUI banner", () => {
 
     const banner = logSpy.mock.calls.map((call) => call.join(" ")).join("\n");
     expect(stdoutSpy).toHaveBeenCalled();
-    expect(banner).toContain("Bonjour 主资料");
-    expect(banner).toContain("GitHub 证据（分批覆盖中）");
-    expect(banner).not.toContain("GitHub Engine");
+    expect(banner).toContain("◖•ᴗ•◗");
+    expect(banner).toContain("Seeku");
+    expect(banner).toContain("人才搜索助手");
   });
 
   it("marks low-confidence shortlist output distinctly", () => {
@@ -460,7 +460,7 @@ describe("B6: displayTaskResumePanel", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders work_item with title and next action", () => {
+  it("renders work_item with title and resumability", () => {
     const ui = new TerminalUI();
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
@@ -473,11 +473,49 @@ describe("B6: displayTaskResumePanel", () => {
 
     const output = logSpy.mock.calls.map((call) => call.join(" ")).join("\n");
     expect(output).toContain("找 AI 工程师");
-    expect(output).toContain("比较候选人");
     expect(output).toContain("可继续");
   });
 
-  it("renders degraded_work_item with degraded label", () => {
+  it("renders minimalist launcher with mascot and no default metadata noise", () => {
+    const ui = new TerminalUI();
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    const items: TaskResumeItem[] = [
+      makeTaskResumeItem({
+        kind: "legacy_session",
+        cacheOnly: true,
+        blocked: true,
+        blockerLabel: "搜索条件过宽",
+        nextActionTitle: "比较候选人"
+      })
+    ];
+
+    ui.displayLauncherV2({
+      items,
+      defaultSelection: items[0],
+      contextBar: {
+        stageLabel: "短名单就绪",
+        summary: "找 AI 工程师",
+        nextActionTitle: "比较候选人",
+        blocked: true,
+        blockerLabel: "搜索条件过宽"
+      }
+    });
+
+    const output = logSpy.mock.calls.map((call) => call.join(" ")).join("\n");
+    expect(output).toContain("◖•ᴗ•◗");
+    expect(output).toContain("找 AI 工程师");
+    expect(output).toContain("输入任务编号或 /help 查看命令");
+    expect(output).not.toContain("legacy");
+    expect(output).not.toContain("local cache");
+    expect(output).not.toContain("2026");
+    expect(output).not.toContain("attach");
+    expect(output).not.toContain("比较候选人");
+    expect(output).not.toContain("搜索条件过宽");
+  });
+
+  it("renders degraded_work_item with title", () => {
     const ui = new TerminalUI();
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
@@ -489,10 +527,10 @@ describe("B6: displayTaskResumePanel", () => {
     ui.displayTaskResumePanel(items);
 
     const output = logSpy.mock.calls.map((call) => call.join(" ")).join("\n");
-    expect(output).toContain("degraded");
+    expect(output).toContain("找 AI 工程师");
   });
 
-  it("renders legacy_session with legacy label", () => {
+  it("renders legacy_session with title", () => {
     const ui = new TerminalUI();
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
@@ -504,26 +542,25 @@ describe("B6: displayTaskResumePanel", () => {
     ui.displayTaskResumePanel(items);
 
     const output = logSpy.mock.calls.map((call) => call.join(" ")).join("\n");
-    expect(output).toContain("legacy");
+    expect(output).toContain("找 AI 工程师");
   });
 
-  it("renders blocked item with blocker label", () => {
+  it("renders blocked item with blocked badge", () => {
     const ui = new TerminalUI();
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     const items: TaskResumeItem[] = [
-      makeTaskResumeItem({ blocked: true, blockerLabel: "搜索条件过宽" })
+      makeTaskResumeItem({ blocked: true, blockerLabel: "搜索条件过宽", resumability: "not_resumable" })
     ];
 
     ui.displayTaskResumePanel(items);
 
     const output = logSpy.mock.calls.map((call) => call.join(" ")).join("\n");
-    expect(output).toContain("阻塞");
-    expect(output).toContain("搜索条件过宽");
+    expect(output).toContain("blocked");
   });
 
-  it("renders cacheOnly item with local cache hint", () => {
+  it("renders cacheOnly item with title", () => {
     const ui = new TerminalUI();
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
@@ -535,7 +572,7 @@ describe("B6: displayTaskResumePanel", () => {
     ui.displayTaskResumePanel(items);
 
     const output = logSpy.mock.calls.map((call) => call.join(" ")).join("\n");
-    expect(output).toContain("local cache");
+    expect(output).toContain("找 AI 工程师");
   });
 
   it("numbers items from [2] and preserves [1] for new task", () => {

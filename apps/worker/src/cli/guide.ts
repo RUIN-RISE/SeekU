@@ -13,6 +13,10 @@
  * - blocked: for recovery stop / no-results scenarios (future integration)
  */
 
+import { ALL_COMMANDS, getCommandsForStage, type CliStage, type SeekuCommand } from "./command-spec.js";
+
+export const MASCOT = "◖•ᴗ•◗";
+
 export type GuideTrigger =
   | "home_empty"
   | "blocked"
@@ -35,6 +39,13 @@ const GUIDE_HINTS: Record<GuideTrigger, string> = {
   first_shortlist: "↑↓ 移动，Enter 详情，space 加对比池。",
   decision_complete: "已推荐 {name}。/export 导出，/new 新任务。"
 };
+
+/**
+ * Format a guide hint text with mascot prefix.
+ */
+export function formatGuideText(text: string): string {
+  return `${MASCOT} ${text}`;
+}
 
 /**
  * Get a guide hint for the given trigger.
@@ -63,5 +74,51 @@ export function getGuideHint(
     return null;
   }
 
-  return { text, trigger };
+  return { text: formatGuideText(text), trigger };
+}
+
+function levenshtein(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+    }
+  }
+  return dp[m][n];
+}
+
+/**
+ * Suggest the closest command name for an unknown input.
+ * Returns null if no close match (threshold > 3).
+ */
+export function suggestClosestCommand(input: string, stage?: CliStage): string | null {
+  const normalized = input.toLowerCase();
+  let bestName: string | null = null;
+  let bestDist = Infinity;
+  const commands: SeekuCommand[] = stage ? getCommandsForStage(stage) : ALL_COMMANDS;
+
+  for (const cmd of commands) {
+    const names = [cmd.name, ...cmd.aliases];
+    for (const name of names) {
+      const dist = levenshtein(normalized, name);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestName = cmd.name;
+      }
+    }
+  }
+
+  if (bestDist <= 3 && bestName) {
+    return bestName;
+  }
+
+  return null;
 }

@@ -23,7 +23,7 @@ import { buildResultWarning } from "./result-warning.js";
 import type { CompareLoopOutcome } from "./comparison-controller.js";
 import type { UserMemoryStore } from "./user-memory-store.js";
 import { isCommandAction, type CommandAction } from "./command-router.js";
-import { getGuideHint } from "./guide.js";
+import { getGuideHint, suggestClosestCommand } from "./guide.js";
 
 interface SearchLoopOutcome {
   type: "refine" | "restart" | "quit" | "restore" | "new" | "tasks" | "globalCommand";
@@ -671,7 +671,9 @@ export class ShortlistController {
         }
 
         if (action.type === "unknown") {
-          console.log(chalk.yellow(`\n未识别的命令：/${action.name}`));
+          const suggestion = suggestClosestCommand(action.name, "detail");
+          const suffix = suggestion ? ` — 你是想说 /${suggestion} 吗？` : "";
+          console.log(chalk.yellow(`\n未识别的命令：/${action.name}${suffix}`));
           this.deps.tui.displayCommandPalette("detail");
           continue;
         }

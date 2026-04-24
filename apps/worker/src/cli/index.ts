@@ -191,7 +191,7 @@ async function promptLauncher(
       ui.displayBanner();
       const homeHint = getGuideHint("home_empty");
       if (homeHint) {
-        console.log(chalk.dim(`💡 ${homeHint.text}`));
+        console.log(chalk.dim(homeHint.text));
       }
       console.log(chalk.green("[1] 新开任务"));
       console.log(chalk.dim("输入 memory 管理记忆偏好。"));

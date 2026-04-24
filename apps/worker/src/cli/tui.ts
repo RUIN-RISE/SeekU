@@ -8,6 +8,7 @@ import type { PersistedCliSessionRecord } from "./session-ledger.js";
 import type { ResumePanelItem } from "./resume-resolver.js";
 import type { TaskResumeItem } from "./resume-panel-types.js";
 import type { WorkboardViewModel } from "./workboard-view-model.js";
+import { MASCOT } from "./guide.js";
 import { shellRenderer } from "./shell-renderer.js";
 import type { ContextBarData } from "./workboard-view-model.js";
 import { renderCommandPalette } from "./command-palette.js";
@@ -67,15 +68,7 @@ export class TerminalUI {
 
   displayBanner() {
     process.stdout.write("\x1Bc");
-    console.log(chalk.blueBright(`
-   ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-   ┃                                                                 ┃
-   ┃   ${chalk.bold.white("Seeku CLI v1.1.0")}                                         ┃
-   ┃   ${chalk.dim("人才搜索助手 - 从需求澄清到 shortlist 决策")}                       ┃
-   ┃                                                                 ┃
-   ┃   ${chalk.dim("底座数据：")}${chalk.cyan("Bonjour 主资料")} ${chalk.dim("|")} ${chalk.cyan("GitHub 证据（分批覆盖中）")}      ┃
-   ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-    `));
+    console.log(chalk.cyan(`${MASCOT} Seeku`) + chalk.dim(" — 人才搜索助手"));
   }
 
   displayCommandPalette(stage: CliStage) {
@@ -145,53 +138,30 @@ export class TerminalUI {
   }
 
   displayTaskResumePanel(items: TaskResumeItem[]) {
-    shellRenderer.renderShellTop({ stage: "home" });
+    this.displayBanner();
+    console.log(chalk.dim(`${MASCOT} 选中任务后按 Enter 继续，或输入 /new 重新开始。`));
+    console.log("");
     console.log(chalk.bold("继续一个任务："));
     console.log(`[1] ${chalk.green("新开任务")}`);
 
     items.forEach((item, index) => {
-      const stamp = new Date(item.updatedAt).toLocaleString("zh-CN", {
-        hour12: false
-      });
       const resumabilityBadge = item.resumability === "resumable"
         ? chalk.green("可继续")
         : item.resumability === "read_only"
           ? chalk.yellow("只读")
           : chalk.dim("blocked");
-      const cacheHint = item.cacheOnly ? chalk.dim(" · local cache") : "";
 
-      // Line 1: title + resumability
       const title = chalk.bold(item.title);
-      console.log(
-        `[${index + 2}] ${resumabilityBadge}  ${title}${cacheHint}`
-      );
-
-      // Line 2: stage + blocked + next action + timestamp
-      const parts: string[] = [];
-      parts.push(item.subtitle);
-      if (item.blocked && item.blockerLabel) {
-        parts.push(chalk.yellow(`阻塞：${item.blockerLabel}`));
-      }
-      if (item.nextActionTitle) {
-        parts.push(chalk.dim(`下一步：${item.nextActionTitle}`));
-      }
-      // Kind labels for non-work-item items
-      if (item.kind === "legacy_session") {
-        parts.push(chalk.dim("legacy"));
-      } else if (item.kind === "degraded_work_item") {
-        parts.push(chalk.dim("degraded"));
-      }
-      parts.push(chalk.dim(stamp));
-      console.log(`    ${parts.join(" · ")}`);
+      console.log(`[${index + 2}] ${title}  ${resumabilityBadge}`);
     });
 
     console.log("");
-    console.log(chalk.dim("也可以直接输入 attach <sessionId>。"));
-    console.log(chalk.dim("输入 memory 管理记忆偏好。"));
+    console.log(chalk.dim("输入任务编号或 /help 查看命令"));
   }
 
   async promptResumePanelChoice(defaultChoice = "1"): Promise<string> {
-    shellRenderer.renderShellBottom({ stage: "home" });
+    console.log(chalk.dim("Enter 继续 · /new 新任务 · /help 命令 · q 退出"));
+    console.log("");
     return this.promptLine("launcher>", defaultChoice);
   }
 
@@ -204,51 +174,30 @@ export class TerminalUI {
     defaultSelection: TaskResumeItem;
     contextBar?: ContextBarData;
   }): void {
-    const { items, defaultSelection, contextBar } = options;
+    const { items, defaultSelection } = options;
 
-    shellRenderer.renderShellTop({ stage: "home", contextBar });
+    this.displayBanner();
+    console.log(chalk.dim(`${MASCOT} 选中任务后按 Enter 继续，或输入 /new 重新开始。`));
+    console.log("");
 
     console.log(chalk.bold("继续一个任务："));
     console.log(`[1] ${chalk.green("新开任务")}`);
 
     items.forEach((item, index) => {
-      const stamp = new Date(item.updatedAt).toLocaleString("zh-CN", {
-        hour12: false
-      });
       const resumabilityBadge = item.resumability === "resumable"
         ? chalk.green("可继续")
         : item.resumability === "read_only"
           ? chalk.yellow("只读")
           : chalk.dim("blocked");
-      const cacheHint = item.cacheOnly ? chalk.dim(" · local cache") : "";
       const isDefault = item.sessionId === defaultSelection.sessionId;
       const marker = isDefault ? chalk.cyan("❯ ") : "  ";
 
       const title = chalk.bold(item.title);
-      console.log(
-        `${marker}[${index + 2}] ${resumabilityBadge}  ${title}${cacheHint}`
-      );
-
-      const parts: string[] = [];
-      parts.push(item.subtitle);
-      if (item.blocked && item.blockerLabel) {
-        parts.push(chalk.yellow(`阻塞：${item.blockerLabel}`));
-      }
-      if (item.nextActionTitle) {
-        parts.push(chalk.dim(`下一步：${item.nextActionTitle}`));
-      }
-      if (item.kind === "legacy_session") {
-        parts.push(chalk.dim("legacy"));
-      } else if (item.kind === "degraded_work_item") {
-        parts.push(chalk.dim("degraded"));
-      }
-      parts.push(chalk.dim(stamp));
-      console.log(`    ${parts.join(" · ")}`);
+      console.log(`${marker}[${index + 2}] ${title}  ${resumabilityBadge}`);
     });
 
     console.log("");
-    console.log(chalk.dim("也可以直接输入 attach <sessionId>。"));
-    console.log(chalk.dim("输入 memory 管理记忆偏好。"));
+    console.log(chalk.dim("输入任务编号或 /help 查看命令"));
   }
 
   resolveResumePanelSelection(raw: string, items: ResumePanelItem[]): ResumePanelItem | null {
@@ -596,7 +545,7 @@ export class TerminalUI {
     }
 
     if (options.guideHint) {
-      lines.push(chalk.dim(`💡 ${options.guideHint}`));
+      lines.push(chalk.dim(options.guideHint));
       lines.push(chalk.dim("-".repeat(72)));
     }
 

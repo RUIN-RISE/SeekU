@@ -1,8 +1,7 @@
 /**
- * Command palette — static command list rendering.
+ * Command palette — compact command list.
  *
- * Phase 4 of CLI upgrade: render available commands for a stage.
- * Static list for now, no arrow selection.
+ * Two-line format: stage commands on first line, global on second.
  */
 
 import chalk from "chalk";
@@ -11,24 +10,28 @@ import { getCommandsForStage, type CliStage } from "./command-spec.js";
 export function renderCommandPalette(stage: CliStage): void {
   const commands = getCommandsForStage(stage);
 
-  console.log(chalk.bold("\n命令列表：\n"));
+  const stageCommands = commands
+    .filter(c => c.stages.includes(stage))
+    .filter(c => c.name !== "resume" || stage === "home");
+  const taskCommands = commands.filter(c =>
+    ["new", "task", "tasks", "workboard", "transcript"].includes(c.name)
+    && !c.stages.includes(stage)
+  );
+  const systemCommands = commands.filter(c =>
+    ["help", "memory", "quit"].includes(c.name)
+    && !c.stages.includes(stage)
+  );
 
-  // Current stage commands first
-  const stageCommands = commands.filter(c => c.stages.includes(stage));
-  const globalCommands = commands.filter(c => c.stages.includes("global") && !c.stages.includes(stage));
-
-  for (const cmd of stageCommands) {
-    const aliases = cmd.aliases.length > 0 ? ` (${cmd.aliases.join(", ")})` : "";
-    const args = cmd.argumentHint ? ` ${cmd.argumentHint}` : "";
-    console.log(`  /${cmd.name}${args}${aliases}  ${chalk.dim(cmd.description)}`);
+  if (stageCommands.length > 0) {
+    console.log(chalk.dim(`主要：${stageCommands.map(cmd => `/${cmd.name}`).join("  ")}`));
   }
 
-  if (globalCommands.length > 0) {
-    console.log(chalk.dim("\n全局命令："));
-    for (const cmd of globalCommands) {
-      const aliases = cmd.aliases.length > 0 ? ` (${cmd.aliases.join(", ")})` : "";
-      console.log(`  /${cmd.name}  ${chalk.dim(cmd.description)}${aliases}`);
-    }
+  if (taskCommands.length > 0) {
+    console.log(chalk.dim(`任务：${taskCommands.map(cmd => `/${cmd.name}`).join("  ")}`));
+  }
+
+  if (systemCommands.length > 0) {
+    console.log(chalk.dim(`系统：${systemCommands.map(cmd => `/${cmd.name}`).join("  ")}`));
   }
 
   console.log("");

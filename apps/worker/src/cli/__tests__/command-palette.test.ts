@@ -14,13 +14,25 @@ describe("renderCommandPalette", () => {
     logSpy.mockRestore();
   });
 
+  it("groups commands by intent", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    renderCommandPalette("shortlist");
+
+    const output = logSpy.mock.calls.map(c => c[0]).join("\n");
+    expect(output).toContain("主要：");
+    expect(output).toContain("任务：");
+    expect(output).toContain("系统：");
+
+    logSpy.mockRestore();
+  });
+
   it("renders current-stage commands before global commands", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
     renderCommandPalette("shortlist");
 
     const calls = logSpy.mock.calls.map(c => c[0]);
     const refineIndex = calls.findIndex(c => c && c.includes("refine"));
-    const helpIndex = calls.findIndex(c => c && c.includes("help"));
+    const helpIndex = calls.findIndex(c => c && c.includes("/help"));
 
     expect(refineIndex).toBeLessThan(helpIndex);
 
