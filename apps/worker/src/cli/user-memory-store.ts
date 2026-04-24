@@ -37,6 +37,36 @@ import {
   type UserMemoryRecord
 } from "./user-memory-types.js";
 
+function isRecoverableMemoryDbError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  return [
+    "connection refused",
+    "connect econnrefused",
+    "econnrefused",
+    "timeout",
+    "timed out",
+    "failed to connect",
+    "could not connect",
+    "does not exist",
+    "relation \"user_preferences\"",
+    "relation \"user_memories\"",
+    "relation \"candidate_feedback\"",
+    "no such table"
+  ].some((pattern) => message.includes(pattern));
+}
+
+function createEmptyMemoryContext(userId: string): UserMemoryContext {
+  return {
+    userId,
+    memoryPaused: false,
+    preferences: [],
+    feedbacks: [],
+    candidateFeedbacks: [],
+    hiringContexts: [],
+    allMemories: []
+  };
+}
+
 // ============================================================================
 // Record Mapping
 // ============================================================================
@@ -103,13 +133,21 @@ export class UserMemoryStore {
 
   async list(filter?: ListUserMemoriesFilter): Promise<UserMemoryRecord[]> {
     const userId = this.getUserId();
-    const records = await dbListUserMemories(this.db, userId, {
-      kind: filter?.kind,
-      scope: filter?.scope as StructuredMemoryScope | undefined,
-      source: filter?.source,
-      includeExpired: filter?.includeExpired,
-      limit: filter?.limit
-    });
+    let records: UserMemory[];
+    try {
+      records = await dbListUserMemories(this.db, userId, {
+        kind: filter?.kind,
+        scope: filter?.scope as StructuredMemoryScope | undefined,
+        source: filter?.source,
+        includeExpired: filter?.includeExpired,
+        limit: filter?.limit
+      });
+    } catch (error) {
+      if (!isRecoverableMemoryDbError(error)) {
+        throw error;
+      }
+      return [];
+    }
     return records.map(dbRecordToCliRecord);
   }
 
@@ -148,7 +186,14 @@ export class UserMemoryStore {
 
   async isMemoryPaused(): Promise<boolean> {
     const userId = this.getUserId();
-    return dbIsMemoryPaused(this.db, userId);
+    try {
+      return await dbIsMemoryPaused(this.db, userId);
+    } catch (error) {
+      if (!isRecoverableMemoryDbError(error)) {
+        throw error;
+      }
+      return false;
+    }
   }
 
   async pauseMemory(): Promise<void> {
@@ -187,10 +232,19 @@ export class UserMemoryStore {
 
   async hydrateContext(): Promise<UserMemoryContext> {
     const userId = this.getUserId();
-    const [ctx, candidateFeedbacks] = await Promise.all([
-      dbHydrateUserMemoryContext(this.db, userId),
-      dbGetCandidateFeedbackHistory(this.db, userId)
-    ]);
+    let ctx: Awaited<ReturnType<typeof dbHydrateUserMemoryContext>>;
+    let candidateFeedbacks: Awaited<ReturnType<typeof dbGetCandidateFeedbackHistory>>;
+    try {
+      [ctx, candidateFeedbacks] = await Promise.all([
+        dbHydrateUserMemoryContext(this.db, userId),
+        dbGetCandidateFeedbackHistory(this.db, userId)
+      ]);
+    } catch (error) {
+      if (!isRecoverableMemoryDbError(error)) {
+        throw error;
+      }
+      return createEmptyMemoryContext(userId);
+    }
 
     const feedbackRecords: CandidateFeedbackRecord[] = candidateFeedbacks.map((r) => ({
       id: r.id,
