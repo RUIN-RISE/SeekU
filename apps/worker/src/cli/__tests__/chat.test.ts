@@ -69,6 +69,20 @@ describe("ChatInterface", () => {
       const missing = chat.detectMissing({ skills: ["abc"], locations: ["xyz"], experience: "1y" });
       expect(missing.length).toBe(0);
     });
+
+    it("does not require skills or experience for education-background searches", () => {
+      const missing = chat.detectMissing({
+        skills: [],
+        locations: [],
+        experience: undefined,
+        role: "学生",
+        mustHave: ["zhejiang university"],
+        niceToHave: ["本科生"]
+      });
+
+      expect(missing).not.toContain("skills");
+      expect(missing).not.toContain("experience");
+    });
   });
 
   describe("refineConditions", () => {

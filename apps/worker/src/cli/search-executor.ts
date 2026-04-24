@@ -337,6 +337,19 @@ export class SearchExecutor {
       filters.push(sql`${searchDocuments.facetSource} && ARRAY[${conditions.sourceBias}]::text[]`);
     }
 
+    if (conditions.mustHave.length > 0) {
+      const mustHaveClauses = conditions.mustHave.map((term) => {
+        const terms = term.toLowerCase() === "zhejiang university"
+          ? ["zhejiang university", "zju", "浙江大学", "浙大"]
+          : [term];
+        const aliasClauses = terms.map((value) =>
+          sql`(${searchDocuments.docText} ILIKE ${`%${value}%`} OR ${searchDocuments.facetTags}::text ILIKE ${`%${value}%`})`
+        );
+        return sql`(${sql.join(aliasClauses, sql.raw(" OR "))})`;
+      });
+      filters.push(sql`(${sql.join(mustHaveClauses, sql.raw(" AND "))})`);
+    }
+
     const rows = await this.deps.db
       .select({
         person: persons,

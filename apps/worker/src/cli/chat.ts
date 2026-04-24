@@ -9,6 +9,7 @@ import { ConditionsSchema, sanitizeForPrompt, safeParseJSON, isEmptyInput, dedup
 import { CLI_CONFIG } from "./config.js";
 import { runPromptWithUserExit } from "./prompt-abort.js";
 import { withRetry } from "./retry.js";
+import { normalizeConditions } from "./search-conditions.js";
 
 // Skip keywords that indicate user wants to skip the question
 const SKIP_KEYWORDS = new Set(["不限", "随便", "无", "none", "skip", "跳过", "都可以", "都行"]);
@@ -206,7 +207,7 @@ CRITICAL RULES:
         console.warn("LLM condition extraction validation failed:", result.error);
       }
 
-      return {
+      return normalizeConditions({
         skills: result.data.skills ?? [],
         locations: result.data.locations ?? [],
         experience: result.data.experience ?? undefined,
@@ -218,7 +219,7 @@ CRITICAL RULES:
         preferFresh: Boolean(result.data.preferFresh),
         candidateAnchor: normalizeCandidateAnchor(result.data.candidateAnchor),
         limit: result.data.limit ?? CLI_CONFIG.ui.defaultLimit
-      };
+      });
     } catch (e) {
       console.warn("Failed to extract exact conditions:", e instanceof Error ? e.message : String(e));
       return this.extractConditionsHeuristically(input);
@@ -227,9 +228,15 @@ CRITICAL RULES:
 
   detectMissing(conditions: Partial<SearchConditions>): MissingField[] {
     const missing: MissingField[] = [];
-    if (!conditions.skills || conditions.skills.length === 0) missing.push("skills");
+    const hasEducationIntent = [
+      conditions.role,
+      conditions.experience,
+      ...(conditions.mustHave ?? []),
+      ...(conditions.niceToHave ?? [])
+    ].some((value) => /zhejiang university|浙大|浙江大学|\bzju\b|本科生|学生|在读|就读/i.test(value ?? ""));
+    if ((!conditions.skills || conditions.skills.length === 0) && !hasEducationIntent) missing.push("skills");
     if (!conditions.locations || conditions.locations.length === 0) missing.push("locations");
-    if (!conditions.experience) missing.push("experience");
+    if (!conditions.experience && !hasEducationIntent) missing.push("experience");
     return missing;
   }
 
@@ -502,7 +509,7 @@ CRITICAL RULES:
 
     const knownSkills = ["python", "java", "go", "rust", "typescript", "javascript", "pytorch", "tensorflow", "rag", "llm", "cuda", "vllm"];
     const knownLocations = ["杭州", "上海", "北京", "深圳", "广州", "remote", "远程", "hangzhou", "shanghai", "beijing", "shenzhen", "guangzhou"];
-    const roleHints = ["后端", "前端", "python工程师", "工程师", "researcher", "engineer", "backend", "frontend"];
+    const roleHints = ["本科生", "学生", "后端", "前端", "python工程师", "工程师", "researcher", "engineer", "backend", "frontend"];
 
     for (const skill of knownSkills) {
       if (normalized.includes(skill)) {
@@ -514,6 +521,14 @@ CRITICAL RULES:
       if (input.includes(location) || normalized.includes(location)) {
         locations.push(location);
       }
+    }
+
+    if (/浙大|浙江大学|\bzju\b|zhejiang university/i.test(input)) {
+      mustHave.push("zhejiang university");
+    }
+
+    if (/本科生|学生|在读|就读/i.test(input)) {
+      niceToHave.push("本科生");
     }
 
     role = roleHints.find((item) => input.includes(item) || normalized.includes(item));
@@ -602,7 +617,7 @@ CRITICAL RULES:
       context
     );
 
-    return {
+    return normalizeConditions({
       skills: dedupeArray(skills),
       locations: dedupeArray(locations),
       experience,
@@ -614,7 +629,7 @@ CRITICAL RULES:
       preferFresh,
       candidateAnchor,
       limit: CLI_CONFIG.ui.defaultLimit
-    };
+    });
   }
 
   private reviseConditionsHeuristically(
