@@ -4,36 +4,51 @@ import type { FastifyInstance } from "fastify";
 import type { SearchServices } from "./routes/search.js";
 import { evidenceItems, persons, searchDocuments } from "@seeku/db";
 
-const mockSearchServices: SearchServices = {
-  provider: {
-    name: "mock",
-    embed: async () => ({
-      embedding: [0.1, 0.2, 0.3],
-      model: "mock-embedding",
-      dimension: 3
-    }),
-    chat: async () => ({
-      content: "{}",
-      model: "mock-chat"
-    }),
-    embedBatch: async () => []
-  } as any,
-  planner: {
-    parse: async (query: string) => ({
-      rawQuery: query,
-      roles: [],
-      skills: [],
-      locations: [],
-      mustHaves: [],
-      niceToHaves: []
+const mockProvider = {
+  name: "mock",
+  embed: async () => ({
+    embedding: [0.1, 0.2, 0.3],
+    model: "mock-embedding",
+    dimension: 3
+  }),
+  chat: async () => ({
+    content: "{}",
+    model: "mock-chat"
+  }),
+  embedBatch: async () => []
+} as any;
+
+function makePipelineMock(opts: {
+  intent?: any;
+  results?: any[];
+  documents?: Map<string, any>;
+  evidence?: Map<string, any[]>;
+}) {
+  const intent = opts.intent ?? {
+    rawQuery: "",
+    roles: [],
+    skills: [],
+    locations: [],
+    mustHaves: [],
+    niceToHaves: []
+  };
+  return {
+    search: async () => ({
+      results: opts.results ?? [],
+      intent,
+      totalCandidates: (opts.results ?? []).length,
+      cachedIntent: false,
+      crossEncoderUsed: false,
+      documents: opts.documents ?? new Map(),
+      evidence: opts.evidence ?? new Map(),
+      warnings: []
     })
-  } as any,
-  retriever: {
-    retrieve: async () => []
-  } as any,
-  reranker: {
-    rerank: () => []
-  } as any
+  } as any;
+}
+
+const mockSearchServices: SearchServices = {
+  provider: mockProvider,
+  pipeline: makePipelineMock({})
 };
 
 function createMockSearchDb(results: Map<unknown, unknown[]>) {
@@ -88,7 +103,6 @@ describe("API Server", () => {
         }
       });
 
-      // Should not return 500 error
       expect(response.statusCode).toBeLessThan(500);
     });
 
@@ -102,7 +116,6 @@ describe("API Server", () => {
         payload: {}
       });
 
-      // Should return 400 for missing query
       expect(response.statusCode).toBe(400);
     });
 
@@ -136,26 +149,23 @@ describe("API Server", () => {
         [persons, [{
           id: "person-1",
           primaryName: "Ada",
-          primaryHeadline: "Builder"
+          primaryHeadline: "Builder",
+          searchStatus: "active"
         }]]
       ]));
+
       const searchServices: SearchServices = {
-        provider: mockSearchServices.provider,
-        planner: {
-          parse: async (query: string) => ({
-            rawQuery: query,
+        provider: mockProvider,
+        pipeline: makePipelineMock({
+          intent: {
+            rawQuery: "杭州",
             roles: [],
             skills: [],
             locations: ["杭州"],
             mustHaves: [],
             niceToHaves: []
-          })
-        } as any,
-        retriever: {
-          retrieve: async () => [{ personId: "person-1", combinedScore: 0.31 }]
-        } as any,
-        reranker: {
-          rerank: () => [{
+          },
+          results: [{
             personId: "person-1",
             keywordScore: 0,
             vectorScore: 0,
@@ -165,8 +175,17 @@ describe("API Server", () => {
             evidenceBoost: 0,
             freshnessPenalty: 1,
             matchReasons: []
-          }]
-        } as any
+          }],
+          documents: new Map([["person-1", {
+            personId: "person-1",
+            docText: "Builder in Hangzhou",
+            facetSource: ["bonjour"],
+            facetLocation: ["杭州"],
+            facetRole: [],
+            facetTags: []
+          } as any]]),
+          evidence: new Map([["person-1", []]])
+        })
       };
       const localServer = await buildApiServer({ db, searchServices });
 
@@ -186,6 +205,10 @@ describe("API Server", () => {
         expect(response.json()).toMatchObject({
           total: 1,
           resultWarning: expect.stringContaining("只找到了弱相关候选人"),
+          resultWarningDetail: {
+            code: "no_strong_match_weak",
+            topMatchStrength: "weak"
+          },
           results: [
             {
               personId: "person-1",
@@ -212,26 +235,23 @@ describe("API Server", () => {
         [persons, [{
           id: "person-1",
           primaryName: "Ada",
-          primaryHeadline: "Python Builder"
+          primaryHeadline: "Python Builder",
+          searchStatus: "active"
         }]]
       ]));
+
       const searchServices: SearchServices = {
-        provider: mockSearchServices.provider,
-        planner: {
-          parse: async (query: string) => ({
-            rawQuery: query,
+        provider: mockProvider,
+        pipeline: makePipelineMock({
+          intent: {
+            rawQuery: "python",
             roles: [],
             skills: ["python"],
             locations: [],
             mustHaves: [],
             niceToHaves: []
-          })
-        } as any,
-        retriever: {
-          retrieve: async () => [{ personId: "person-1", combinedScore: 0.82 }]
-        } as any,
-        reranker: {
-          rerank: () => [{
+          },
+          results: [{
             personId: "person-1",
             keywordScore: 0,
             vectorScore: 0,
@@ -241,8 +261,17 @@ describe("API Server", () => {
             evidenceBoost: 0,
             freshnessPenalty: 1,
             matchReasons: ["skill evidence: python"]
-          }]
-        } as any
+          }],
+          documents: new Map([["person-1", {
+            personId: "person-1",
+            docText: "Python builder in Hangzhou",
+            facetSource: ["github"],
+            facetLocation: ["杭州"],
+            facetRole: [],
+            facetTags: []
+          } as any]]),
+          evidence: new Map([["person-1", []]])
+        })
       };
       const localServer = await buildApiServer({ db, searchServices });
 
@@ -311,7 +340,6 @@ describe("API Server", () => {
         url: "/admin/run-eval"
       });
 
-      // Should return 501 Not Implemented or success
       expect([200, 501]).toContain(response.statusCode);
     });
   });

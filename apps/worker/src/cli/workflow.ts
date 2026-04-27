@@ -17,7 +17,7 @@ import {
   type PersonIdentity
 } from "@seeku/db";
 import type { LLMProvider } from "@seeku/llm";
-import { QueryPlanner, HybridRetriever, Reranker, buildDisambiguationNotes, type QueryIntent } from "@seeku/search";
+import { CrossEncoder, QueryPlanner, HybridRetriever, Reranker, buildDisambiguationNotes, type QueryIntent } from "@seeku/search";
 import { classifyMatchStrength } from "@seeku/shared";
 import { createHash, randomUUID } from "node:crypto";
 import chalk from "chalk";
@@ -792,6 +792,16 @@ export class SearchWorkflow {
       limit: CLI_CONFIG.ui.defaultLimit * 5
     });
     this.reranker = new Reranker();
+    // Interactive CLI agent uses cross-encoder by default — the heuristic-only
+    // path was the dominant precision regression vs the one-shot /search CLI.
+    // Set SEEKU_AGENT_CROSS_ENCODER=off to disable for cost-sensitive runs.
+    const agentCrossEncoder = process.env.SEEKU_AGENT_CROSS_ENCODER === "off"
+      ? undefined
+      : new CrossEncoder({
+          provider: llmProvider,
+          batchSize: 5,
+          timeoutMs: 8000
+        });
     this.spinner = ora({ isEnabled: CLI_CONFIG.ui.spinnerEnabled });
     this.sessionState = createSearchSessionState();
     this.profileManager = new ProfileManager({
@@ -807,6 +817,7 @@ export class SearchWorkflow {
       planner: this.planner,
       retriever: this.retriever,
       reranker: this.reranker,
+      crossEncoder: agentCrossEncoder,
       scorer: this.scorer,
       buildQueryMatchExplanation: (person, document, evidence, conditions, options) => {
         const experienceMatched = conditions.experience

@@ -2,8 +2,11 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 
 import { type SeekuDatabase } from "@seeku/db";
 import { createProvider, type LLMProvider } from "@seeku/llm";
-import { SearchPipeline, type PipelineProgress, type RerankResult, type RetrieverFilters } from "@seeku/search";
+import { SearchPipeline, type PipelineProgress, type PipelineWarning, type RerankResult, type RetrieverFilters } from "@seeku/search";
 import { classifyMatchStrength, type MatchStrength } from "@seeku/shared";
+import { appConfig } from "@seeku/shared/config";
+
+const STREAM_RESULT_LIMIT = appConfig.search.defaultLimit;
 
 interface StreamSearchRequestBody {
   query: string;
@@ -29,7 +32,7 @@ interface StreamSearchResultCard {
 }
 
 interface SSEEvent {
-  event: "progress" | "results" | "complete" | "error";
+  event: "progress" | "results" | "warning" | "complete" | "error";
   data: {
     stage?: PipelineProgress["stage"];
     message?: string;
@@ -37,6 +40,8 @@ interface SSEEvent {
     total?: number;
     intent?: unknown;
     error?: string;
+    warning?: PipelineWarning;
+    warnings?: PipelineWarning[];
   };
 }
 
@@ -143,7 +148,14 @@ export function registerStreamSearchRoutes(
       db,
       provider: llmProvider,
       useCache: true,
-      useCrossEncoder: false // Disabled for streaming speed
+      // Cross-encoder is async to first-byte (results stream progressively),
+      // so enabling it here improves precision without blocking initial render.
+      // Disable per-request via X-Seeku-Cross-Encoder header if cost-sensitive.
+      useCrossEncoder: request.headers["x-seeku-cross-encoder"] !== "off",
+      // Final response emits up to STREAM_RESULT_LIMIT cards; CE must cover that window or the
+      // tail surfaces with heuristic-only scores and can leapfrog CE-scored
+      // peers (see PR-1.2 in DIAGNOSTIC_REPORT_2026-04-26).
+      crossEncoderLimit: STREAM_RESULT_LIMIT
     });
 
     // Track results for final emission
@@ -184,10 +196,20 @@ export function registerStreamSearchRoutes(
       }
     };
 
+    // Warning callback — covers retrieval (vector failure / empty) and planner
+    // (LLM parse / validation / timeout). Code prefix lets clients distinguish.
+    const onWarning = (warning: PipelineWarning) => {
+      sendEvent({
+        event: "warning",
+        data: { warning }
+      });
+    };
+
     try {
       const result = await pipeline.search(body.query, body.filters, {
         onProgress,
-        onResults
+        onResults,
+        onWarning
       });
 
       // Update evidence map
@@ -198,7 +220,7 @@ export function registerStreamSearchRoutes(
       finalResults = result.results;
 
       // Build final result cards with full evidence
-      const finalCards = finalResults.slice(0, 20).map((r) =>
+      const finalCards = finalResults.slice(0, STREAM_RESULT_LIMIT).map((r) =>
         buildResponseCard(r, evidenceMap.get(r.personId) ?? [])
       );
 
@@ -208,7 +230,8 @@ export function registerStreamSearchRoutes(
         data: {
           results: finalCards,
           total: finalResults.length,
-          intent: result.intent
+          intent: result.intent,
+          warnings: result.warnings
         }
       });
     } catch (error) {

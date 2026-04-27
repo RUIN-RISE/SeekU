@@ -16,10 +16,11 @@
 
 import type { EvidenceItem, SearchDocument, SeekuDatabase } from "@seeku/db";
 import type { ChatMessage, ChatOptions, ChatResponse, EmbeddingResponse, LLMProvider } from "@seeku/llm";
-import { QueryPlanner, type QueryIntent } from "./planner.js";
-import { HybridRetriever, type RetrieverFilters, type SearchResult } from "./retriever.js";
+import { QueryPlanner, type QueryIntent, type PlannerWarning } from "./planner.js";
+import { HybridRetriever, type RetrieverFilters, type SearchResult, type RetrievalWarning } from "./retriever.js";
 import { Reranker, type RerankResult, type RerankerConfig } from "./reranker.js";
 import { QueryCache } from "./query-cache.js";
+import { SCORING_CONFIG } from "./scoring-config.js";
 import {
   CrossEncoder,
   extractCandidateSummary,
@@ -53,11 +54,15 @@ export interface PipelineProgress {
   data?: Record<string, unknown>;
 }
 
+export type PipelineWarning = RetrievalWarning | PlannerWarning;
+
 export interface PipelineCallbacks {
   /** Called when pipeline stage changes */
   onProgress?: (progress: PipelineProgress) => void;
   /** Called when results are ready (for streaming) */
   onResults?: (results: RerankResult[]) => void;
+  /** Called when retrieval or planner emits a warning */
+  onWarning?: (warning: PipelineWarning) => void;
 }
 
 export interface PipelineSearchOptions {
@@ -72,6 +77,7 @@ export interface PipelineResult {
   crossEncoderUsed: boolean;
   documents: Map<string, SearchDocument>;
   evidence: Map<string, EvidenceItem[]>;
+  warnings: PipelineWarning[];
 }
 
 interface PipelineProvider {
@@ -105,8 +111,8 @@ export class SearchPipeline {
     this.useCache = config.useCache ?? true;
     this.useCrossEncoder = config.useCrossEncoder ?? false;
     this.rerankerConfig = config.rerankerConfig ?? {};
-    this.retrievalLimit = config.retrievalLimit ?? 100;
-    this.crossEncoderLimit = config.crossEncoderLimit ?? 20;
+    this.retrievalLimit = config.retrievalLimit ?? SCORING_CONFIG.pipeline.retrievalLimit;
+    this.crossEncoderLimit = config.crossEncoderLimit ?? SCORING_CONFIG.pipeline.crossEncoderLimit;
 
     this.planner = new QueryPlanner({
       provider: this.provider,
@@ -149,9 +155,18 @@ export class SearchPipeline {
       callbacks?.onProgress?.({ stage, message, data });
     };
 
+    const warnings: PipelineWarning[] = [];
+    const recordWarning = (warning: PipelineWarning) => {
+      warnings.push(warning);
+      callbacks?.onWarning?.(warning);
+    };
+
     // Stage 1: Parse query intent
     emit("intent", "Parsing query intent");
-    const intent = await this.planner.parse(query, { signal: options.signal });
+    const intent = await this.planner.parse(query, {
+      signal: options.signal,
+      onWarning: recordWarning
+    });
 
     // Stage 2: Get query embedding and check cache
     emit("cache", "Checking query cache");
@@ -171,7 +186,8 @@ export class SearchPipeline {
     const retrieved = await this.retriever.retrieve(intent, {
       filters,
       embedding: queryEmbedding.embedding,
-      signal: options.signal
+      signal: options.signal,
+      onWarning: recordWarning
     });
 
     emit("retrieve", `Found ${retrieved.length} candidates`, { count: retrieved.length });
@@ -185,7 +201,8 @@ export class SearchPipeline {
         cachedIntent,
         crossEncoderUsed: false,
         documents: new Map(),
-        evidence: new Map()
+        evidence: new Map(),
+        warnings
       };
     }
 
@@ -249,14 +266,15 @@ export class SearchPipeline {
       cachedIntent,
       crossEncoderUsed,
       documents,
-      evidence
+      evidence,
+      warnings
     };
   }
 
   private async loadDocumentsAndEvidence(personIds: string[]): Promise<{
     documents: Map<string, SearchDocument>;
     evidence: Map<string, EvidenceItem[]>;
-    persons: Map<string, { primaryName: string; primaryHeadline: string | null }>;
+    persons: Map<string, { primaryName: string; primaryHeadline: string | null; primaryLocation: string | null }>;
   }> {
     // Import at runtime to avoid circular dependencies
     const { searchDocuments, evidenceItems, persons, eq, and, inArray } = await import("@seeku/db");
@@ -268,7 +286,8 @@ export class SearchPipeline {
         .select({
           id: persons.id,
           primaryName: persons.primaryName,
-          primaryHeadline: persons.primaryHeadline
+          primaryHeadline: persons.primaryHeadline,
+          primaryLocation: persons.primaryLocation
         })
         .from(persons)
         .where(and(eq(persons.searchStatus, "active"), inArray(persons.id, personIds)))

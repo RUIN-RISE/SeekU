@@ -12,9 +12,23 @@ export interface QueryIntent {
   niceToHaves: string[];
 }
 
+export type PlannerWarningCode =
+  | "llm_parse_failed"
+  | "llm_validation_failed"
+  | "llm_request_failed"
+  | "llm_timed_out"
+  | "llm_retry_recovered";
+
+export interface PlannerWarning {
+  code: PlannerWarningCode;
+  message: string;
+  cause?: string;
+}
+
 export interface QueryPlannerConfig {
   provider: LLMProvider;
   model?: string;
+  onWarning?: (warning: PlannerWarning) => void;
 }
 
 const QUERY_PLANNER_PROMPT = `You are a query parser for Seeku, an AI talent search engine.
@@ -301,21 +315,8 @@ function heuristicIntent(query: string): QueryIntent {
   };
 }
 
-function sanitizeIntent(query: string, parsed: Record<string, unknown> | null): QueryIntent {
+function applyIntent(query: string, intent: z.infer<typeof PlannedIntentSchema>): QueryIntent {
   const heuristic = heuristicIntent(query);
-
-  if (!parsed) {
-    return heuristic;
-  }
-
-  // Validate with Zod schema — catches malformed fields
-  const result = PlannedIntentSchema.safeParse(parsed);
-  if (!result.success) {
-    console.warn("[QueryPlanner] Zod validation failed, falling back to heuristic:", result.error.message);
-    return heuristic;
-  }
-
-  const intent = result.data;
   const mustHaveLists = splitWeakMustHaves(mergeNormalizedLists(intent.mustHaves, heuristic.mustHaves));
   const niceToHaves = mergeNormalizedLists(intent.niceToHaves, heuristic.niceToHaves, mustHaveLists.weak);
   const llmSourceBias = normalizeSourceBias(intent.sourceBias);
@@ -332,19 +333,35 @@ function sanitizeIntent(query: string, parsed: Record<string, unknown> | null): 
   };
 }
 
+function sanitizeIntent(query: string, parsed: Record<string, unknown> | null): QueryIntent {
+  if (!parsed) {
+    return heuristicIntent(query);
+  }
+
+  const result = PlannedIntentSchema.safeParse(parsed);
+  if (!result.success) {
+    return heuristicIntent(query);
+  }
+
+  return applyIntent(query, result.data);
+}
+
 export class QueryPlanner {
   private readonly provider: LLMProvider;
   private readonly model?: string;
+  private readonly onWarning?: (warning: PlannerWarning) => void;
 
   constructor(config: QueryPlannerConfig) {
     this.provider = config.provider;
     this.model = config.model;
+    this.onWarning = config.onWarning;
   }
 
   async parse(
     query: string,
     options: {
       signal?: AbortSignal;
+      onWarning?: (warning: PlannerWarning) => void;
     } = {}
   ): Promise<QueryIntent> {
     const trimmedQuery = query.trim();
@@ -359,52 +376,118 @@ export class QueryPlanner {
       };
     }
 
-    // Security: Sanitize user input to prevent prompt injection
+    const emit = (warning: PlannerWarning) => {
+      this.onWarning?.(warning);
+      options.onWarning?.(warning);
+    };
+
+    // Security: Sanitize user input to prevent prompt injection.
+    // Strip USER_QUERY tags (case-insensitive) so attackers cannot close the
+    // wrapping tag and inject content outside it.
     const MAX_QUERY_LENGTH = 1000;
     const sanitizedQuery = trimmedQuery
       .slice(0, MAX_QUERY_LENGTH)
       .replace(/[\x00-\x08\x0b-\x0c\x0e-\x1f]/g, "")  // Remove control characters
       .replace(/\{\{/g, "{ {")  // Break template injection
-      .replace(/\}\}/g, "} }");
+      .replace(/\}\}/g, "} }")
+      .replace(/<\/?\s*user_query\s*>/gi, "");  // Strip wrapper tag attempts
 
-    // Use XML-like tags to isolate user content from instructions
-    const messages: ChatMessage[] = [
+    const baseMessages: ChatMessage[] = [
       { role: "system", content: QUERY_PLANNER_PROMPT },
       { role: "user", content: `<USER_QUERY>${sanitizedQuery}</USER_QUERY>` }
     ];
 
-    // Security: Add timeout to prevent hanging
-    const controller = new AbortController();
-    const timeoutMs = 30000; // 30 seconds
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    const abortFromParent = () => controller.abort(options.signal?.reason);
-    options.signal?.addEventListener("abort", abortFromParent, { once: true });
+    const callLlm = async (messages: ChatMessage[]): Promise<{ ok: true; intent: QueryIntent } | { ok: false; warning: PlannerWarning }> => {
+      const controller = new AbortController();
+      const timeoutMs = 30000;
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const abortFromParent = () => controller.abort(options.signal?.reason);
+      options.signal?.addEventListener("abort", abortFromParent, { once: true });
 
-    try {
-      if (options.signal?.aborted) {
-        throw options.signal.reason ?? new Error("Query planner aborted.");
-      }
+      try {
+        if (options.signal?.aborted) {
+          throw options.signal.reason ?? new Error("Query planner aborted.");
+        }
 
-      const response = await this.provider.chat(messages, {
-        model: this.model,
-        temperature: 0,
-        signal: controller.signal as AbortSignal,
-        responseFormat: "json"
-      });
+        const response = await this.provider.chat(messages, {
+          model: this.model,
+          temperature: 0,
+          signal: controller.signal as AbortSignal,
+          responseFormat: "json"
+        });
 
-      return sanitizeIntent(trimmedQuery, parseJsonObject(response.content));
-    } catch (error) {
-      if (options.signal?.aborted) {
-        throw error;
+        const parsed = parseJsonObject(response.content);
+        if (!parsed) {
+          return {
+            ok: false,
+            warning: {
+              code: "llm_parse_failed",
+              message: "LLM response was not parseable JSON",
+              cause: response.content.slice(0, 200)
+            }
+          };
+        }
+
+        const validated = PlannedIntentSchema.safeParse(parsed);
+        if (!validated.success) {
+          return {
+            ok: false,
+            warning: {
+              code: "llm_validation_failed",
+              message: "LLM JSON failed schema validation",
+              cause: validated.error.message
+            }
+          };
+        }
+
+        return { ok: true, intent: applyIntent(trimmedQuery, validated.data) };
+      } catch (error) {
+        if (options.signal?.aborted) {
+          throw error;
+        }
+        const isTimeout = (error as Error).name === "AbortError";
+        return {
+          ok: false,
+          warning: {
+            code: isTimeout ? "llm_timed_out" : "llm_request_failed",
+            message: isTimeout ? "LLM request timed out" : "LLM request failed",
+            cause: (error as Error).message
+          }
+        };
+      } finally {
+        options.signal?.removeEventListener("abort", abortFromParent);
+        clearTimeout(timer);
       }
-      if ((error as Error).name === "AbortError") {
-        console.warn("[QueryPlanner] LLM request timed out, falling back to heuristic");
-      }
-      return heuristicIntent(trimmedQuery);
-    } finally {
-      options.signal?.removeEventListener("abort", abortFromParent);
-      clearTimeout(timer);
+    };
+
+    const first = await callLlm(baseMessages);
+    if (first.ok) {
+      return first.intent;
     }
+
+    emit(first.warning);
+
+    // Retry once for parse/validation issues — LLMs frequently self-correct
+    if (first.warning.code === "llm_parse_failed" || first.warning.code === "llm_validation_failed") {
+      const retryMessages: ChatMessage[] = [
+        ...baseMessages,
+        {
+          role: "user",
+          content: `Previous response failed: ${first.warning.code}. Return ONLY valid JSON matching the schema. No prose, no markdown fences.`
+        }
+      ];
+      const second = await callLlm(retryMessages);
+      if (second.ok) {
+        emit({
+          code: "llm_retry_recovered",
+          message: "Planner recovered on retry"
+        });
+        return second.intent;
+      }
+      emit(second.warning);
+    }
+
+    return heuristicIntent(trimmedQuery);
   }
 }
 

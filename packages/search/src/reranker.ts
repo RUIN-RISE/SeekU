@@ -3,6 +3,7 @@ import type { EvidenceItem, SearchDocument } from "@seeku/db";
 import type { QueryIntent } from "./planner.js";
 import type { SearchResult } from "./retriever.js";
 import type { CrossEncoderScore } from "./cross-encoder.js";
+import { SCORING_CONFIG } from "./scoring-config.js";
 import { normalizeSearchText, textHasUniversitySignal } from "./search-normalization.js";
 import { ZJU_MANUAL_SEED_TAG } from "./zju-alumni-seeds.js";
 
@@ -20,16 +21,34 @@ export interface RerankerConfig {
   repoMatchBoost: number;
   followerBoostScale: number;
   freshnessDecayDays: number;
-  /** Weight for cross-encoder score when available (0-1, default: 0.3) */
+  /** Weight for cross-encoder score when available (0-1, default: from scoring-config) */
   crossEncoderWeight?: number;
+  specializedGithubBoost?: number;
+  specializedGithubRepoBoost?: number;
+  openSourceGithubBoost?: number;
+  openSourceTextBoost?: number;
+  techLeadBoost?: number;
+  universityFocusBoost?: number;
+  universityManualSeedBoost?: number;
+  strongVectorThreshold?: number;
+  strongKeywordThreshold?: number;
 }
 
-const DEFAULT_CONFIG: RerankerConfig = {
-  projectMatchBoost: 0.08,
-  repoMatchBoost: 0.04,
-  followerBoostScale: 0.02,
-  freshnessDecayDays: 365,
-  crossEncoderWeight: 0.3
+const DEFAULT_CONFIG: Required<RerankerConfig> = {
+  projectMatchBoost: SCORING_CONFIG.reranker.projectMatchBoost,
+  repoMatchBoost: SCORING_CONFIG.reranker.repoMatchBoost,
+  followerBoostScale: SCORING_CONFIG.reranker.followerBoostScale,
+  freshnessDecayDays: SCORING_CONFIG.reranker.freshnessDecayDays,
+  crossEncoderWeight: SCORING_CONFIG.reranker.crossEncoderWeight,
+  specializedGithubBoost: SCORING_CONFIG.reranker.specializedGithubBoost,
+  specializedGithubRepoBoost: SCORING_CONFIG.reranker.specializedGithubRepoBoost,
+  openSourceGithubBoost: SCORING_CONFIG.reranker.openSourceGithubBoost,
+  openSourceTextBoost: SCORING_CONFIG.reranker.openSourceTextBoost,
+  techLeadBoost: SCORING_CONFIG.reranker.techLeadBoost,
+  universityFocusBoost: SCORING_CONFIG.reranker.universityFocusBoost,
+  universityManualSeedBoost: SCORING_CONFIG.reranker.universityManualSeedBoost,
+  strongVectorThreshold: SCORING_CONFIG.reranker.strongVectorThreshold,
+  strongKeywordThreshold: SCORING_CONFIG.reranker.strongKeywordThreshold
 };
 
 const OPEN_SOURCE_QUERY_TERMS = ["open source", "开源"] as const;
@@ -69,7 +88,7 @@ function textIncludesAny(text: string, terms: readonly string[]): boolean {
 }
 
 export class Reranker {
-  private readonly config: RerankerConfig;
+  private readonly config: Required<RerankerConfig>;
 
   constructor(config: Partial<RerankerConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -92,7 +111,7 @@ export class Reranker {
 
         // Combine heuristic score with cross-encoder if available
         const heuristicScore = result.combinedScore * (1 + evidenceBoost) * freshnessPenalty;
-        const crossEncoderWeight = this.config.crossEncoderWeight ?? 0.3;
+        const crossEncoderWeight = this.config.crossEncoderWeight;
 
         const finalScore = crossEncoderResult
           ? heuristicScore * (1 - crossEncoderWeight) +
@@ -160,21 +179,21 @@ export class Reranker {
         })
       )
     ) {
-      boost += 0.12;
+      boost += this.config.specializedGithubBoost;
 
       if (hasRepositoryEvidence(evidence)) {
-        boost += 0.08;
+        boost += this.config.specializedGithubRepoBoost;
       }
     }
 
     if (wantsOpenSource) {
       if (document?.facetSource?.includes("github")) {
-        boost += 0.12;
+        boost += this.config.openSourceGithubBoost;
       }
 
       if ((document?.docText && textIncludesAny(document.docText, OPEN_SOURCE_TEXT_TERMS))
         || evidence.some((item) => item.evidenceType === "repository")) {
-        boost += 0.08;
+        boost += this.config.openSourceTextBoost;
       }
     }
 
@@ -185,16 +204,16 @@ export class Reranker {
       ].join(" ");
 
       if (textIncludesAny(roleText, TECH_LEAD_ROLE_TERMS)) {
-        boost += 0.08;
+        boost += this.config.techLeadBoost;
       }
     }
 
     if (wantsUniversityFocus && this.documentHasUniversitySignal(document, evidence)) {
-      boost += 0.18;
+      boost += this.config.universityFocusBoost;
     }
 
     if (wantsUniversityFocus && document?.facetTags?.includes(ZJU_MANUAL_SEED_TAG)) {
-      boost += 0.24;
+      boost += this.config.universityManualSeedBoost;
     }
 
     const followerCount = evidence.reduce((sum, item) => {
@@ -323,11 +342,11 @@ export class Reranker {
       }
     }
 
-    if (result.vectorScore >= 0.75) {
+    if (result.vectorScore >= this.config.strongVectorThreshold) {
       reasons.push("strong semantic similarity");
     }
 
-    if (result.keywordScore >= 0.5) {
+    if (result.keywordScore >= this.config.strongKeywordThreshold) {
       reasons.push("strong keyword overlap");
     }
 

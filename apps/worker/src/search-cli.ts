@@ -6,7 +6,6 @@ import {
   inArray,
   persons,
   evidenceItems,
-  searchDocuments,
   sourceProfiles,
   personIdentities,
   createDatabaseConnection,
@@ -15,7 +14,11 @@ import {
   type SearchDocument
 } from "@seeku/db";
 import { createProvider } from "@seeku/llm";
-import { QueryPlanner, HybridRetriever, Reranker, buildDisambiguationNotes, type QueryIntent } from "@seeku/search";
+import {
+  SearchPipeline,
+  buildDisambiguationNotes,
+  type QueryIntent
+} from "@seeku/search";
 import { FALLBACK_MATCH_REASONS } from "@seeku/shared";
 import type { ScriptSearchResponseOutput, ScriptSearchResultOutput, SearchConditions } from "./cli/types.js";
 import { buildResultWarning } from "./cli/result-warning.js";
@@ -131,36 +134,40 @@ export async function runSearchCli(options: SearchCliOptions): Promise<ScriptSea
 
   try {
     const provider = createProvider();
-    const planner = new QueryPlanner({ provider });
-    const retriever = new HybridRetriever({ db, provider, limit: 50 });
-    const reranker = new Reranker();
+    const pipeline = new SearchPipeline({
+      db,
+      provider,
+      // CLI is a one-shot search like /search; opt into cross-encoder for precision.
+      // Set SEEKU_CLI_CROSS_ENCODER=off to disable for cost-sensitive runs.
+      useCrossEncoder: process.env.SEEKU_CLI_CROSS_ENCODER !== "off",
+      retrievalLimit: 50,
+      // Bind CE coverage to retrieval window so the requested top-N is fully
+      // scored and tail candidates can't leapfrog (see PR-1.2 in
+      // DIAGNOSTIC_REPORT_2026-04-26). One-shot CLI tolerates the higher cost.
+      crossEncoderLimit: Math.max(15, (options.limit ?? 10) * 2)
+    });
 
-    const intent = await planner.parse(options.query);
-    const retrieved = await retriever.retrieve(intent);
+    const pipelineResult = await pipeline.search(options.query);
+    const reranked = pipelineResult.results;
+    const intent = pipelineResult.intent;
 
-    if (retrieved.length === 0) {
+    if (reranked.length === 0) {
       return options.json ? { results: [], total: 0 } : "No results found.";
     }
 
-    const personIds = retrieved.map(r => r.personId);
-    const [documents, evidence, people, identities] = await Promise.all([
-      db.select().from(searchDocuments).where(inArray(searchDocuments.personId, personIds)),
-      db.select().from(evidenceItems).where(inArray(evidenceItems.personId, personIds)),
+    const personIds = reranked.map(r => r.personId);
+    const [people, identities] = await Promise.all([
       db.select().from(persons).where(and(eq(persons.searchStatus, "active"), inArray(persons.id, personIds))),
       db.select().from(personIdentities).where(inArray(personIdentities.personId, personIds))
     ]);
+
     const sourceProfileIds = identities.map((identity) => identity.sourceProfileId).filter(Boolean);
     const profiles = sourceProfileIds.length > 0
       ? await db.select().from(sourceProfiles).where(inArray(sourceProfiles.id, sourceProfileIds))
       : [];
 
-    const documentMap = new Map(documents.map(d => [d.personId, d]));
-    const evidenceMap = new Map<string, EvidenceItem[]>();
-    for (const item of evidence) {
-      const arr = evidenceMap.get(item.personId) ?? [];
-      arr.push(item);
-      evidenceMap.set(item.personId, arr);
-    }
+    const documentMap = pipelineResult.documents;
+    const evidenceMap = pipelineResult.evidence;
     const personMap = new Map(people.map(p => [p.id, p]));
     const identityMap = new Map<string, typeof identities>();
     for (const identity of identities) {
@@ -170,7 +177,6 @@ export async function runSearchCli(options: SearchCliOptions): Promise<ScriptSea
     }
     const sourceProfileMap = new Map(profiles.map((profile) => [profile.id, profile]));
 
-    const reranked = reranker.rerank(retrieved, intent, documentMap, evidenceMap);
     const disambiguationNotes = buildDisambiguationNotes(
       options.query,
       reranked.slice(0, Math.max(options.limit ?? 10, 10)).map((result) => ({
@@ -270,7 +276,6 @@ export async function runSearchCli(options: SearchCliOptions): Promise<ScriptSea
       };
     }
 
-    // Human-readable format
     return output.map(r => `${r.personId}: ${r.name} (${r.matchScore.toFixed(2)})`).join("\n");
   } finally {
     await close();
@@ -297,7 +302,6 @@ export async function runShowCli(options: ShowCliOptions): Promise<ProfileOutput
       return output;
     }
 
-    // Human-readable format
     const p = person[0];
     const lines = [
       `Name: ${p.primaryName}`,

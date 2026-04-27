@@ -15,7 +15,7 @@ import {
   type SourceProfile,
   type PersonIdentity
 } from "@seeku/db";
-import { HybridRetriever, Reranker, buildDisambiguationNotes, type QueryIntent } from "@seeku/search";
+import { HybridRetriever, Reranker, buildDisambiguationNotes, extractCandidateSummary, type CrossEncoder, type CrossEncoderScore, type QueryIntent } from "@seeku/search";
 import { classifyMatchStrength } from "@seeku/shared";
 import type { ScoredCandidate, SearchConditions, ConditionAuditItem, CandidatePrimaryLink } from "./types.js";
 import { contextHasTermValue, buildSearchStateContextValue } from "./search-context-helpers.js";
@@ -64,6 +64,15 @@ export interface SearchExecutorDependencies {
   };
   retriever: HybridRetriever;
   reranker: Reranker;
+  /**
+   * Optional cross-encoder. When present, top-N retrieved candidates are
+   * scored by the LLM and the result feeds into reranker.rerank() as the
+   * crossEncoderScores arg. Disabling matches the legacy heuristic-only
+   * behavior — useful for cost-sensitive runs (set deps to undefined).
+   */
+  crossEncoder?: CrossEncoder;
+  /** How many top retrieved candidates to send through cross-encoder. */
+  crossEncoderLimit?: number;
   scorer: { calculateExperienceMatch(person: Person, evidence: EvidenceItem[], conditions: SearchConditions): number };
   buildQueryMatchExplanation: (
     person: Person,
@@ -207,7 +216,13 @@ export class SearchExecutor {
         : { status: "unavailable" }
     };
 
-    const reranked = this.deps.reranker.rerank(filteredRetrieved, intent, documentMap, evidenceMap);
+    const reranked = this.deps.reranker.rerank(
+      filteredRetrieved,
+      intent,
+      documentMap,
+      evidenceMap,
+      await this.scoreWithCrossEncoder(filteredRetrieved, intent, documentMap, evidenceMap, personMap, conditions.limit, options.signal)
+    );
     const hydrationWindow = conditions.preferFresh ? Math.min(reranked.length, limit * 2) : limit;
     const hydrated: HydratedCandidate[] = reranked.slice(0, hydrationWindow).map((result) => {
       const person = personMap.get(result.personId);
@@ -549,6 +564,51 @@ export class SearchExecutor {
 
       return right.matchScore - left.matchScore;
     });
+  }
+
+  private async scoreWithCrossEncoder(
+    retrieved: Array<{ personId: string }>,
+    intent: QueryIntent,
+    documentMap: Map<string, SearchDocument>,
+    evidenceMap: Map<string, EvidenceItem[]>,
+    personMap: Map<string, Person>,
+    requestLimit: number,
+    signal?: AbortSignal
+  ): Promise<Map<string, CrossEncoderScore> | undefined> {
+    const encoder = this.deps.crossEncoder;
+    if (!encoder || retrieved.length === 0) {
+      return undefined;
+    }
+
+    // Bind CE coverage to the request size: we want every candidate that could
+    // surface in the user's top-N to actually be CE-scored. Otherwise unscored
+    // tail candidates can leapfrog scored ones at the heuristic-only path
+    // (heuristic=0.6 beats heuristic=0.8 * 0.7 + low-CE * 0.3 = 0.59).
+    const configuredLimit = this.deps.crossEncoderLimit ?? 15;
+    const limit = Math.max(configuredLimit, requestLimit * 2);
+    const top = retrieved.slice(0, limit);
+    const summaries = top.map((result) =>
+      extractCandidateSummary(
+        documentMap.get(result.personId),
+        evidenceMap.get(result.personId) ?? [],
+        result.personId,
+        personMap.get(result.personId)
+      )
+    );
+
+    try {
+      const scores = await encoder.scoreBatch(intent, summaries, { signal });
+      return new Map(scores.map((score) => [score.personId, score]));
+    } catch (error) {
+      if (signal?.aborted) {
+        throw signal.reason ?? error;
+      }
+      // Cross-encoder is best-effort: fall back to heuristic-only scoring
+      // rather than blocking the search response on LLM hiccups.
+      const reason = error instanceof Error ? error.message : String(error);
+      console.warn(`[SearchExecutor] Cross-encoder scoring failed, falling back to heuristic-only: ${reason}`);
+      return undefined;
+    }
   }
 
   private mergeIntentWithConditions(intent: QueryIntent, conditions: SearchConditions): QueryIntent {

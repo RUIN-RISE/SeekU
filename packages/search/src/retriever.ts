@@ -7,6 +7,7 @@ import type { LLMProvider } from "@seeku/llm";
 import { generateEmbedding } from "@seeku/llm";
 
 import type { QueryIntent } from "./planner.js";
+import { SCORING_CONFIG } from "./scoring-config.js";
 import {
   escapeRegexPattern,
   isBoundarySensitiveSearchTerm,
@@ -34,10 +35,30 @@ export interface RetrieverConfig {
   limit?: number;
 }
 
-const DEFAULT_KEYWORD_WEIGHT = 0.4;
-const DEFAULT_VECTOR_WEIGHT = 0.6;
+export type RetrievalWarningCode =
+  | "vector_search_failed"
+  | "vector_search_empty"
+  | "keyword_search_empty";
+
+export interface RetrievalWarning {
+  code: RetrievalWarningCode;
+  message: string;
+  cause?: string;
+}
+
+export interface RetrieveOptions {
+  filters?: RetrieverFilters;
+  embedding?: number[];
+  signal?: AbortSignal;
+  onWarning?: (warning: RetrievalWarning) => void;
+}
+
+const DEFAULT_KEYWORD_WEIGHT = SCORING_CONFIG.retriever.keywordWeight;
+const DEFAULT_VECTOR_WEIGHT = SCORING_CONFIG.retriever.vectorWeight;
 const DEFAULT_LIMIT = 50;
-const DEFAULT_KEYWORD_THRESHOLD = 0.08;
+const DEFAULT_KEYWORD_THRESHOLD = SCORING_CONFIG.retriever.keywordThreshold;
+const RETRIEVER_BOOST = SCORING_CONFIG.retriever.boost;
+const SPECIALIZED_BLEND = SCORING_CONFIG.retriever.specializedBlend;
 const SPECIALIZED_QUERY_TERMS = [
   "rag",
   "retrieval",
@@ -246,6 +267,18 @@ function clampScore(score: number): number {
   return Math.max(0, Math.min(score, 1));
 }
 
+function float8Param(value: number): SQL<number> {
+  return sql<number>`${value}::double precision`;
+}
+
+function numericFlagExpr(condition: SQL | null): SQL<number> {
+  if (!condition) {
+    return sql<number>`0::double precision`;
+  }
+
+  return sql<number>`CASE WHEN ${condition} THEN 1::double precision ELSE 0::double precision END`;
+}
+
 function toSnippet(text: string): string {
   return text.trim().slice(0, 280);
 }
@@ -354,8 +387,8 @@ function buildNameMatchSignals(rawQuery: string, normalizedPersonName: SQLWrappe
     return {
       exactCondition: null,
       prefixCondition: null,
-      exactMatchExpr: sql<number>`0`,
-      prefixMatchExpr: sql<number>`0`
+      exactMatchExpr: sql<number>`0::double precision`,
+      prefixMatchExpr: sql<number>`0::double precision`
     };
   }
 
@@ -368,10 +401,10 @@ function buildNameMatchSignals(rawQuery: string, normalizedPersonName: SQLWrappe
   return {
     exactCondition,
     prefixCondition,
-    exactMatchExpr: sql<number>`CASE WHEN ${exactCondition} THEN 1 ELSE 0 END`,
+    exactMatchExpr: numericFlagExpr(exactCondition),
     prefixMatchExpr: prefixCondition
-      ? sql<number>`CASE WHEN ${prefixCondition} THEN 1 ELSE 0 END`
-      : sql<number>`0`
+      ? numericFlagExpr(prefixCondition)
+      : sql<number>`0::double precision`
   };
 }
 
@@ -411,12 +444,12 @@ export class HybridRetriever {
     const normalizedDocText = normalizeSearchExpression(searchDocuments.docText);
     const normalizedPersonName = normalizeSearchExpression(persons.primaryName);
     const nameMatchSignals = buildNameMatchSignals(intent.rawQuery, normalizedPersonName);
-    const roleMatchExpr = sql<number>`CASE WHEN ${searchDocuments.facetRole} && ${toTextArray(
+    const roleMatchExpr = numericFlagExpr(sql`${searchDocuments.facetRole} && ${toTextArray(
       expandedRoles.length > 0 ? expandedRoles : ["__none__"]
-    )} THEN 1 ELSE 0 END`;
-    const skillMatchExpr = sql<number>`CASE WHEN ${searchDocuments.facetTags} && ${toTextArray(
+    )}`);
+    const skillMatchExpr = numericFlagExpr(sql`${searchDocuments.facetTags} && ${toTextArray(
       expandedSkills.length > 0 ? expandedSkills : ["__none__"]
-    )} THEN 1 ELSE 0 END`;
+    )}`);
     const scoreExpr = sql<number>`similarity(${normalizedDocText}, ${keywordQuery})`;
     const githubSourceCondition = keywordSignals.wantsOpenSource
       ? sql`${searchDocuments.facetSource} && ${toTextArray(["github"])}`
@@ -425,26 +458,26 @@ export class HybridRetriever {
     const leadershipTextCondition = buildTextMatchCondition(keywordSignals.leadershipTextTerms, normalizedDocText);
     const openSourceTextCondition = buildTextMatchCondition(keywordSignals.openSourceTextTerms, normalizedDocText);
     const skillTextMatchExpr = skillTextCondition
-      ? sql<number>`CASE WHEN ${skillTextCondition} THEN 1 ELSE 0 END`
-      : sql<number>`0`;
+      ? numericFlagExpr(skillTextCondition)
+      : sql<number>`0::double precision`;
     const leadershipTextMatchExpr = leadershipTextCondition
-      ? sql<number>`CASE WHEN ${leadershipTextCondition} THEN 1 ELSE 0 END`
-      : sql<number>`0`;
+      ? numericFlagExpr(leadershipTextCondition)
+      : sql<number>`0::double precision`;
     const openSourceTextMatchExpr = openSourceTextCondition
-      ? sql<number>`CASE WHEN ${openSourceTextCondition} THEN 1 ELSE 0 END`
-      : sql<number>`0`;
+      ? numericFlagExpr(openSourceTextCondition)
+      : sql<number>`0::double precision`;
     const githubSourceMatchExpr = githubSourceCondition
-      ? sql<number>`CASE WHEN ${githubSourceCondition} THEN 1 ELSE 0 END`
-      : sql<number>`0`;
+      ? numericFlagExpr(githubSourceCondition)
+      : sql<number>`0::double precision`;
     const specializedGithubCondition = wantsSpecializedFocus && skillTextCondition
       ? sql`(${searchDocuments.facetSource} && ${toTextArray(["github"])} AND ${skillTextCondition})`
       : null;
     const specializedGithubMatchExpr = specializedGithubCondition
-      ? sql<number>`CASE WHEN ${specializedGithubCondition} THEN 1 ELSE 0 END`
-      : sql<number>`0`;
+      ? numericFlagExpr(specializedGithubCondition)
+      : sql<number>`0::double precision`;
 
     const queryConditions: SQL[] = [
-      sql`${scoreExpr} > ${DEFAULT_KEYWORD_THRESHOLD}`
+      sql`${scoreExpr} > ${float8Param(DEFAULT_KEYWORD_THRESHOLD)}`
     ];
 
     if (expandedRoles.length > 0) {
@@ -494,15 +527,15 @@ export class HybridRetriever {
 
     const keywordRankExpr = sql<number>`
       ${scoreExpr}
-      + ${roleMatchExpr} * 0.08
-      + ${skillMatchExpr} * 0.12
-      + ${skillTextMatchExpr} * 0.10
-      + ${leadershipTextMatchExpr} * 0.08
-      + ${openSourceTextMatchExpr} * 0.18
-      + ${githubSourceMatchExpr} * 0.06
-      + ${specializedGithubMatchExpr} * 0.12
-      + ${nameMatchSignals.exactMatchExpr} * 0.45
-      + ${nameMatchSignals.prefixMatchExpr} * 0.18
+      + ${roleMatchExpr} * ${float8Param(RETRIEVER_BOOST.role)}
+      + ${skillMatchExpr} * ${float8Param(RETRIEVER_BOOST.skill)}
+      + ${skillTextMatchExpr} * ${float8Param(RETRIEVER_BOOST.skillText)}
+      + ${leadershipTextMatchExpr} * ${float8Param(RETRIEVER_BOOST.leadership)}
+      + ${openSourceTextMatchExpr} * ${float8Param(RETRIEVER_BOOST.openSource)}
+      + ${githubSourceMatchExpr} * ${float8Param(RETRIEVER_BOOST.githubSource)}
+      + ${specializedGithubMatchExpr} * ${float8Param(RETRIEVER_BOOST.specializedGithub)}
+      + ${nameMatchSignals.exactMatchExpr} * ${float8Param(RETRIEVER_BOOST.exactName)}
+      + ${nameMatchSignals.prefixMatchExpr} * ${float8Param(RETRIEVER_BOOST.prefixName)}
     `;
 
     const rows = await this.db
@@ -529,15 +562,15 @@ export class HybridRetriever {
     return rows.map((row) => {
       const boostedScore = clampScore(
         row.score
-        + row.roleMatch * 0.08
-        + row.skillMatch * 0.12
-        + row.skillTextMatch * 0.10
-        + row.leadershipTextMatch * 0.08
-        + row.openSourceTextMatch * 0.18
-        + row.githubSourceMatch * 0.06
-        + row.specializedGithubMatch * 0.12
-        + row.exactNameMatch * 0.45
-        + row.prefixNameMatch * 0.18
+        + row.roleMatch * RETRIEVER_BOOST.role
+        + row.skillMatch * RETRIEVER_BOOST.skill
+        + row.skillTextMatch * RETRIEVER_BOOST.skillText
+        + row.leadershipTextMatch * RETRIEVER_BOOST.leadership
+        + row.openSourceTextMatch * RETRIEVER_BOOST.openSource
+        + row.githubSourceMatch * RETRIEVER_BOOST.githubSource
+        + row.specializedGithubMatch * RETRIEVER_BOOST.specializedGithub
+        + row.exactNameMatch * RETRIEVER_BOOST.exactName
+        + row.prefixNameMatch * RETRIEVER_BOOST.prefixName
       );
 
       return {
@@ -588,9 +621,15 @@ export class HybridRetriever {
   private resolveBlendWeights(intent: QueryIntent): { keywordWeight: number; vectorWeight: number } {
     if (queryWantsSpecializedFocus(intent)) {
       if (!intent.sourceBias) {
-        return { keywordWeight: 0.85, vectorWeight: 0.15 };
+        return {
+          keywordWeight: SPECIALIZED_BLEND.withoutSourceBias.keyword,
+          vectorWeight: SPECIALIZED_BLEND.withoutSourceBias.vector
+        };
       }
-      return { keywordWeight: 0.58, vectorWeight: 0.42 };
+      return {
+        keywordWeight: SPECIALIZED_BLEND.withSourceBias.keyword,
+        vectorWeight: SPECIALIZED_BLEND.withSourceBias.vector
+      };
     }
 
     return { keywordWeight: this.keywordWeight, vectorWeight: this.vectorWeight };
@@ -645,11 +684,12 @@ export class HybridRetriever {
 
   async retrieve(
     intent: QueryIntent,
-    options: { filters?: RetrieverFilters; embedding?: number[]; signal?: AbortSignal } = {}
+    options: RetrieveOptions = {}
   ): Promise<SearchResult[]> {
     const blendWeights = this.resolveBlendWeights(intent);
     const keywordResults = await this.retrieveKeyword(intent, options.filters);
     let vectorResults: SearchResult[] = [];
+    let vectorFailed = false;
 
     try {
       const embedding =
@@ -666,8 +706,28 @@ export class HybridRetriever {
         throw options.signal.reason ?? error;
       }
 
+      vectorFailed = true;
       const reason = error instanceof Error ? error.message : String(error);
       console.warn(`[HybridRetriever] Vector retrieval failed, falling back to keyword-only results: ${reason}`);
+      options.onWarning?.({
+        code: "vector_search_failed",
+        message: "向量检索失败，当前结果仅基于关键词匹配。",
+        cause: reason
+      });
+    }
+
+    if (!vectorFailed && vectorResults.length === 0 && keywordResults.length > 0) {
+      options.onWarning?.({
+        code: "vector_search_empty",
+        message: "向量检索没有返回候选,可能 embedding 维度不匹配或语料未索引。"
+      });
+    }
+
+    if (keywordResults.length === 0 && vectorResults.length === 0) {
+      options.onWarning?.({
+        code: "keyword_search_empty",
+        message: "关键词和向量检索均无命中。"
+      });
     }
 
     if (vectorResults.length === 0) {
@@ -681,7 +741,7 @@ export class HybridRetriever {
 export async function retrieve(
   config: RetrieverConfig,
   intent: QueryIntent,
-  options: { filters?: RetrieverFilters; embedding?: number[]; signal?: AbortSignal } = {}
+  options: RetrieveOptions = {}
 ): Promise<SearchResult[]> {
   const retriever = new HybridRetriever(config);
   return retriever.retrieve(intent, options);

@@ -2,30 +2,27 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import {
   and,
-  evidenceItems,
   eq,
   inArray,
   not,
   persons,
-  searchDocuments,
   type EvidenceItem,
-  type SearchDocument,
   type SeekuDatabase,
   type SearchStatus
 } from "@seeku/db";
 import { createProvider, type LLMProvider } from "@seeku/llm";
 import {
   buildDisambiguationNotes,
-  HybridRetriever,
-  QueryPlanner,
-  Reranker,
+  SearchPipeline,
   type QueryIntent,
   type RerankResult,
+  type RetrievalWarning,
+  type PlannerWarning,
+  type PipelineWarning,
   type RetrieverFilters
 } from "@seeku/search";
 import { classifyMatchStrength, type MatchStrength } from "@seeku/shared";
 import { appConfig } from "@seeku/shared/config";
-import { QueryCache } from "@seeku/search";
 
 interface SearchRequestBody {
   query: string;
@@ -54,18 +51,36 @@ interface SearchResultCard {
   searchStatus?: SearchStatus;
 }
 
+export type SearchResultWarningCode =
+  | "no_results"
+  | "no_strong_match_medium"
+  | "no_strong_match_weak";
+
+export interface SearchResultWarning {
+  code: SearchResultWarningCode;
+  topMatchStrength: MatchStrength | "none";
+  /** Human-readable message — kept for backward compat with current UI. */
+  message: string;
+  /** Suggested next-step hint codes. UI should localize from these, not message. */
+  suggestionCodes: string[];
+}
+
 interface SearchResponseBody {
   results: SearchResultCard[];
   total: number;
   intent: QueryIntent;
+  /** Backward-compat string warning. Prefer `resultWarningDetail`. */
   resultWarning?: string;
+  resultWarningDetail?: SearchResultWarning;
+  /** Retrieval-stage warnings from pipeline (e.g. vector_search_failed). */
+  retrievalWarnings?: RetrievalWarning[];
+  /** Planner-stage warnings from pipeline (e.g. llm_parse_failed). */
+  plannerWarnings?: PlannerWarning[];
 }
 
 export interface SearchServices {
   provider: LLMProvider;
-  planner: QueryPlanner;
-  retriever: HybridRetriever;
-  reranker: Reranker;
+  pipeline: SearchPipeline;
 }
 
 interface SearchRouteOptions {
@@ -134,39 +149,61 @@ function getSearchServices(db: SeekuDatabase, overrides?: SearchServices): Searc
   }
 
   const provider = createProvider();
+  const pipeline = new SearchPipeline({
+    db,
+    provider,
+    useCache: true,
+    // Web's one-shot REST endpoint pays the cross-encoder cost for precision.
+    useCrossEncoder: true,
+    retrievalLimit: MAX_LIMIT,
+    // CE coverage must span the full result window the API can return; default
+    // 15 leaves the tail of a 50-row response unscored, which lets unscored
+    // candidates leapfrog scored ones (heuristic=0.6 beats heuristic=0.8 *
+    // 0.7 + low-CE * 0.3 = 0.59 — see PR-1.2 in DIAGNOSTIC_REPORT_2026-04-26).
+    crossEncoderLimit: MAX_LIMIT
+  });
   const services: SearchServices = {
     provider,
-    planner: new QueryPlanner({ provider }),
-    retriever: new HybridRetriever({ db, provider, limit: MAX_LIMIT }),
-    reranker: new Reranker()
+    pipeline
   };
 
   serviceCache.set(db, services);
   return services;
 }
 
-function groupEvidence(items: EvidenceItem[]): Map<string, EvidenceItem[]> {
-  const grouped = new Map<string, EvidenceItem[]>();
-
-  for (const item of items) {
-    const current = grouped.get(item.personId) ?? [];
-    current.push(item);
-    grouped.set(item.personId, current);
+function buildStructuredWarning(
+  results: Array<Pick<SearchResultCard, "matchStrength">>
+): SearchResultWarning | undefined {
+  if (results.length === 0) {
+    return {
+      code: "no_results",
+      topMatchStrength: "none",
+      message: "没有找到任何候选人。建议放宽必须项或调整关键词。",
+      suggestionCodes: ["broaden_must_haves", "broaden_query"]
+    };
   }
 
-  return grouped;
-}
-
-function buildApiResultWarning(results: Array<Pick<SearchResultCard, "matchStrength">>) {
-  if (results.length === 0 || results.some((result) => result.matchStrength === "strong")) {
+  if (results.some((result) => result.matchStrength === "strong")) {
     return undefined;
   }
 
   if (results.some((result) => result.matchStrength === "medium")) {
-    return "没有找到强匹配，当前结果以中等相关候选人为主。建议继续补充必须项、关键技术或放宽来源过滤。";
+    return {
+      code: "no_strong_match_medium",
+      topMatchStrength: "medium",
+      message:
+        "没有找到强匹配，当前结果以中等相关候选人为主。建议继续补充必须项、关键技术或放宽来源过滤。",
+      suggestionCodes: ["add_must_haves", "broaden_sources"]
+    };
   }
 
-  return "没有找到强匹配，只找到了弱相关候选人。建议继续补充必须项、关键技术或放宽来源过滤。";
+  return {
+    code: "no_strong_match_weak",
+    topMatchStrength: "weak",
+    message:
+      "没有找到强匹配，只找到了弱相关候选人。建议继续补充必须项、关键技术或放宽来源过滤。",
+    suggestionCodes: ["clarify_role", "clarify_skill", "broaden_sources"]
+  };
 }
 
 function buildResponseCard(
@@ -219,45 +256,59 @@ async function handleSearch(
   }
 
   const services = getSearchServices(db, options.services);
-  const intent = await services.planner.parse(body.query);
-  const queryEmbedding = await services.provider.embed(intent.rawQuery);
-  const retrieved = await services.retriever.retrieve(intent, {
-    filters: body.filters,
-    embedding: queryEmbedding.embedding
-  });
+  const retrievalWarnings: RetrievalWarning[] = [];
+  const plannerWarnings: PlannerWarning[] = [];
 
-  if (retrieved.length === 0) {
+  const pipelineResult = await services.pipeline.search(
+    body.query,
+    body.filters,
+    {
+      onWarning: (warning: PipelineWarning) => {
+        if (warning.code.startsWith("llm_")) {
+          plannerWarnings.push(warning as PlannerWarning);
+        } else {
+          retrievalWarnings.push(warning as RetrievalWarning);
+        }
+      }
+    }
+  );
+
+  const reranked = pipelineResult.results;
+
+  if (reranked.length === 0) {
     return {
       results: [],
       total: 0,
-      intent
+      intent: pipelineResult.intent,
+      resultWarning: "没有找到任何候选人。建议放宽必须项或调整关键词。",
+      resultWarningDetail: buildStructuredWarning([]),
+      retrievalWarnings: retrievalWarnings.length > 0 ? retrievalWarnings : undefined,
+      plannerWarnings: plannerWarnings.length > 0 ? plannerWarnings : undefined
     };
   }
 
-  const personIds = retrieved.map((item) => item.personId);
-  const [documents, evidence, people] = await Promise.all([
-    db.select().from(searchDocuments).where(inArray(searchDocuments.personId, personIds)),
-    db.select().from(evidenceItems).where(inArray(evidenceItems.personId, personIds)),
-    db
-      .select({
-        id: persons.id,
-        primaryName: persons.primaryName,
-        primaryHeadline: persons.primaryHeadline,
-        searchStatus: persons.searchStatus
-      })
-      .from(persons)
-      .where(and(not(eq(persons.searchStatus, "hidden")), inArray(persons.id, personIds)))
-  ]);
+  // Pipeline already loaded persons via active-status filter; we re-fetch here
+  // to also surface non-hidden but non-active candidates (matches legacy semantics).
+  const personIds = reranked.map((item) => item.personId);
+  const people = await db
+    .select({
+      id: persons.id,
+      primaryName: persons.primaryName,
+      primaryHeadline: persons.primaryHeadline,
+      searchStatus: persons.searchStatus
+    })
+    .from(persons)
+    .where(and(not(eq(persons.searchStatus, "hidden")), inArray(persons.id, personIds)));
 
-  const documentMap = new Map<string, SearchDocument>(
-    documents.map((document) => [document.personId, document])
-  );
-  const evidenceMap = groupEvidence(evidence);
   const personMap = new Map(people.map((person) => [person.id, person]));
-  const reranked = services.reranker.rerank(retrieved, intent, documentMap, evidenceMap);
+  const documentMap = pipelineResult.documents;
+  const evidenceMap = pipelineResult.evidence;
+
+  const offset = body.offset ?? 0;
+  const limit = body.limit ?? DEFAULT_LIMIT;
   const disambiguationNotes = buildDisambiguationNotes(
     body.query,
-    reranked.slice(0, Math.max((body.offset ?? 0) + (body.limit ?? DEFAULT_LIMIT), 10)).map((result) => ({
+    reranked.slice(0, Math.max(offset + limit, 10)).map((result) => ({
       personId: result.personId,
       name: personMap.get(result.personId)?.primaryName ?? "Unknown",
       headline: personMap.get(result.personId)?.primaryHeadline ?? null,
@@ -265,8 +316,6 @@ async function handleSearch(
       document: documentMap.get(result.personId)
     }))
   );
-  const offset = body.offset ?? 0;
-  const limit = body.limit ?? DEFAULT_LIMIT;
 
   if (offset >= reranked.length && reranked.length > 0) {
     request.log.warn({ offset, total: reranked.length }, "Search offset exceeds total results");
@@ -282,11 +331,16 @@ async function handleSearch(
     )
   );
 
+  const detail = buildStructuredWarning(responseCards);
+
   return {
     results: responseCards,
     total: reranked.length,
-    intent,
-    resultWarning: buildApiResultWarning(responseCards)
+    intent: pipelineResult.intent,
+    resultWarning: detail?.message,
+    resultWarningDetail: detail,
+    retrievalWarnings: retrievalWarnings.length > 0 ? retrievalWarnings : undefined,
+    plannerWarnings: plannerWarnings.length > 0 ? plannerWarnings : undefined
   };
 }
 

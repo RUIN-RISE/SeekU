@@ -2,12 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockCreateDatabaseConnection = vi.fn();
 const mockClose = vi.fn();
-const mockPlannerParse = vi.fn();
-const mockRetrieverRetrieve = vi.fn();
-const mockRetrieverRetrieveKeyword = vi.fn();
-const mockRerankerRerank = vi.fn();
+const mockPipelineSearch = vi.fn();
 const mockBuildDisambiguationNotes = vi.fn(() => new Map());
-const mockEmbed = vi.fn();
 const mockBuildQueryMatchExplanation = vi.fn();
 const mockDescribeRelativeDate = vi.fn();
 const mockClassifyMatchStrength = vi.fn((score: number, reasons: string[]) =>
@@ -27,7 +23,6 @@ const mockFormatSourceLabel = vi.fn((source?: string) => {
 
 const personsTable = { table: "persons", id: "persons.id", searchStatus: "persons.searchStatus" };
 const evidenceItemsTable = { table: "evidence_items", personId: "evidence.personId" };
-const searchDocumentsTable = { table: "search_documents", personId: "documents.personId" };
 const personIdentitiesTable = { table: "person_identities", personId: "identities.personId", sourceProfileId: "identities.sourceProfileId" };
 const sourceProfilesTable = { table: "source_profiles", id: "profiles.id" };
 
@@ -37,7 +32,6 @@ vi.mock("@seeku/db", () => ({
   createDatabaseConnection: mockCreateDatabaseConnection,
   persons: personsTable,
   evidenceItems: evidenceItemsTable,
-  searchDocuments: searchDocumentsTable,
   personIdentities: personIdentitiesTable,
   sourceProfiles: sourceProfilesTable,
   and: vi.fn((...args) => args),
@@ -47,23 +41,20 @@ vi.mock("@seeku/db", () => ({
 
 vi.mock("@seeku/llm", () => ({
   createProvider: vi.fn(() => ({
-    embed: mockEmbed,
+    embed: vi.fn(async () => ({ embedding: [0.1, 0.2, 0.3] })),
     chat: vi.fn(async () => ({ content: "test" }))
   }))
 }));
 
 vi.mock("@seeku/search", () => ({
-  QueryPlanner: vi.fn(() => ({
-    parse: mockPlannerParse
-  })),
-  HybridRetriever: vi.fn(() => ({
-    retrieve: mockRetrieverRetrieve,
-    retrieveKeyword: mockRetrieverRetrieveKeyword
-  })),
-  Reranker: vi.fn(() => ({
-    rerank: mockRerankerRerank
+  SearchPipeline: vi.fn(() => ({
+    search: mockPipelineSearch
   })),
   buildDisambiguationNotes: mockBuildDisambiguationNotes
+}));
+
+vi.mock("@seeku/shared", () => ({
+  FALLBACK_MATCH_REASONS: ["综合相关度"]
 }));
 
 vi.mock("./cli/workflow.js", () => ({
@@ -87,6 +78,31 @@ function createMockDb() {
   };
 }
 
+function defaultPipelineResult(overrides: {
+  results?: any[];
+  documents?: Map<string, any>;
+  evidence?: Map<string, any[]>;
+  intent?: any;
+} = {}) {
+  return {
+    results: overrides.results ?? [],
+    intent: overrides.intent ?? {
+      rawQuery: "test query",
+      roles: [],
+      skills: ["python"],
+      locations: [],
+      mustHaves: [],
+      niceToHaves: []
+    },
+    totalCandidates: (overrides.results ?? []).length,
+    cachedIntent: false,
+    crossEncoderUsed: false,
+    documents: overrides.documents ?? new Map(),
+    evidence: overrides.evidence ?? new Map(),
+    warnings: []
+  };
+}
+
 describe("CLI Search", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -96,18 +112,7 @@ describe("CLI Search", () => {
       db: createMockDb(),
       close: mockClose
     });
-    mockEmbed.mockResolvedValue({ embedding: [0.1, 0.2, 0.3] });
-    mockPlannerParse.mockResolvedValue({
-      rawQuery: "test query",
-      roles: [],
-      skills: ["python"],
-      locations: [],
-      mustHaves: [],
-      niceToHaves: []
-    });
-    mockRetrieverRetrieve.mockResolvedValue([]);
-    mockRetrieverRetrieveKeyword.mockResolvedValue([]);
-    mockRerankerRerank.mockReturnValue([]);
+    mockPipelineSearch.mockResolvedValue(defaultPipelineResult());
     mockBuildQueryMatchExplanation.mockReturnValue({
       summary: "技术命中：python",
       reasons: ["技术命中：python"]
@@ -156,23 +161,24 @@ describe("CLI Search", () => {
     });
 
     it("should include parity metadata in json search results", async () => {
+      const document = {
+        personId: "person-1",
+        docText: "Python builder in Hangzhou",
+        facetSource: ["bonjour"],
+        facetLocation: ["杭州"],
+        facetRole: [],
+        facetTags: []
+      };
+      const evidence = [{
+        personId: "person-1",
+        evidenceType: "project",
+        title: "Built Hangzhou automation stack",
+        description: "Used python heavily",
+        source: "bonjour",
+        occurredAt: new Date("2026-03-27T00:00:00.000Z")
+      }];
+
       queryResults = new Map<any, any[]>([
-        [searchDocumentsTable, [{
-          personId: "person-1",
-          docText: "Python builder in Hangzhou",
-          facetSource: ["bonjour"],
-          facetLocation: ["杭州"],
-          facetRole: [],
-          facetTags: []
-        }]],
-        [evidenceItemsTable, [{
-          personId: "person-1",
-          evidenceType: "project",
-          title: "Built Hangzhou automation stack",
-          description: "Used python heavily",
-          source: "bonjour",
-          occurredAt: new Date("2026-03-27T00:00:00.000Z")
-        }]],
         [personsTable, [{
           id: "person-1",
           primaryName: "Ada",
@@ -191,12 +197,15 @@ describe("CLI Search", () => {
           canonicalUrl: "https://bonjour.bio/ada"
         }]]
       ]);
-      mockRetrieverRetrieve.mockResolvedValue([{ personId: "person-1" }]);
-      mockRerankerRerank.mockReturnValue([{
-        personId: "person-1",
-        finalScore: 0.82,
-        matchReasons: ["skill evidence: python"]
-      }]);
+      mockPipelineSearch.mockResolvedValue(defaultPipelineResult({
+        results: [{
+          personId: "person-1",
+          finalScore: 0.82,
+          matchReasons: ["skill evidence: python"]
+        }],
+        documents: new Map([["person-1", document]]),
+        evidence: new Map([["person-1", evidence]])
+      }));
       mockBuildQueryMatchExplanation.mockReturnValue({
         summary: "地点命中：杭州，技术命中：python",
         reasons: ["地点命中：杭州", "技术命中：python"]
@@ -236,23 +245,24 @@ describe("CLI Search", () => {
     });
 
     it("should fall back to raw query reason when explanation becomes generic", async () => {
+      const document = {
+        personId: "person-1",
+        docText: "Builder in Hangzhou",
+        facetSource: ["bonjour"],
+        facetLocation: ["杭州"],
+        facetRole: [],
+        facetTags: []
+      };
+      const evidence = [{
+        personId: "person-1",
+        evidenceType: "project",
+        title: "Built Hangzhou automation stack",
+        description: "Used python heavily",
+        source: "bonjour",
+        occurredAt: new Date("2026-03-27T00:00:00.000Z")
+      }];
+
       queryResults = new Map<any, any[]>([
-        [searchDocumentsTable, [{
-          personId: "person-1",
-          docText: "Builder in Hangzhou",
-          facetSource: ["bonjour"],
-          facetLocation: ["杭州"],
-          facetRole: [],
-          facetTags: []
-        }]],
-        [evidenceItemsTable, [{
-          personId: "person-1",
-          evidenceType: "project",
-          title: "Built Hangzhou automation stack",
-          description: "Used python heavily",
-          source: "bonjour",
-          occurredAt: new Date("2026-03-27T00:00:00.000Z")
-        }]],
         [personsTable, [{
           id: "person-1",
           primaryName: "Ada",
@@ -271,12 +281,15 @@ describe("CLI Search", () => {
           canonicalUrl: "https://bonjour.bio/ada"
         }]]
       ]);
-      mockRetrieverRetrieve.mockResolvedValue([{ personId: "person-1" }]);
-      mockRerankerRerank.mockReturnValue([{
-        personId: "person-1",
-        finalScore: 0.31,
-        matchReasons: []
-      }]);
+      mockPipelineSearch.mockResolvedValue(defaultPipelineResult({
+        results: [{
+          personId: "person-1",
+          finalScore: 0.31,
+          matchReasons: []
+        }],
+        documents: new Map([["person-1", document]]),
+        evidence: new Map([["person-1", evidence]])
+      }));
       mockBuildQueryMatchExplanation.mockReturnValue({
         summary: "综合相关度 0.3 分",
         reasons: ["综合相关度 0.3 分"]
