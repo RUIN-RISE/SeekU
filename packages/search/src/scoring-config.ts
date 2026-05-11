@@ -67,6 +67,14 @@ export const SCORING_CONFIG = {
   pipeline: {
     crossEncoderLimit: envNumber("SEEKU_SCORING_CROSS_ENCODER_LIMIT", 15),
     retrievalLimit: envNumber("SEEKU_SCORING_RETRIEVAL_LIMIT", 100)
+  },
+  evidenceGate: {
+    enabled: envNumber("SEEKU_EVIDENCE_GATE_ENABLED", 1) === 1,
+    leadershipPenalty: envNumber("SEEKU_EVIDENCE_GATE_LEADERSHIP_PENALTY", 0.55),
+    researcherPenalty: envNumber("SEEKU_EVIDENCE_GATE_RESEARCHER_PENALTY", 0.55),
+    researcherPartialPenalty: envNumber("SEEKU_EVIDENCE_GATE_RESEARCHER_PARTIAL_PENALTY", 0.80),
+    productPenalty: envNumber("SEEKU_EVIDENCE_GATE_PRODUCT_PENALTY", 0.55),
+    engineerPenalty: envNumber("SEEKU_EVIDENCE_GATE_ENGINEER_PENALTY", 0.70)
   }
 } as const;
 

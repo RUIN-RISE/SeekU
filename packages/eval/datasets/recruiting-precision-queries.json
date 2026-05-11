@@ -1,0 +1,76 @@
+[
+  {
+    "id": "rp001",
+    "text": "找一个会 RAG 的工程师",
+    "mustRoles": ["工程师", "AI工程师", "后端工程师", "全栈工程师", "算法工程师", "开发者"],
+    "mustSkills": ["rag", "检索增强", "retrieval", "向量检索", "vector"],
+    "minTop5Precision": 0.4,
+    "notes": "Core regression for the original low-match RAG engineer complaint."
+  },
+  {
+    "id": "rp002",
+    "text": "杭州 AI 工程师",
+    "mustRoles": ["AI工程师", "工程师", "算法工程师", "后端工程师"],
+    "mustSkills": ["ai", "人工智能", "llm", "大模型", "机器学习", "deep learning"],
+    "mustLocations": ["杭州", "hangzhou"],
+    "minTop5Precision": 0.4,
+    "notes": "Role + skill + location precision."
+  },
+  {
+    "id": "rp003",
+    "text": "开源 AI founder 或 tech lead",
+    "mustRoles": ["创始人", "联合创始人", "技术负责人", "负责人", "开源开发者"],
+    "mustSkills": ["ai", "llm", "大模型", "open source", "开源"],
+    "minTop5Precision": 0.4,
+    "notes": "Mixed leadership and open-source intent."
+  },
+  {
+    "id": "rp004",
+    "text": "NLP 研究科学家，有论文发表经验",
+    "mustRoles": ["研究科学家", "研究员", "AI研究员"],
+    "mustSkills": ["nlp", "自然语言处理", "paper", "论文", "research"],
+    "minTop5Precision": 0.4,
+    "notes": "Researcher role should not be swamped by generic engineers."
+  },
+  {
+    "id": "rp005",
+    "text": "生成式 AI 产品负责人",
+    "mustRoles": ["产品经理", "负责人", "管理者", "创始人"],
+    "mustSkills": ["ai", "aigc", "生成式", "llm", "大模型", "产品"],
+    "minTop5Precision": 0.4,
+    "notes": "Product/leadership query should not return only engineers."
+  },
+  {
+    "id": "rp006",
+    "text": "深圳 计算机视觉 算法研究员",
+    "mustRoles": ["研究员", "AI研究员", "算法工程师", "研究科学家"],
+    "mustSkills": ["计算机视觉", "computer vision", "cv", "视觉", "算法"],
+    "mustLocations": ["深圳", "shenzhen"],
+    "minTop5Precision": 0.3,
+    "notes": "Harder role + skill + location query."
+  },
+  {
+    "id": "rp007",
+    "text": "AI 创业公司 CTO",
+    "mustRoles": ["创始人", "联合创始人", "技术负责人", "管理者", "架构师"],
+    "mustSkills": ["ai", "llm", "大模型", "machine learning", "deep learning"],
+    "minTop5Precision": 0.6,
+    "notes": "Leadership gate test: should not return pure engineers without leadership experience evidence."
+  },
+  {
+    "id": "rp008",
+    "text": "有顶会论文的计算机视觉研究员",
+    "mustRoles": ["研究员", "AI研究员", "研究科学家", "算法工程师"],
+    "mustSkills": ["计算机视觉", "computer vision", "cv", "视觉", "论文", "paper", "research"],
+    "minTop5Precision": 0.4,
+    "notes": "Researcher gate test: should not return engineers who merely mention CV in their profile."
+  },
+  {
+    "id": "rp009",
+    "text": "做过 AI Agent 产品的产品经理",
+    "mustRoles": ["产品经理"],
+    "mustSkills": ["agent", "智能体", "ai", "产品"],
+    "minTop5Precision": 0.4,
+    "notes": "Product gate strict: only 产品经理 passes, not 技术负责人 or generic 负责人."
+  }
+]

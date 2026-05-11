@@ -275,6 +275,10 @@ export interface RankFeatures {
   repoCount: number;
   followerCount: number;
   freshness: number;
+  strongRoles?: string[];
+  strongSkills?: string[];
+  leadershipEvidenceCount?: number;
+  hasResearchSignal?: boolean;
 }
 
 export const searchDocuments = pgTable("search_documents", {

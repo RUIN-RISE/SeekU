@@ -66,6 +66,27 @@ const SPECIALIZED_QUERY_TERMS = [
   "llm"
 ] as const;
 
+export type QueryArchetype = "leadership" | "researcher" | "product" | "engineer" | "general";
+
+const ARCHETYPE_LEADERSHIP_PATTERN = /(founder|co-founder|创始人|联合创始人|ceo|cto|tech lead|technical lead|技术负责人|技术总监|vp of|director of)/;
+const ARCHETYPE_RESEARCHER_PATTERN = /(researcher|research scientist|研究员|研究科学家|科学家|scientist)/;
+const ARCHETYPE_PRODUCT_PATTERN = /(product manager|产品经理|产品负责人|\bpm\b)/;
+const ARCHETYPE_ENGINEER_PATTERN = /(engineer|工程师|开发者|developer|算法)/;
+const EVIDENCE_GATE_FALLBACK_QUERY_PATTERN = /(founder|创始人|联合创始人|co-founder|cofounder|tech lead|technical lead|技术负责人|技术总监|researcher|研究员|研究科学家|research scientist|scientist|科学家|product manager|产品经理|产品负责人|manager|管理者)/;
+const EVIDENCE_GATE_FALLBACK_ROLE_PENALTY = 0.72;
+
+export function deriveArchetype(intent: QueryIntent): QueryArchetype {
+  const roleText = intent.roles.map(r => r.toLowerCase()).join(" ");
+  const queryLower = intent.rawQuery.toLowerCase();
+  const combined = `${roleText} ${queryLower}`;
+
+  if (ARCHETYPE_LEADERSHIP_PATTERN.test(combined)) return "leadership";
+  if (ARCHETYPE_RESEARCHER_PATTERN.test(combined)) return "researcher";
+  if (ARCHETYPE_PRODUCT_PATTERN.test(combined)) return "product";
+  if (ARCHETYPE_ENGINEER_PATTERN.test(combined)) return "engineer";
+  return "general";
+}
+
 function textFromEvidence(item: EvidenceItem): string {
   return normalizeSearchText(`${item.title ?? ""} ${item.description ?? ""}`);
 }
@@ -101,6 +122,8 @@ export class Reranker {
     evidenceByPerson: Map<string, EvidenceItem[]>,
     crossEncoderScores?: Map<string, CrossEncoderScore>
   ): RerankResult[] {
+    const archetype = deriveArchetype(intent);
+
     return results
       .map((result) => {
         const document = documents.get(result.personId);
@@ -109,14 +132,19 @@ export class Reranker {
         const freshnessPenalty = this.computeFreshnessPenalty(document);
         const crossEncoderResult = crossEncoderScores?.get(result.personId);
 
+        const rolePenalty = SCORING_CONFIG.evidenceGate.enabled
+          ? this.computeEvidenceGatePenalty(intent, document, archetype)
+          : this.computeEvidenceGateFallbackPenalty(intent, document, archetype);
+
         // Combine heuristic score with cross-encoder if available
         const heuristicScore = result.combinedScore * (1 + evidenceBoost) * freshnessPenalty;
         const crossEncoderWeight = this.config.crossEncoderWeight;
 
-        const finalScore = crossEncoderResult
+        const blendedScore = crossEncoderResult
           ? heuristicScore * (1 - crossEncoderWeight) +
             crossEncoderResult.relevanceScore * crossEncoderWeight
           : heuristicScore;
+        const finalScore = blendedScore * rolePenalty;
 
         const matchReasons = this.extractMatchReasons(
           result,
@@ -265,6 +293,117 @@ export class Reranker {
   private computeFreshnessPenalty(document?: SearchDocument): number {
     const freshness = document?.rankFeatures?.freshness ?? 365;
     return Math.max(0.35, Math.exp(-freshness / this.config.freshnessDecayDays));
+  }
+
+  private computeEvidenceGateFallbackPenalty(
+    intent: QueryIntent,
+    document: SearchDocument | undefined,
+    archetype: QueryArchetype
+  ): number {
+    if (intent.roles.length === 0) {
+      return 1.0;
+    }
+
+    const combined = `${intent.rawQuery} ${intent.roles.join(" ")}`.toLowerCase();
+    if (!EVIDENCE_GATE_FALLBACK_QUERY_PATTERN.test(combined)) {
+      return 1.0;
+    }
+
+    const facetText = normalizeSearchText((document?.facetRole ?? []).join(" "));
+    if (!facetText) {
+      return EVIDENCE_GATE_FALLBACK_ROLE_PENALTY;
+    }
+
+    const archetypePattern = (() => {
+      switch (archetype) {
+        case "leadership":
+          return /(founder|创始人|联合创始人|管理者|技术负责人|负责人|ceo|cto)/;
+        case "researcher":
+          return /(研究员|ai研究员|研究科学家|算法工程师|researcher|research scientist|scientist)/;
+        case "product":
+          return /(产品经理|产品负责人|product manager|\bpm\b)/;
+        case "engineer":
+          return /(工程师|ai工程师|后端工程师|全栈工程师|算法工程师|开发者|engineer|developer)/;
+        case "general":
+          return null;
+      }
+    })();
+
+    if (!archetypePattern) {
+      return 1.0;
+    }
+
+    return archetypePattern.test(facetText) ? 1.0 : EVIDENCE_GATE_FALLBACK_ROLE_PENALTY;
+  }
+
+  private computeEvidenceGatePenalty(
+    intent: QueryIntent,
+    document: SearchDocument | undefined,
+    archetype: QueryArchetype
+  ): number {
+    if (archetype === "general") return 1.0;
+
+    const rf = document?.rankFeatures;
+    const strongRoles = rf?.strongRoles ?? [];
+    const strongSkills = rf?.strongSkills ?? [];
+    const leadershipCount = rf?.leadershipEvidenceCount ?? 0;
+    const hasResearchSignal = rf?.hasResearchSignal ?? false;
+
+    switch (archetype) {
+      case "leadership": {
+        const hasLeadershipRole = strongRoles.some(role =>
+          /(创始人|联合创始人|管理者|技术负责人|合伙人|投资人)/.test(role)
+        );
+        if (leadershipCount > 0 || hasLeadershipRole) return 1.0;
+        return SCORING_CONFIG.evidenceGate.leadershipPenalty;
+      }
+
+      case "researcher": {
+        const hasDirectResearchRole = strongRoles.some(role =>
+          /(研究员|AI研究员|研究科学家)/.test(role)
+        );
+        if (hasDirectResearchRole) return 1.0;
+
+        const hasAlgorithmRole = strongRoles.some(role => /算法工程师/.test(role));
+        if (hasAlgorithmRole) {
+          if (hasResearchSignal) return 1.0;
+          return SCORING_CONFIG.evidenceGate.researcherPartialPenalty;
+        }
+
+        const facetRoles = document?.facetRole ?? [];
+        const hasFacetResearchRole = facetRoles.some(role =>
+          /(研究员|AI研究员|研究科学家)/.test(role)
+        );
+        if (hasFacetResearchRole) {
+          return SCORING_CONFIG.evidenceGate.researcherPartialPenalty;
+        }
+
+        return SCORING_CONFIG.evidenceGate.researcherPenalty;
+      }
+
+      case "product": {
+        const hasProductRole = strongRoles.some(role =>
+          /^(产品经理)$/.test(role)
+        );
+        if (hasProductRole) return 1.0;
+        return SCORING_CONFIG.evidenceGate.productPenalty;
+      }
+
+      case "engineer": {
+        const substantiveSkills = intent.skills.filter(s => {
+          const lower = s.toLowerCase();
+          return !["ai", "人工智能", "open source", "开源"].includes(lower);
+        });
+        if (substantiveSkills.length === 0) return 1.0;
+
+        const hasSkillOverlap = substantiveSkills.some(skill => {
+          const normalized = skill.toLowerCase();
+          return strongSkills.some(ss => ss.includes(normalized) || normalized.includes(ss));
+        });
+        if (hasSkillOverlap) return 1.0;
+        return SCORING_CONFIG.evidenceGate.engineerPenalty;
+      }
+    }
   }
 
   private extractMatchReasons(

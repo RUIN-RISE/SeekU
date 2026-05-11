@@ -360,17 +360,84 @@ function extractTags(person: Person, evidence: EvidenceItem[], sourceHints: Sear
   return Array.from(tags);
 }
 
+const LEADERSHIP_TITLE_PATTERN = /(founder|co-founder|ceo|cto|vp|director|总监|创始人|联合创始人|技术负责人|技术总监)/i;
+
+const RESEARCH_SIGNAL_TERMS = [
+  "research", "researcher", "paper", "publication", "论文", "发表",
+  "cvpr", "neurips", "iclr", "icml", "acl", "emnlp", "aaai", "ijcai", "kdd", "sigir",
+  "arxiv", "google scholar", "研究", "科研", "postdoc", "博士后", "professor", "教授"
+];
+
+function extractStrongRoles(evidence: EvidenceItem[]): string[] {
+  const roles = new Set<string>();
+  for (const item of evidence) {
+    if (item.evidenceType !== "experience" && item.evidenceType !== "job_signal") continue;
+    if (!item.title) continue;
+    for (const segment of splitRoleSegments(item.title)) {
+      for (const role of classifyRoleSegment(segment)) {
+        roles.add(role);
+      }
+    }
+  }
+  return Array.from(roles);
+}
+
+function extractStrongSkills(evidence: EvidenceItem[]): string[] {
+  const skills = new Set<string>();
+  for (const item of evidence) {
+    if (item.evidenceType !== "project" && item.evidenceType !== "repository") continue;
+    const text = `${item.title ?? ""} ${item.description ?? ""}`.toLowerCase();
+    for (const kw of TECH_KEYWORDS) {
+      if (textMatchesTechKeyword(text, kw)) {
+        skills.add(kw);
+      }
+    }
+    if (item.evidenceType === "repository") {
+      const lang = item.metadata?.language as string | undefined;
+      if (lang) skills.add(lang.toLowerCase());
+    }
+  }
+  return Array.from(skills);
+}
+
+function countLeadershipEvidence(evidence: EvidenceItem[]): number {
+  let count = 0;
+  for (const item of evidence) {
+    if (item.evidenceType !== "experience" && item.evidenceType !== "job_signal") continue;
+    if (item.title && LEADERSHIP_TITLE_PATTERN.test(item.title)) {
+      count++;
+    }
+  }
+  return count;
+}
+
+function detectResearchSignal(person: Person, evidence: EvidenceItem[]): boolean {
+  const parts: string[] = [];
+  if (person.primaryHeadline) parts.push(person.primaryHeadline);
+  if (person.summary) parts.push(person.summary);
+  for (const item of evidence) {
+    if (item.title) parts.push(item.title);
+    if (item.description) parts.push(item.description);
+  }
+  const combined = parts.join(" ").toLowerCase();
+  return RESEARCH_SIGNAL_TERMS.some(term => combined.includes(term));
+}
+
 function computeRankFeatures(person: Person, evidence: EvidenceItem[]): RankFeatures {
   const now = Date.now();
   const updatedAt = person.updatedAt ? new Date(person.updatedAt).getTime() : now;
-  const freshness = Math.floor((now - updatedAt) / (1000 * 60 * 60 * 24)); // Days
+  const freshness = Math.floor((now - updatedAt) / (1000 * 60 * 60 * 24));
 
   return {
     evidenceCount: evidence.length,
     projectCount: evidence.filter(e => e.evidenceType === "project").length,
     repoCount: evidence.filter(e => e.evidenceType === "repository").length,
-    followerCount: 0, // Will be extracted from metadata when available
-    freshness
+    followerCount: 0,
+    freshness,
+    strongRoles: extractStrongRoles(evidence),
+    strongSkills: extractStrongSkills(evidence),
+    leadershipEvidenceCount: countLeadershipEvidence(evidence),
+    hasResearchSignal: detectResearchSignal(person, evidence)
   };
 }
 
