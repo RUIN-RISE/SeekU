@@ -161,16 +161,17 @@ describe("agent-tools", () => {
       {
         shortlistIndex: 1,
         personId: "person-1",
-        name: "Ada",
-        summary: "长期做搜索与自动化系统建设。"
+        name: "Ada"
       },
       {
         shortlistIndex: 2,
         personId: "person-2",
-        name: "Grace",
-        summary: "偏后端基础设施。"
+        name: "Grace"
       }
     ]);
+
+    expect(context[0]).not.toHaveProperty("summary");
+    expect(context[0]).not.toHaveProperty("matchReason");
 
     expect(resolveCandidateAnchorWithContext("像 2 号但更偏后端", BASE_CONDITIONS, context))
       .toMatchObject({

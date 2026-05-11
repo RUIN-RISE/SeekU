@@ -160,6 +160,74 @@ describe("ChatInterface", () => {
       });
     });
 
+    it("passes only minimized shortlist context into the revision prompt", async () => {
+      const seenPrompts: string[] = [];
+      const spy = vi.fn(async (messages: Array<{ role: string; content: string }>) => {
+        seenPrompts.push(messages[1]?.content ?? "");
+        return {
+          content: JSON.stringify({
+            skills: ["python"],
+            locations: ["杭州"],
+            experience: null,
+            role: "后端",
+            sourceBias: null,
+            mustHave: [],
+            niceToHave: [],
+            exclude: [],
+            preferFresh: false,
+            candidateAnchor: { shortlistIndex: 1 },
+            limit: 10
+          })
+        };
+      });
+
+      const localChat = new ChatInterface({
+        ...mockLLMProvider,
+        chat: spy
+      } as any);
+
+      await localChat.reviseConditions(
+        {
+          skills: ["python"],
+          locations: ["杭州"],
+          experience: undefined,
+          role: undefined,
+          sourceBias: undefined,
+          mustHave: [],
+          niceToHave: [],
+          exclude: [],
+          preferFresh: false,
+          candidateAnchor: undefined,
+          limit: 10
+        },
+        "像 1 号但更偏后端",
+        "edit",
+        {
+          shortlist: [
+            {
+              shortlistIndex: 1,
+              personId: "person-1",
+              name: "Ada",
+              headline: "创始人 / 后端工程师",
+              location: "杭州",
+              sources: ["Bonjour"],
+              matchReason: "后端与地点匹配，项目质量高",
+              summary: "这是一段很长的候选人总结，理论上不应该进入 refine prompt 的 shortlistContext。"
+            }
+          ]
+        }
+      );
+
+      expect(spy).toHaveBeenCalled();
+      for (const prompt of seenPrompts) {
+        expect(prompt).toContain("\"shortlistIndex\":1");
+        expect(prompt).toContain("\"name\":\"Ada\"");
+        expect(prompt).toContain("\"headline\":\"创始人 / 后端工程师\"");
+        expect(prompt).not.toContain("这是一段很长的候选人总结");
+        expect(prompt).not.toContain("后端与地点匹配，项目质量高");
+      }
+    });
+
     it("should fall back to heuristic relax updates when llm revision fails", async () => {
       mockLLMProvider.chat.mockRejectedValue(new Error("Request was aborted."));
 

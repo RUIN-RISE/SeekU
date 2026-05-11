@@ -130,11 +130,7 @@ export function buildEffectiveQuery(conditions: SearchConditions): string {
     ...expandedMustHave.map((value) => `must have ${value}`),
     ...conditions.niceToHave.map((value) => `prefer ${value}`),
     ...conditions.exclude.map((value) => `exclude ${value}`),
-    conditions.preferFresh ? "prefer recent active profiles" : "",
-    conditions.candidateAnchor?.name ? `similar to ${conditions.candidateAnchor.name}` : "",
-    conditions.candidateAnchor?.shortlistIndex
-      ? `similar to shortlist ${conditions.candidateAnchor.shortlistIndex}`
-      : ""
+    conditions.preferFresh ? "prefer recent active profiles" : ""
   ]
     .map((value) => value.trim())
     .filter((value) => value.length > 0 && !SKIPPED_QUERY_VALUES.has(value.toLowerCase()))

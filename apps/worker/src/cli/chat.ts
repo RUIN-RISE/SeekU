@@ -74,25 +74,36 @@ interface ReviseConditionsContext {
   shortlist?: RefineContextCandidate[];
 }
 
-function serializeReviseContext(context?: ReviseConditionsContext): string {
-  if (!context?.shortlist || context.shortlist.length === 0) {
-    return "No shortlist context.";
+function truncateContextValue(value: string | null | undefined, maxLength = 120): string | undefined {
+  if (!value) {
+    return undefined;
   }
 
-  return context.shortlist
-    .map((candidate) =>
-      [
-        `#${candidate.shortlistIndex} ${candidate.name}`,
-        candidate.headline ? `headline=${candidate.headline}` : "",
-        candidate.location ? `location=${candidate.location}` : "",
-        candidate.sources && candidate.sources.length > 0 ? `source=${candidate.sources.join("/")}` : "",
-        candidate.matchReason ? `why=${candidate.matchReason}` : "",
-        candidate.summary ? `summary=${candidate.summary}` : ""
-      ]
-        .filter(Boolean)
-        .join(" | ")
-    )
-    .join("\n");
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return undefined;
+  }
+
+  return normalized.length <= maxLength
+    ? normalized
+    : `${normalized.slice(0, maxLength - 3)}...`;
+}
+
+function serializeReviseContext(context?: ReviseConditionsContext): string {
+  if (!context?.shortlist || context.shortlist.length === 0) {
+    return "[]";
+  }
+
+  return JSON.stringify(
+    context.shortlist.map((candidate) => ({
+      shortlistIndex: candidate.shortlistIndex,
+      personId: candidate.personId,
+      name: truncateContextValue(candidate.name, 80) ?? candidate.name,
+      headline: truncateContextValue(candidate.headline, 120),
+      location: truncateContextValue(candidate.location, 80),
+      sources: candidate.sources?.slice(0, 3)
+    }))
+  );
 }
 
 function resolveAnchorFromShortlistContext(
@@ -424,12 +435,13 @@ CRITICAL RULES:
 1. Always return the full updated condition object, not just changes.
 2. In "tighten" mode, preserve existing constraints unless the user explicitly replaces them.
 3. In "relax" mode, broaden or remove constraints the user asks to loosen.
-4. If the user refers to a candidate like "像 2 号", set candidateAnchor using shortlistContext.
-5. For instructions like "像 2 号但更偏后端", keep candidateAnchor for #2 AND update role/skills to include "后端".
-6. Explicitly deduplicate all arrays (skills, locations, mustHave, etc.).
-7. candidateAnchor should stay null unless the user is clearly referring to an existing candidate.
-8. If the user says "清空参考" or "不要参考了", set candidateAnchor to null.
-9. Return valid JSON ONLY. No markdown, no conversation.
+4. shortlistContext is only reference metadata for identifying candidates. Do NOT copy requirements from it unless the user explicitly asks to align with that candidate.
+5. If the user refers to a candidate like "像 2 号", set candidateAnchor using shortlistContext.
+6. For instructions like "像 2 号但更偏后端", keep candidateAnchor for #2 AND update role/skills to include "后端".
+7. Explicitly deduplicate all arrays (skills, locations, mustHave, etc.).
+8. candidateAnchor should stay null unless the user is clearly referring to an existing candidate.
+9. If the user says "清空参考" or "不要参考了", set candidateAnchor to null.
+10. Return valid JSON ONLY. No markdown, no conversation.
 `;
 
     try {

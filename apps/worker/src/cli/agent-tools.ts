@@ -44,8 +44,6 @@ export interface RefineContextCandidate {
   headline: string | null;
   location: string | null;
   sources: string[];
-  matchReason?: string;
-  summary?: string;
 }
 
 export interface AgentSearchCandidatesInput {
@@ -228,9 +226,7 @@ export function buildRefineContextCandidates<
       name: candidate.name,
       headline: candidate.headline,
       location: candidate.location,
-      sources: candidate.sources,
-      matchReason: candidate.matchReason,
-      summary: candidate.profile?.summary
+      sources: candidate.sources
     }));
 }
 
