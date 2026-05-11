@@ -176,9 +176,11 @@ interface QueryMatchExplanationOptions {
   experienceMatched?: boolean;
 }
 
-function unionDedupeStrings(a: string[] | undefined, b: string[] | undefined): string[] {
-  const set = new Set([...(a ?? []), ...(b ?? [])]);
-  return [...set];
+function defaultArrayIfEmpty(
+  current: string[] | undefined,
+  defaults: string[] | undefined
+): string[] {
+  return current && current.length > 0 ? current : [...(defaults ?? [])];
 }
 
 function truncateDisplayValue(value: string, maxLength: number): string {
@@ -339,6 +341,31 @@ export function formatSourceLabel(source?: string): string | undefined {
   return source;
 }
 
+/**
+ * Sanitize a URL: reject clearly invalid values like "/none", "none", "null",
+ * empty strings, or paths that don't look like real URLs.
+ * Returns undefined for invalid URLs.
+ */
+function sanitizeUrl(url?: string | null): string | undefined {
+  if (!url) return undefined;
+  const trimmed = url.trim();
+  if (!trimmed) return undefined;
+  const lower = trimmed.toLowerCase();
+  // Reject known invalid values
+  if (lower === "none" || lower === "null" || lower === "undefined" || lower === "n/a" || lower === "/none" || lower === "/null") {
+    return undefined;
+  }
+  // Reject relative paths that start with /none, /null, etc.
+  if (/^\/?(none|null|undefined)(\/|$)/i.test(trimmed)) {
+    return undefined;
+  }
+  // Must look like a URL (starts with http/https) or at least have a domain
+  if (!trimmed.startsWith("http") && !trimmed.includes(".")) {
+    return undefined;
+  }
+  return trimmed;
+}
+
 function normalizeUrlForDedupingValue(url: string): string {
   const trimmed = url.trim();
   if (!trimmed) {
@@ -408,7 +435,9 @@ export function buildCandidateSourceMetadata(
   const findProfileBySource = (source: SourceProfile["source"]) =>
     identityProfiles.find((profile) => profile.source === source);
 
-  const bonjourUrl = findProfileBySource("bonjour")?.canonicalUrl;
+  const rawBonjourUrl = findProfileBySource("bonjour")?.canonicalUrl;
+  // Sanitize: reject clearly invalid URLs like "/none", "none", "null", empty
+  const bonjourUrl = sanitizeUrl(rawBonjourUrl);
   addPrimaryLink("bonjour", "Bonjour", bonjourUrl);
   addPrimaryLink("github", "GitHub", findProfileBySource("github")?.canonicalUrl);
   addPrimaryLink("website", "个人站点", findProfileBySource("web")?.canonicalUrl);
@@ -1617,10 +1646,10 @@ export class SearchWorkflow {
     if (seededConditions && Object.keys(seededConditions).length > 0) {
       const merged: Partial<SearchConditions> = {
         ...seededConditions,
-        skills: unionDedupeStrings(seededConditions.skills, extracted.skills),
-        locations: unionDedupeStrings(seededConditions.locations, extracted.locations),
-        mustHave: unionDedupeStrings(seededConditions.mustHave, extracted.mustHave),
-        exclude: unionDedupeStrings(seededConditions.exclude, extracted.exclude),
+        skills: defaultArrayIfEmpty(extracted.skills, seededConditions.skills),
+        locations: defaultArrayIfEmpty(extracted.locations, seededConditions.locations),
+        mustHave: defaultArrayIfEmpty(extracted.mustHave, seededConditions.mustHave),
+        exclude: defaultArrayIfEmpty(extracted.exclude, seededConditions.exclude),
         // User input takes precedence for scalar fields
         role: extracted.role ?? seededConditions.role,
         experience: extracted.experience ?? seededConditions.experience,

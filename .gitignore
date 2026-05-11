@@ -16,3 +16,12 @@ output
 .claude
 .antigravity
 .gemini
+
+# Prevent in-source build artifacts (tsc without --project)
+**/src/**/*.js
+**/src/**/*.js.map
+**/src/**/*.d.ts
+**/src/**/*.d.ts.map
+
+# Eval results (timestamped JSON reports)
+eval-results/*.json

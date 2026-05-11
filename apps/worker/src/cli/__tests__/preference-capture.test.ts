@@ -468,4 +468,50 @@ describe("workflow preference capture integration", () => {
 
     expect(mockStore.create).toHaveBeenCalledTimes(1);
   });
+
+  it("uses adopted memory arrays only when the current query omitted that dimension", async () => {
+    const { SearchWorkflow } = await import("../workflow.js");
+    const workflow = new SearchWorkflow({} as any, {} as any);
+    const mockTui = {
+      displayInitialSearch: vi.fn(),
+      displayClarifiedDraft: vi.fn(),
+      resetShortlistViewport: vi.fn(),
+      displayShortlist: vi.fn(),
+      promptShortlistAction: vi.fn(),
+      promptCompareAction: vi.fn(),
+      displayNoResults: vi.fn(),
+      displayPoolCleared: vi.fn()
+    };
+    const mockChat = {
+      askFreeform: vi.fn().mockResolvedValue(""),
+      extractConditions: vi.fn().mockResolvedValue({
+        skills: ["rag"],
+        locations: [],
+        role: "engineer",
+        sourceBias: undefined,
+        preferFresh: false,
+        mustHave: [],
+        niceToHave: [],
+        exclude: [],
+        limit: 10
+      }),
+      reviseConditions: vi.fn(),
+      detectMissing: vi.fn(() => [])
+    };
+    (workflow as any).tui = mockTui;
+    (workflow as any).chat = mockChat;
+
+    const runClarifyLoop = (workflow as any).runClarifyLoop.bind(workflow);
+    const result = await runClarifyLoop("RAG engineer", {
+      skills: ["rust"],
+      locations: ["杭州"],
+      mustHave: ["github"],
+      exclude: ["sales"]
+    });
+
+    expect(result?.skills).toEqual(["rag"]);
+    expect(result?.locations).toEqual(["杭州"]);
+    expect(result?.mustHave).toEqual(["github"]);
+    expect(result?.exclude).toEqual(["sales"]);
+  });
 });

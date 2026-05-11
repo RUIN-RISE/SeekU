@@ -35,7 +35,13 @@ function categorizeReason(reason: string): "substantive" | "supportive" | "gener
     normalized === "语义相似度高" ||
     normalized === "关键词重合度高" ||
     normalized === "strong semantic similarity" ||
-    normalized === "strong keyword overlap"
+    normalized === "strong keyword overlap" ||
+    normalized === "github technical evidence" ||
+    normalized === "bonjour technical evidence" ||
+    normalized.startsWith("github open-source") ||
+    normalized === "zju evidence" ||
+    normalized === "zju manual seed" ||
+    normalized.startsWith("LLM:")
   ) {
     return "substantive";
   }
@@ -61,27 +67,31 @@ export function classifyMatchStrength(score: number, reasons: string[]): MatchSt
     (reason) => categorizeReason(reason) === "supportive"
   ).length;
 
-  if (substantiveCount >= 2) {
+  // Strong: requires both meaningful evidence AND decent score
+  // 2+ substantive reasons AND score >= 0.45
+  if (substantiveCount >= 2 && normalizedScore >= 0.45) {
     return "strong";
   }
 
-  if (substantiveCount >= 1 && normalizedScore >= 0.55) {
+  // 1 substantive reason + high score
+  if (substantiveCount >= 1 && normalizedScore >= 0.6) {
     return "strong";
   }
 
+  // Medium: single substantive reason, or supportive reasons with score
   if (substantiveCount >= 1) {
     return "medium";
   }
 
-  if (supportiveCount >= 2 && normalizedScore >= 0.45) {
+  if (supportiveCount >= 2 && normalizedScore >= 0.5) {
     return "medium";
   }
 
-  if (supportiveCount >= 1 && normalizedScore >= 0.55) {
+  if (supportiveCount >= 1 && normalizedScore >= 0.6) {
     return "medium";
   }
 
-  if (normalizedScore >= 0.7 && normalizedReasons.length > 0) {
+  if (normalizedScore >= 0.7 && normalizedReasons.length >= 2) {
     return "medium";
   }
 

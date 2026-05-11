@@ -28,10 +28,100 @@ const ZJU_KEYWORDS = [
   "浙江大学 人工智能"
 ] as const;
 
+const ZJUT_EXCLUSION_PATTERNS = [
+  "zjut",
+  "zhejiang university of technology",
+  "浙江工业大学",
+  "浙工大"
+] as const;
+
+const ZJU_CITY_COLLEGE_PATTERNS = [
+  "浙大城市学院",
+  "浙大城院",
+  "zhejiang university city college"
+] as const;
+
+const EXCLUDED_HANDLES = new Set([
+  "pae7c4",
+  "4axh6z",
+  "4nq48w",
+  "7jk30p",
+  "boyuan",
+  "c3ix9i",
+  "cosinefox",
+  "h8eqev",
+  "jiahao",
+  "jvqk1d",
+  "kiowpu",
+  "leon7hao",
+  "nicole068",
+  "piqbr0",
+  "urzsh4",
+  "wort29",
+  "lisabraxas",
+  "littlecool",
+  "0mnz7u",
+  "5ptipu",
+  "6psqou",
+  "6zb137",
+  "85a0b6",
+  "98m4j5",
+  "9qe4rw",
+  "chris",
+  "cvjmwk",
+  "dtc96s",
+  "ekeezx",
+  "ewoz8a",
+  "fir4oa",
+  "fy6588",
+  "g6ckr6",
+  "i8xr90",
+  "j46mtc",
+  "j5wwya",
+  "n09j9c",
+  "nrq50o",
+  "onee",
+  "persiancat",
+  "prtb1z",
+  "sspai",
+  "sysjjq",
+  "ualq5m",
+  "vdauqj",
+  "vgz94u",
+  "xptnaf",
+  "y74498",
+  "zbvohw",
+  "zv9dnx"
+] as const);
+
+const DEDUPE_KEEP_HANDLES = new Map<string, string>([
+  ["j7ab9u", "ns58nq"],
+  ["zhiyu", "beso6i"],
+  ["ccqjff", "cake"],
+  ["x0y9e2", "mop"],
+  ["zoroo", "yn4q8a"],
+  ["jianjian", "5m0a3h"],
+  ["artist", "afedg3"],
+  ["karma", "c0urzs"],
+  ["christineiscool", "c58gc8"],
+  ["pnrqx9", "cicely-xyz"],
+  ["xadillax", "dq9kqv"],
+  ["quou2356", "e6cq35"],
+  ["uu8vf5", "fracher21"],
+  ["haozhao", "h966h6"],
+  ["ned-pay-or-pray", "k3v5uy"],
+  ["mucheng", "kk6wpi"],
+  ["shuxun", "m36wgj"],
+  ["uuhi06", "markyang"],
+  ["rhr8wq", "prtb1z"],
+  ["rubyren1201", "rsniak"],
+  ["yuaanlin", "rwcikv"]
+]);
+
 const PRIORITY_LABS = [
   {
     key: "cad-cg",
-    aliases: ["cad&cg", "cad cg", "浙江大学cad&cg", "cad&cg国家重点实验室"]
+    aliases: ["cad&cg", "cad cg", "浙江大学cad&cg", "cad&cg国家重点实验室", "cad&cg全国重点实验室"]
   },
   {
     key: "vipa",
@@ -39,7 +129,7 @@ const PRIORITY_LABS = [
   },
   {
     key: "arc",
-    aliases: ["arc", "arc lab", "advanced robotics and control", "机器人与控制相关实验室"]
+    aliases: ["arc lab", "advanced robotics and control", "机器人与控制相关实验室"]
   }
 ] as const;
 
@@ -150,9 +240,35 @@ function hasAliasMention(text: string, alias: string) {
   return text.includes(normalizedAlias);
 }
 
+function isLikelyZjut(text: string) {
+  const normalized = normalizeText(text);
+  return ZJUT_EXCLUSION_PATTERNS.some((pattern) => normalized.includes(pattern));
+}
+
+function isZjuCityCollege(text: string) {
+  const normalized = normalizeText(text);
+  return ZJU_CITY_COLLEGE_PATTERNS.some((pattern) => normalized.includes(pattern));
+}
+
+const AMBIGUOUS_ZJU_KEYWORDS = new Set(["Zhejiang University", "浙大"]);
+
 function collectZjuKeywordMatches(value: string) {
   const normalized = normalizeText(value);
-  return ZJU_KEYWORDS.filter((keyword) => hasAliasMention(normalized, keyword));
+  const matched = ZJU_KEYWORDS.filter((keyword) => hasAliasMention(normalized, keyword));
+
+  if (matched.length === 0) return matched;
+
+  if (isLikelyZjut(normalized)) {
+    const filtered = matched.filter((kw) => !AMBIGUOUS_ZJU_KEYWORDS.has(kw));
+    return filtered;
+  }
+
+  if (isZjuCityCollege(normalized)) {
+    const filtered = matched.filter((kw) => !AMBIGUOUS_ZJU_KEYWORDS.has(kw));
+    return filtered;
+  }
+
+  return matched;
 }
 
 function findMentionedPriorityLabs(value: string) {
@@ -414,6 +530,14 @@ async function main() {
     const rows: ExportRow[] = [];
 
     for (const profile of profiles) {
+      if (EXCLUDED_HANDLES.has(profile.sourceHandle)) {
+        continue;
+      }
+
+      if (DEDUPE_KEEP_HANDLES.has(profile.sourceHandle)) {
+        continue;
+      }
+
       const normalizedPayload = (profile.normalizedPayload ?? {}) as Record<string, unknown>;
       const searchText = buildBonjourSearchText(profile);
       const summary = handleMap.get(profile.sourceHandle);

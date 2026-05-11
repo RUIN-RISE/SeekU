@@ -10,9 +10,9 @@ Seeku is an evidence-driven AI talent search engine. Its current primary operato
 
 ## Current State
 
-- Current milestone: `v1.8 CLI-First Session Ledger`
-- Latest shipped milestone: `v1.7 Runtime-Backed Chat Agent Integration`
-- Previous shipped milestone: `v1.6 Mission Replay Hardening`
+- Current milestone: `v1.9 Graph Signals Reranking`
+- Latest shipped milestone: `v1.8 CLI-First Session Ledger`
+- Previous shipped milestone: `v1.7 Runtime-Backed Chat Agent Integration`
 - Milestone archives:
   - `.planning/milestones/v1.7-ROADMAP.md`
   - `.planning/milestones/v1.7-REQUIREMENTS.md`
@@ -31,8 +31,8 @@ Seeku is an evidence-driven AI talent search engine. Its current primary operato
   - `.planning/milestones/v1.4-REQUIREMENTS.md`
   - `.planning/milestones/v1.3-REQUIREMENTS.md`
   - `.planning/milestones/v1.2-REQUIREMENTS.md`
-- Current status: `v1.7` archived as shipped
-- Current focus: move the formal agent product surface back into the CLI and add a durable CLI-owned session ledger
+- Current status: `v1.9` opened for graph-backed ranking improvements after Phase 2b memory verification closed with no code changes required
+- Current focus: add graph-aware reranking on top of the existing hybrid retrieval stack using explicit graph features only
 
 ## Shipped In v1.7
 
@@ -127,15 +127,28 @@ Seeku is an evidence-driven AI talent search engine. Its current primary operato
 - The shipped daily deal flow is still process-local in its learning loop and does not yet persist user-state durably.
 - External delivery, CRM, and corpus expansion are still out of scope until the next milestone explicitly pulls them in.
 
-## Current Milestone: v1.8 CLI-First Session Ledger
+## Shipped In v1.8
 
-**Goal:** Make the CLI the only formal agent interaction surface and add durable CLI-owned session restore, attach, and resume primitives without depending on the browser chat shell.
+- CLI is now the only formal agent interaction surface
+- DB-backed session ledger with durable sessionId, transcript, and workboard snapshot
+- CLI startup session picker with recent sessions and `attach <sessionId>`
+- Restored sessions open read-only and require explicit `resume`
+- Folded CLI workboard with `Now / Why / Movement / Focus` rendering
+- 11/11 requirements verified, 53 tests pass
+
+## Current Milestone: v1.9 Graph Signals Reranking
+
+**Goal:** Improve search ranking with explicit Bonjour graph features while preserving the current hybrid retrieval and trustworthy explanation posture.
 
 **Target features:**
-- CLI startup shows recent sessions and allows `new session` or `attach <sessionId>`
-- stopped CLI-created sessions can be restored from a durable ledger
-- restored sessions open read-only and require explicit `resume`
-- the CLI gains a folded workboard view for restored session inspection
+- graph-aware reranking after the existing retriever candidate set
+- cheap, interpretable pairwise graph features such as mutual connections and same-component signals
+- graph-sensitive evaluation coverage and go / no-go quality measurement for ranking lift
+
+**Milestone notes:**
+- Phase 2a graph explanation is already shipped in the CLI flow
+- Phase 2b memory wiring is verified complete and does not require further work before reranking
+- this milestone must use explicit graph facts, not GraphTranslator, graph embeddings, or `memU`
 
 ## Key Decisions
 
@@ -147,6 +160,7 @@ Seeku is an evidence-driven AI talent search engine. Its current primary operato
 - Treat `Daily Deal Flow` as a new proactive layer above the shipped runtime, not as a replacement for reactive search.
 - Prioritize `goal-direction match` over richer but less reliable first-version signals such as broad personality inference or global reachability.
 - Unify shipped chat, panel, and deal-flow surfaces through a session-centric chat-first shell before expanding into durable memory, CRM, or external delivery.
+- Use graph features as a rerank-only layer first; do not introduce graph-model training until feature-based lift is proven.
 
 ## Evolution
 
@@ -164,4 +178,4 @@ This document evolves at phase transitions and milestone boundaries.
 3. Archive requirements and roadmap before opening the next milestone.
 
 ---
-*Last updated: 2026-04-18 after opening milestone v1.8 CLI-First Session Ledger*
+*Last updated: 2026-04-24 after closing milestone v1.8 CLI-First Session Ledger*

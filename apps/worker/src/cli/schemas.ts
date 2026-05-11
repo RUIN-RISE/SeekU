@@ -44,17 +44,41 @@ export const ProfileSummarySchema = z.object({
 
 export type ValidatedProfileSummary = z.infer<typeof ProfileSummarySchema>;
 
+const PROMPT_POLLUTION_LINE_PATTERNS = [
+  /^\s*(system|assistant|developer|user)\s*:/i,
+  /^\s*(tool|function)\s*call\s*:/i
+];
+
+const PROMPT_POLLUTION_INLINE_PATTERNS = [
+  /ignore\s+(all\s+)?previous\s+instructions?/gi,
+  /ignore\s+(the\s+)?above\s+instructions?/gi,
+  /system\s+prompt/gi,
+  /developer\s+message/gi,
+  /tool\s*call/gi,
+  /function\s*call/gi,
+  /\{\{|\}\}/g
+];
+
 export function sanitizeForPrompt(input: string, tagName: string = "userInput"): string {
   // Prevent ReDoS by limiting input length
   const boundedInput = input.slice(0, 2000);
   
-  // Remove any existing XML-like tags that could interfere
+  // Remove markup, role-prefixed instruction lines, and common prompt-injection
+  // phrases while preserving ordinary recruiting/search content.
   const sanitized = boundedInput
     .replace(/<[^>]{1,50}>/g, "") // Non-greedy, length-bounded tag removal
     .replace(/---/g, "") // Remove markdown separators
-    .replace(/```/g, ""); // Remove code blocks
+    .replace(/```/g, "") // Remove code block fences
+    .split(/\r?\n/)
+    .filter((line) => !PROMPT_POLLUTION_LINE_PATTERNS.some((pattern) => pattern.test(line)))
+    .join("\n");
 
-  return `<${tagName}>${sanitized}</${tagName}>`;
+  const scrubbed = PROMPT_POLLUTION_INLINE_PATTERNS.reduce(
+    (text, pattern) => text.replace(pattern, " "),
+    sanitized
+  ).replace(/[ \t]{2,}/g, " ").trim();
+
+  return `<${tagName}>${scrubbed}</${tagName}>`;
 }
 
 /**

@@ -21,6 +21,7 @@ import {
   runBackfillPersonFieldsWorker,
   runEvidenceStorageWorker,
   runIdentityResolutionWorker,
+  runSearchEmbeddingWorker,
   runSearchIndexWorker
 } from "@seeku/workers";
 
@@ -43,6 +44,7 @@ Options:
   --concurrency <number>        Parallel profile import workers. Default: 8
   --job-name <name>             Override sync run job name
   --run-local-pipeline          After import, run resolve/evidence/backfill/search-index
+  --generate-embeddings         Also generate embeddings (requires --run-local-pipeline)
   --pipeline-batch-size <num>   Batch size for local pipeline steps. Default: 250
   -h, --help                    Show command help`;
 
@@ -53,6 +55,7 @@ interface ImportBonjourDumpOptions {
   concurrency: number;
   jobName?: string;
   runLocalPipeline: boolean;
+  generateEmbeddings: boolean;
   pipelineBatchSize: number;
   help: boolean;
 }
@@ -202,7 +205,8 @@ async function runInBatches<T>(
 async function runLocalPipelineForImportedHandles(
   db: SeekuDatabase,
   handles: string[],
-  batchSize: number
+  batchSize: number,
+  generateEmbeddings: boolean = false
 ) {
   const uniqueHandles = unique(handles);
 
@@ -225,6 +229,17 @@ async function runLocalPipelineForImportedHandles(
     return runSearchIndexWorker(batch, db);
   });
 
+  let embeddingsUpserted = 0;
+  if (generateEmbeddings) {
+    const embeddingSummaries = await runInBatches(personIds, batchSize, async (batch) => {
+      return runSearchEmbeddingWorker(batch, db);
+    });
+    embeddingsUpserted = embeddingSummaries.reduce(
+      (sum, item) => sum + item.embeddingsUpserted,
+      0
+    );
+  }
+
   return {
     handlesResolved: uniqueHandles.length,
     personCount: personIds.length,
@@ -233,7 +248,8 @@ async function runLocalPipelineForImportedHandles(
     searchDocumentsUpdated: searchSummaries.reduce(
       (sum, item) => sum + item.documentsUpserted,
       0
-    )
+    ),
+    embeddingsUpserted
   };
 }
 
@@ -241,6 +257,7 @@ export function parseImportBonjourDumpArgs(argv: string[]): ImportBonjourDumpOpt
   const options: ImportBonjourDumpOptions = {
     concurrency: 8,
     runLocalPipeline: false,
+    generateEmbeddings: false,
     pipelineBatchSize: 250,
     help: false
   };
@@ -255,6 +272,11 @@ export function parseImportBonjourDumpArgs(argv: string[]): ImportBonjourDumpOpt
 
     if (arg === "--run-local-pipeline") {
       options.runLocalPipeline = true;
+      continue;
+    }
+
+    if (arg === "--generate-embeddings") {
+      options.generateEmbeddings = true;
       continue;
     }
 
@@ -381,7 +403,7 @@ export async function runImportBonjourDumpCommand(argv: string[]) {
     }
 
     const pipeline = options.runLocalPipeline
-      ? await runLocalPipelineForImportedHandles(db, importedHandles, options.pipelineBatchSize)
+      ? await runLocalPipelineForImportedHandles(db, importedHandles, options.pipelineBatchSize, options.generateEmbeddings)
       : undefined;
 
     const status =

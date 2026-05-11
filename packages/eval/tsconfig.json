@@ -6,5 +6,11 @@
     "rootDir": "./src",
     "tsBuildInfoFile": "dist/.tsbuildinfo"
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  "references": [
+    { "path": "../db" },
+    { "path": "../llm" },
+    { "path": "../search" },
+    { "path": "../shared" }
+  ]
 }

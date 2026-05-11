@@ -6,6 +6,15 @@ const DEFAULT_EMBEDDING_MODEL =
   process.env.SILICONFLOW_EMBEDDING_MODEL ?? "Qwen/Qwen3-Embedding-8B";
 const DEFAULT_BATCH_SIZE = 50;
 
+// Qwen3-Embedding-8B supports 32768 tokens. Chinese text ≈ 1-2 chars/token.
+// Truncate at 16000 chars to stay safely within limits.
+const MAX_INPUT_CHARS = 16_000;
+
+function truncateForEmbedding(text: string): string {
+  if (text.length <= MAX_INPUT_CHARS) return text;
+  return text.slice(0, MAX_INPUT_CHARS);
+}
+
 export interface EmbeddingGeneratorConfig {
   provider: LLMProvider;
   batchSize?: number;
@@ -24,7 +33,7 @@ export class EmbeddingGenerator {
   }
 
   async generateForDocument(doc: SearchDocument): Promise<number[]> {
-    return generateEmbedding(this.provider, doc.docText);
+    return generateEmbedding(this.provider, truncateForEmbedding(doc.docText));
   }
 
   async generateForDocuments(docs: SearchDocument[]): Promise<Map<string, number[]>> {
@@ -34,7 +43,7 @@ export class EmbeddingGenerator {
       const batch = docs.slice(index, index + this.batchSize);
       const embeddings = await generateEmbeddings(
         this.provider,
-        batch.map((doc) => doc.docText)
+        batch.map((doc) => truncateForEmbedding(doc.docText))
       );
 
       for (let batchIndex = 0; batchIndex < batch.length; batchIndex += 1) {

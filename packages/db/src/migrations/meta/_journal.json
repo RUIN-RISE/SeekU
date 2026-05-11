@@ -43,6 +43,13 @@
       "when": 1777353600000,
       "tag": "0007_work_items",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1777440000000,
+      "tag": "0008_graph_tables",
+      "breakpoints": true
     }
   ]
 }

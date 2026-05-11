@@ -46,7 +46,10 @@ describe("HybridRetriever fallback", () => {
     expect(result[0]?.personId).toBe("person-1");
     expect(result[0]?.keywordScore).toBe(0.8);
     expect(result[0]?.vectorScore).toBe(0);
-    expect(result[0]?.combinedScore).toBeCloseTo(0.32, 6);
+    // "machine learning" now triggers specialized blend.
+    // With sourceBias="github": keyword=0.58, vector=0.42
+    // combinedScore = 0.8 * 0.58 = 0.464
+    expect(result[0]?.combinedScore).toBeCloseTo(0.464, 6);
     expect(retriever.retrieveKeyword).toHaveBeenCalledTimes(1);
     expect(retriever.retrieveVector).not.toHaveBeenCalled();
   });

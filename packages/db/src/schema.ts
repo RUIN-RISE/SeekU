@@ -449,3 +449,51 @@ export type NewCandidateFeedbackMemory = typeof candidateFeedbackMemories.$infer
 export type WorkItemStatus = typeof workItemStatus.enumValues[number];
 export type WorkItem = typeof workItems.$inferSelect;
 export type NewWorkItem = typeof workItems.$inferInsert;
+
+// Graph tables for friend-link relationships
+
+export const graphEdgeType = pgEnum("graph_edge_type", ["friend", "friended"]);
+
+export const graphEdges = pgTable(
+  "graph_edges",
+  {
+    id: uuid("id").default(sql`uuid_generate_v4()`).primaryKey(),
+    sourcePersonId: uuid("source_person_id")
+      .notNull()
+      .references(() => persons.id, { onDelete: "cascade" }),
+    targetPersonId: uuid("target_person_id")
+      .notNull()
+      .references(() => persons.id, { onDelete: "cascade" }),
+    edgeType: graphEdgeType("edge_type").notNull(),
+    sourceProfileId: uuid("source_profile_id").references(() => sourceProfiles.id, {
+      onDelete: "set null"
+    }),
+    importedAt: timestamp("imported_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => ({
+    sourceTargetUnique: unique("graph_edges_source_target_type_unique").on(
+      table.sourcePersonId,
+      table.targetPersonId,
+      table.edgeType
+    )
+  })
+);
+
+export const graphNodeFeatures = pgTable("graph_node_features", {
+  personId: uuid("person_id")
+    .notNull()
+    .references(() => persons.id, { onDelete: "cascade" })
+    .primaryKey(),
+  outDegree: numeric("out_degree", { precision: 10 }).default("0").notNull(),
+  inDegree: numeric("in_degree", { precision: 10 }).default("0").notNull(),
+  undirectedDegree: numeric("undirected_degree", { precision: 10 }).default("0").notNull(),
+  componentId: text("component_id"),
+  componentSize: numeric("component_size", { precision: 10 }),
+  computedAt: timestamp("computed_at", { withTimezone: true }).defaultNow().notNull()
+});
+
+export type GraphEdgeType = typeof graphEdgeType.enumValues[number];
+export type GraphEdge = typeof graphEdges.$inferSelect;
+export type NewGraphEdge = typeof graphEdges.$inferInsert;
+export type GraphNodeFeature = typeof graphNodeFeatures.$inferSelect;
+export type NewGraphNodeFeature = typeof graphNodeFeatures.$inferInsert;

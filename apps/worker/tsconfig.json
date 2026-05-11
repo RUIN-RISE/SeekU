@@ -10,6 +10,8 @@
   "references": [
     { "path": "../../packages/shared" },
     { "path": "../../packages/db" },
+    { "path": "../../packages/eval" },
+    { "path": "../../packages/search" },
     { "path": "../../packages/adapters" },
     { "path": "../../packages/identity" },
     { "path": "../../packages/workers" }

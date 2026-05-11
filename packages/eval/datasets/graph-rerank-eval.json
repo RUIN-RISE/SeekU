@@ -1,0 +1,94 @@
+[
+  {
+    "id": "g001",
+    "text": "找出与凯撒的复利实验室有共同好友的候选人",
+    "category": "graph_sensitive",
+    "graphQueryType": "mutual_connections",
+    "anchorPersonId": "1c42b4b0-5d88-47d3-9daa-6c33834817cc",
+    "anchorPersonName": "凯撒的复利实验室",
+    "anchorDegree": 4195,
+    "expectedGraphFeatures": ["mutual_connection_count > 0"],
+    "notes": "High-degree anchor. Tests mutual connection boost."
+  },
+  {
+    "id": "g003",
+    "text": "找出Vincent的一度人脉",
+    "category": "graph_sensitive",
+    "graphQueryType": "direct_neighbors",
+    "anchorPersonId": "04b22a7a-cee8-4daf-9905-d2a9ec310c8e",
+    "anchorPersonName": "Vincent",
+    "anchorDegree": 4957,
+    "expectedGraphFeatures": ["is_direct_neighbor"],
+    "notes": "Highest-degree anchor. Tests direct neighbor boost."
+  },
+  {
+    "id": "g005",
+    "text": "找出与钟采莉🔥Chelly在同一个社交圈子的产品经理",
+    "category": "graph_sensitive",
+    "graphQueryType": "same_component_role",
+    "anchorPersonId": "c09eda25-cf72-461b-b17b-15b174720579",
+    "anchorPersonName": "钟采莉🔥Chelly",
+    "anchorDegree": 3735,
+    "expectedRoles": ["product"],
+    "expectedGraphFeatures": ["same_component_as_anchor", "role_match"],
+    "notes": "High-degree anchor. Tests combined graph + role filtering."
+  },
+  {
+    "id": "g009",
+    "text": "推荐与Mouna有共同好友的开源贡献者",
+    "category": "graph_sensitive",
+    "graphQueryType": "mutual_connections_skill",
+    "anchorPersonId": "cc6765cb-8ada-4540-91a0-fdb933b85ecb",
+    "anchorPersonName": "Mouna",
+    "anchorDegree": 3330,
+    "expectedSkills": ["open-source"],
+    "expectedGraphFeatures": ["mutual_connection_count > 0", "skill_match"],
+    "notes": "High-degree anchor. Tests combined graph + skill matching."
+  },
+  {
+    "id": "g010",
+    "text": "找出与Charles有共同好友的候选人",
+    "category": "graph_sensitive",
+    "graphQueryType": "mutual_connections",
+    "anchorPersonId": "154fbe3b-280a-4a26-8ad9-ba62fc39f4f8",
+    "anchorPersonName": "Charles",
+    "anchorDegree": 1586,
+    "expectedGraphFeatures": ["mutual_connection_count > 0"],
+    "notes": "Medium-degree anchor. Tests if boost scales appropriately."
+  },
+  {
+    "id": "g011",
+    "text": "找出与Bonnie！有共同好友的候选人",
+    "category": "graph_sensitive",
+    "graphQueryType": "mutual_connections",
+    "anchorPersonId": "e1871f55-8a29-4aa1-93b7-d7ddcf57f2fd",
+    "anchorPersonName": "Bonnie！",
+    "anchorDegree": 3321,
+    "expectedGraphFeatures": ["mutual_connection_count > 0"],
+    "notes": "High-degree anchor. Additional coverage for mutual connection boost."
+  },
+  {
+    "id": "n001",
+    "text": "RAG 检索工程师",
+    "category": "non_graph",
+    "graphQueryType": "none",
+    "expectedGraphFeatures": [],
+    "notes": "Baseline query - no anchor. Should have identical results with/without graph."
+  },
+  {
+    "id": "n002",
+    "text": "杭州 AI 工程师",
+    "category": "non_graph",
+    "graphQueryType": "none",
+    "expectedGraphFeatures": [],
+    "notes": "Baseline query - location + skill, no anchor."
+  },
+  {
+    "id": "n003",
+    "text": "开源 AI founder 或 tech lead",
+    "category": "non_graph",
+    "graphQueryType": "none",
+    "expectedGraphFeatures": [],
+    "notes": "Baseline query - role + skill, no anchor."
+  }
+]

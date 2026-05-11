@@ -163,10 +163,59 @@ export function displayFullMemory(context: UserMemoryContext): void {
 // Conditions Seeding
 // ============================================================================
 
+const MAX_MEMORY_TERM_LENGTH = 80;
+const PROMPT_INJECTION_PATTERNS = [
+  /ignore\s+(all\s+)?previous/i,
+  /ignore\s+(the\s+)?above/i,
+  /system\s*prompt/i,
+  /developer\s*message/i,
+  /\bassistant\s*:/i,
+  /\bsystem\s*:/i,
+  /\bdeveloper\s*:/i,
+  /tool\s*call/i,
+  /function\s*call/i,
+  /<[^>]{1,80}>/,
+  /```/,
+  /\{\{|\}\}/
+];
+
+function sanitizeMemoryTerm(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+  if (!trimmed || trimmed.length > MAX_MEMORY_TERM_LENGTH) {
+    return undefined;
+  }
+  if (PROMPT_INJECTION_PATTERNS.some((pattern) => pattern.test(trimmed))) {
+    return undefined;
+  }
+  return trimmed;
+}
+
+function sanitizeMemoryTerms(values: unknown): string[] | undefined {
+  if (!Array.isArray(values)) {
+    return undefined;
+  }
+
+  const sanitized = values
+    .map(sanitizeMemoryTerm)
+    .filter((value): value is string => Boolean(value));
+
+  return sanitized.length > 0 ? unionDedupe(undefined, sanitized) : undefined;
+}
+
+function sanitizeSourceBias(value: unknown): "bonjour" | "github" | undefined {
+  return value === "bonjour" || value === "github" ? value : undefined;
+}
+
 /**
  * Merge EXPLICIT memory preferences into a partial SearchConditions.
  * Inferred preferences are shown to the user but NOT seeded into defaults.
  * This is the V1 contract: inferred memory is informational only.
+ * Memory values are allowlisted and sanitized before they can become search
+ * defaults. Raw memory text must never be treated as executable prompt text.
  */
 export function seedConditionsFromMemory(
   context: UserMemoryContext
@@ -178,27 +227,33 @@ export function seedConditionsFromMemory(
 
   for (const record of explicitPrefs) {
     const content = record.content as PreferenceContent;
+    const techStack = sanitizeMemoryTerms(content.techStack);
+    const locations = sanitizeMemoryTerms(content.locations);
+    const role = sanitizeMemoryTerm(content.role);
+    const sourceBias = sanitizeSourceBias(content.sourceBias);
+    const mustHave = sanitizeMemoryTerms(content.mustHave);
+    const exclude = sanitizeMemoryTerms(content.exclude);
 
-    if (content.techStack?.length) {
-      seeded.skills = unionDedupe(seeded.skills, content.techStack);
+    if (techStack?.length) {
+      seeded.skills = unionDedupe(seeded.skills, techStack);
     }
-    if (content.locations?.length) {
-      seeded.locations = unionDedupe(seeded.locations, content.locations);
+    if (locations?.length) {
+      seeded.locations = unionDedupe(seeded.locations, locations);
     }
-    if (content.role && !seeded.role) {
-      seeded.role = content.role;
+    if (role && !seeded.role) {
+      seeded.role = role;
     }
-    if (content.sourceBias && !seeded.sourceBias) {
-      seeded.sourceBias = content.sourceBias as "bonjour" | "github";
+    if (sourceBias && !seeded.sourceBias) {
+      seeded.sourceBias = sourceBias;
     }
     if (content.preferFresh && !seeded.preferFresh) {
       seeded.preferFresh = content.preferFresh;
     }
-    if (content.mustHave?.length) {
-      seeded.mustHave = unionDedupe(seeded.mustHave, content.mustHave);
+    if (mustHave?.length) {
+      seeded.mustHave = unionDedupe(seeded.mustHave, mustHave);
     }
-    if (content.exclude?.length) {
-      seeded.exclude = unionDedupe(seeded.exclude, content.exclude);
+    if (exclude?.length) {
+      seeded.exclude = unionDedupe(seeded.exclude, exclude);
     }
   }
 

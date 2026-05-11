@@ -47,6 +47,9 @@ importers:
       '@seeku/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@seeku/worker':
+        specifier: workspace:*
+        version: link:../worker
       drizzle-orm:
         specifier: ^0.30.10
         version: 0.30.10(@types/react@19.2.14)(postgres@3.4.8)(react@19.2.4)
@@ -141,6 +144,9 @@ importers:
       '@seeku/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@seeku/eval':
+        specifier: workspace:*
+        version: link:../../packages/eval
       '@seeku/llm':
         specifier: workspace:*
         version: link:../../packages/llm
@@ -199,6 +205,21 @@ importers:
 
   packages/eval:
     dependencies:
+      '@seeku/db':
+        specifier: workspace:*
+        version: link:../db
+      '@seeku/llm':
+        specifier: workspace:*
+        version: link:../llm
+      '@seeku/search':
+        specifier: workspace:*
+        version: link:../search
+      '@seeku/shared':
+        specifier: workspace:*
+        version: link:../shared
+      dotenv:
+        specifier: ^16.4.7
+        version: 16.6.1
       zod:
         specifier: ^3.24.2
         version: 3.25.76

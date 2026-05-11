@@ -85,6 +85,41 @@ function formatSourceSummary(sources: string[]): string {
   return sources.join(" / ");
 }
 
+/**
+ * Sanitize primaryName: reject "NULL", "none", empty string, etc.
+ * Returns a fallback display name for clearly invalid values.
+ */
+function sanitizePersonName(name: string | null | undefined): string {
+  if (!name) return "Unknown";
+  const trimmed = name.trim();
+  if (!trimmed) return "Unknown";
+  const lower = trimmed.toLowerCase();
+  if (lower === "null" || lower === "none" || lower === "undefined" || lower === "n/a") {
+    return "Unknown";
+  }
+  return trimmed;
+}
+
+/**
+ * Sanitize a URL: reject clearly invalid values like "/none", "none", "null".
+ */
+function sanitizeUrl(url?: string | null): string | undefined {
+  if (!url) return undefined;
+  const trimmed = url.trim();
+  if (!trimmed) return undefined;
+  const lower = trimmed.toLowerCase();
+  if (lower === "none" || lower === "null" || lower === "undefined" || lower === "/none" || lower === "/null") {
+    return undefined;
+  }
+  if (/^\/?(none|null|undefined)(\/|$)/i.test(trimmed)) {
+    return undefined;
+  }
+  if (!trimmed.startsWith("http") && !trimmed.includes(".")) {
+    return undefined;
+  }
+  return trimmed;
+}
+
 function buildRawQueryFallbackReason(
   query: string,
   person: Pick<Person, "primaryHeadline" | "primaryLocation">,
@@ -212,7 +247,7 @@ export async function runSearchCli(options: SearchCliOptions): Promise<ScriptSea
       const bonjourProfile = personIdentityRows
         .map((identity) => sourceProfileMap.get(identity.sourceProfileId))
         .find((profile) => profile?.source === "bonjour");
-      const bonjourUrl = bonjourProfile?.canonicalUrl ?? undefined;
+      const bonjourUrl = sanitizeUrl(bonjourProfile?.canonicalUrl);
       const sources = document?.facetSource && document.facetSource.length > 0
         ? [...new Set(document.facetSource.map((source) => formatSourceLabel(source) || source))]
         : identitySources.length > 0
@@ -249,7 +284,7 @@ export async function runSearchCli(options: SearchCliOptions): Promise<ScriptSea
 
       return {
         personId: result.personId,
-        name: personRow.primaryName ?? "Unknown",
+        name: sanitizePersonName(personRow.primaryName),
         headline: personRow.primaryHeadline ?? null,
         location: personRow.primaryLocation ?? null,
         matchScore: result.finalScore,

@@ -214,6 +214,56 @@ export function deriveStageAction(
 // Memory can only enrich description/suggestedPrompt, never change action type
 // or override task truth. V1 keeps this conservative.
 
+const MAX_MEMORY_HINT_TERM_LENGTH = 80;
+const MEMORY_HINT_POLLUTION_PATTERNS = [
+  /ignore\s+(all\s+)?previous/i,
+  /ignore\s+(the\s+)?above/i,
+  /system\s*prompt/i,
+  /developer\s*message/i,
+  /\bassistant\s*:/i,
+  /\bsystem\s*:/i,
+  /\bdeveloper\s*:/i,
+  /tool\s*call/i,
+  /function\s*call/i,
+  /<[^>]{1,80}>/,
+  /```/,
+  /\{\{|\}\}/
+];
+
+function sanitizeMemoryHintTerm(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+  if (!trimmed || trimmed.length > MAX_MEMORY_HINT_TERM_LENGTH) {
+    return undefined;
+  }
+  if (MEMORY_HINT_POLLUTION_PATTERNS.some((pattern) => pattern.test(trimmed))) {
+    return undefined;
+  }
+  return trimmed;
+}
+
+function sanitizeMemoryHintTerms(values: unknown): string[] {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const sanitized: string[] = [];
+  for (const raw of values) {
+    const value = sanitizeMemoryHintTerm(raw);
+    const key = value?.toLowerCase();
+    if (!value || !key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    sanitized.push(value);
+  }
+  return sanitized;
+}
+
 export function enrichWithMemory(
   action: NextBestAction,
   memoryContext: UserMemoryContext | null | undefined
@@ -254,9 +304,9 @@ export function enrichWithMemory(
 }
 
 function buildMemoryHint(content: Record<string, unknown>): string | null {
-  const role = content.role as string | undefined;
-  const locations = content.locations as string[] | undefined;
-  const techStack = content.techStack as string[] | undefined;
+  const role = sanitizeMemoryHintTerm(content.role);
+  const locations = sanitizeMemoryHintTerms(content.locations);
+  const techStack = sanitizeMemoryHintTerms(content.techStack);
 
   if (role) return `偏好 ${role} 方向`;
   if (locations?.length) return `偏好 ${locations[0]} 地区`;

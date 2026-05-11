@@ -42,8 +42,7 @@ export async function runBonjourDiscoveryScan(options: BonjourScanJobOptions): P
     const scanner = new WorkerScanner();
     const result = await scanner.scanByKeywords(options.query, {
       limitPerCategory: options.limit,
-      maxDepth: options.depth,
-      signal: options.signal
+      maxDepth: options.depth
     });
 
     if (result.handles.length === 0) {

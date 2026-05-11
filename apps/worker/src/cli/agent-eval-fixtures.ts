@@ -277,7 +277,7 @@ export const AGENT_ACCEPTANCE_FIXTURES: AgentAcceptanceFixture[] = [
     expected: {
       clarifyAction: "search",
       postSearchAction: "compare",
-      recommendationMode: "clear-recommendation"
+      recommendationMode: "conditional-recommendation"
     }
   },
   {

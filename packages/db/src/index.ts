@@ -11,6 +11,7 @@ export * from "./profile-cache.js";
 export * from "./agent-sessions.js";
 export * from "./user-memories.js";
 export * from "./work-items.js";
+export * from "./graph-repository.js";
 
 // Re-export search-related types
 export type {

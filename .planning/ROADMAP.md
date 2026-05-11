@@ -1,49 +1,49 @@
-# Milestone v1.8: CLI-First Session Ledger
+# Milestone v1.9: Graph Signals Reranking
 
-**Status:** ACTIVE
-**Started:** 2026-04-18
-**Phase range:** 14
+**Status:** COMPLETE
+**Started:** 2026-05-03
+**Completed:** 2026-05-03
+**Phase range:** 15
 
 ## Overview
 
-This milestone pulls the formal agent interaction loop back into the CLI. The goal is not to improve the browser shell further, but to make the CLI the only formal surface for session start, restore, attach, resume, and workboard inspection.
+This milestone turns the already-materialized Bonjour graph into a measurable ranking signal. The goal is not to train graph models yet, but to test whether explicit graph features improve candidate ordering on top of the current hybrid retriever and existing graph-backed explanation layer.
 
 ## Included Phase
 
-### Phase 14: CLI-First Session Ledger
+### Phase 15: Graph Signals Reranking
 
-**Goal:** Add a CLI-owned session ledger with durable restore, startup session selection, read-only attach, explicit resume, and folded workboard inspection.
+**Goal:** Add rerank-only graph features, measure quality lift with graph-sensitive evals, and preserve trustworthy explanation semantics.
 
-**Depends on:** Phase 7 `cli-search-agent-orchestration`, Phase 8 `cli-agent-panel`, Phase 10 `chat-first-copilot`, Phase 13 `runtime-backed-chat-agent-integration`
+**Depends on:** graph facts materialized in DB, Phase 2a graph explanation complete, Phase 2b memory verification complete
 
 **Plans:**
-- [x] `14-01-PLAN.md` — Ledger foundation, startup picker, local cache, and read-only attach shell
-- [ ] `14-02-PLAN.md` — Database-backed session storage, transcript model, and same-session resume flow
-- [ ] `14-03-PLAN.md` — Folded CLI workboard, command surface tightening, and non-web runtime ownership cleanup
-- [ ] `14-04-PLAN.md` — Acceptance coverage, residual-risk report, and milestone closeout
+- [x] `15-01-PLAN.md` — graph feature definitions, search-stack integration point, and eval contract
+- [x] `15-02-PLAN.md` — rerank implementation, candidate metadata plumbing, and tests
+- [x] `15-03-PLAN.md` — eval execution, quality analysis, and go / no-go recommendation
 
 ## Milestone Guardrails
 
-- CLI is the only formal product entry point.
-- Do not treat the web chat shell as a required user path.
-- Restore support is limited to CLI-created sessions.
-- Resume must remain explicit and must not auto-trigger from free-form input.
-- Keep the first durable restore scope narrow:
-  - chat history
-  - latest workboard snapshot
+- keep current hybrid retrieval as the base candidate generator
+- add graph only after retrieval, not as a replacement retriever
+- preserve accurate follow/follower semantics
+- do not imply trust, collaboration, or friendship
+- do not introduce graph-model training in this milestone
+- do not widen “memory complete” into personalization claims beyond verified CLI behavior
 
 ## Planned Outcome
 
-- startup enters a CLI-first session launcher
-- users can restore stopped CLI sessions by `sessionId`
-- restored sessions open read-only and require `resume`
-- workboard inspection moves into the CLI surface
-- browser-owned interaction is no longer required for normal agent use
+- graph features participate in candidate reranking
+- graph-sensitive eval queries can measure lift
+- the team can decide from evidence whether graph reranking is worth keeping or extending
 
 ## References
 
 - `.planning/PROJECT.md`
 - `.planning/STATE.md`
 - `.planning/REQUIREMENTS.md`
-- `docs/superpowers/specs/2026-04-18-cli-first-session-ledger-design.md`
-- `.planning/phases/13-runtime-backed-chat-agent-integration/04-SUMMARY.md`
+- `docs/proposals/graph-rag-review.md`
+- `docs/proposals/graph-rag-integration.md`
+- `docs/proposals/graph-rag-phase-1-implementation-report.md`
+- `docs/proposals/graph-rag-phase-2-implementation-report.md`
+- `docs/proposals/graph-rag-phase-2b-implementation-report.md`

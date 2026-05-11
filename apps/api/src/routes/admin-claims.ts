@@ -210,7 +210,7 @@ export function registerAdminClaimsRoutes(server: FastifyInstance, db: SeekuData
     });
 
     // GET /admin/claims - List claims for audit (D-04)
-    admin.get("/admin/claims", async (request) => handleListClaims(db, request));
+    admin.get<{ Querystring: ClaimsListQuery }>("/admin/claims", async (request) => handleListClaims(db, request));
 
     // POST /admin/claims/:claimId/revoke - Revoke claim (D-04)
     admin.post<{ Params: { claimId: string }; Body: RevokeClaimBody }>(

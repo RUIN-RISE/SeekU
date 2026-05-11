@@ -85,21 +85,38 @@ const WEAK_MUST_HAVE_PATTERNS = [
   /\bbonjour\b/i,
   /\bactive\b/i,
   /recently active/i,
-  /活跃/
+  /活跃/,
+  /\bpaper(s)?\b/i,
+  /\bpublication(s)?\b/i,
+  /\bpublished\b/i,
+  /论文/,
+  /发表/
+] as const;
+const RESEARCH_SIGNAL_PATTERNS = [
+  /\bpaper(s)?\b/i,
+  /\bpublication(s)?\b/i,
+  /\bpublished\b/i,
+  /\bresearch\b/i,
+  /论文/,
+  /发表/,
+  /研究/
 ] as const;
 
 const ROLE_HINT_PATTERNS = [
   { canonical: "builder", patterns: ["builder", "构建者", "开发者"] },
-  { canonical: "tech lead", patterns: ["tech lead", "technical lead", "技术负责人"] },
-  { canonical: "engineer", patterns: ["engineer", "工程师"] },
-  { canonical: "researcher", patterns: ["researcher", "研究员", "研究者"] },
-  { canonical: "scientist", patterns: ["scientist", "科学家"] },
-  { canonical: "founder", patterns: ["founder", "创始人", "联合创始人", "co-founder", "cofounder"] },
-  { canonical: "cto", patterns: ["cto"] },
-  { canonical: "product manager", patterns: ["product manager", "product", "pm", "产品经理"] },
-  { canonical: "designer", patterns: ["designer", "设计师", "视觉设计"] },
-  { canonical: "manager", patterns: ["manager", "经理"] },
-  { canonical: "developer", patterns: ["developer", "开发者"] }
+  { canonical: "tech lead", patterns: ["tech lead", "technical lead", "技术负责人", "技术总监"] },
+  { canonical: "engineer", patterns: ["engineer", "工程师", "算法工程师", "机器学习工程师", "ml engineer", "ai engineer"] },
+  { canonical: "researcher", patterns: ["researcher", "研究员", "研究者", "研究科学家", "research scientist"] },
+  { canonical: "scientist", patterns: ["scientist", "科学家", "研究科学家"] },
+  { canonical: "founder", patterns: ["founder", "创始人", "联合创始人", "co-founder", "cofounder", "创业"] },
+  { canonical: "cto", patterns: ["cto", "技术总监"] },
+  { canonical: "product manager", patterns: ["product manager", "product", "pm", "产品经理", "产品负责人"] },
+  { canonical: "designer", patterns: ["designer", "设计师", "视觉设计", "ui设计", "ux设计"] },
+  { canonical: "manager", patterns: ["manager", "经理", "负责人", "技术负责人", "产品负责人"] },
+  { canonical: "developer", patterns: ["developer", "开发者", "独立开发者"] },
+  { canonical: "architect", patterns: ["architect", "架构师", "系统架构"] },
+  { canonical: "data engineer", patterns: ["data engineer", "数据工程师", "数据"] },
+  { canonical: "devops", patterns: ["devops", "sre", "运维"] }
 ] as const;
 
 const SKILL_HINT_PATTERNS = [
@@ -107,28 +124,55 @@ const SKILL_HINT_PATTERNS = [
   { canonical: "typescript", patterns: ["typescript"] },
   { canonical: "javascript", patterns: ["javascript"] },
   { canonical: "rust", patterns: ["rust"] },
-  { canonical: "go", patterns: ["go"] },
+  { canonical: "go", patterns: ["go", "golang"] },
   { canonical: "java", patterns: ["java"] },
-  { canonical: "pytorch", patterns: ["pytorch"] },
+  { canonical: "pytorch", patterns: ["pytorch", "torch"] },
   { canonical: "tensorflow", patterns: ["tensorflow"] },
-  { canonical: "machine learning", patterns: ["machine learning", "ml"] },
-  { canonical: "deep learning", patterns: ["deep learning"] },
-  { canonical: "rag", patterns: ["rag"] },
-  { canonical: "llm", patterns: ["llm", "大模型"] },
-  { canonical: "nlp", patterns: ["nlp", "自然语言处理"] },
-  { canonical: "agent", patterns: ["agent", "智能体"] },
+  { canonical: "machine learning", patterns: ["machine learning", "ml", "机器学习"] },
+  { canonical: "algorithm", patterns: ["algorithm", "算法"] },
+  { canonical: "deep learning", patterns: ["deep learning", "深度学习"] },
+  { canonical: "rag", patterns: ["rag", "检索增强", "retrieval augmented"] },
+  { canonical: "llm", patterns: ["llm", "大模型", "大语言模型", "large language model"] },
+  { canonical: "nlp", patterns: ["nlp", "自然语言处理", "natural language processing"] },
+  { canonical: "agent", patterns: ["agent", "智能体", "agentic", "agent infra"] },
   { canonical: "ai", patterns: ["ai", "人工智能"] },
+  { canonical: "generative ai", patterns: ["generative ai", "生成式 ai", "生成式人工智能", "生成式", "aigc"] },
   { canonical: "backend", patterns: ["backend", "后端"] },
-  { canonical: "infra", patterns: ["infra", "infrastructure", "系统优化", "devops"] },
+  { canonical: "frontend", patterns: ["frontend", "前端"] },
+  { canonical: "fullstack", patterns: ["fullstack", "full-stack", "全栈"] },
+  { canonical: "infra", patterns: ["infra", "infrastructure", "系统优化", "devops", "基础设施"] },
+  { canonical: "ai infra", patterns: ["ai infra", "ai infrastructure", "ai基础设施"] },
   { canonical: "multimodal", patterns: ["multimodal", "multi-modal", "多模态"] },
-  { canonical: "computer vision", patterns: ["computer vision", "cv", "计算机视觉"] },
-  { canonical: "retrieval", patterns: ["retrieval", "检索"] },
-  { canonical: "open source", patterns: ["open source", "open-source", "开源"] }
+  { canonical: "computer vision", patterns: ["computer vision", "cv", "计算机视觉", "视觉"] },
+  { canonical: "retrieval", patterns: ["retrieval", "检索", "向量检索", "vector search", "vector database"] },
+  { canonical: "open source", patterns: ["open source", "open-source", "开源"] },
+  { canonical: "transformer", patterns: ["transformer", "attention"] },
+  { canonical: "diffusion", patterns: ["diffusion", "扩散模型"] },
+  { canonical: "fine-tuning", patterns: ["fine-tuning", "fine tuning", "微调", "sft"] },
+  { canonical: "rlhf", patterns: ["rlhf", "rl", "rlvr", "强化学习", "reinforcement learning"] },
+  { canonical: "docker", patterns: ["docker", "容器"] },
+  { canonical: "kubernetes", patterns: ["kubernetes", "k8s"] },
+  { canonical: "cuda", patterns: ["cuda", "triton"] },
+  { canonical: "langchain", patterns: ["langchain"] },
+  { canonical: "llamaindex", patterns: ["llamaindex", "llama index"] },
+  { canonical: "vllm", patterns: ["vllm"] },
+  { canonical: "openai", patterns: ["openai"] },
+  { canonical: "anthropic", patterns: ["anthropic", "claude"] },
+  { canonical: "speech", patterns: ["speech", "语音", "tts", "asr", "audio", "音频"] },
+  { canonical: "robotics", patterns: ["robotics", "机器人", "ros"] },
+  { canonical: "embedding", patterns: ["embedding", "嵌入", "向量化"] },
+  { canonical: "quantization", patterns: ["quantization", "量化"] },
+  { canonical: "prompt engineering", patterns: ["prompt engineering", "提示工程"] },
+  { canonical: "mlops", patterns: ["mlops"] },
+  { canonical: "evaluation", patterns: ["evaluation", "eval", "benchmark", "评测"] }
 ] as const;
 
 const UNIVERSITY_MUST_HAVE_HINTS = [
   { canonical: "zhejiang university", patterns: ["浙大", "zju", "zhejiang university"] }
 ] as const;
+
+const LOCATION_HINT_PATTERN =
+  /(beijing|shanghai|shenzhen|hangzhou|guangzhou|suzhou|nanjing|chengdu|wuhan|singapore|tokyo|new york|china|remote|北京|上海|深圳|杭州|广州|苏州|南京|成都|武汉|新加坡|东京|纽约|中国|远程)/g;
 
 function normalizeList(values: unknown): string[] {
   if (!Array.isArray(values)) {
@@ -164,6 +208,55 @@ function splitWeakMustHaves(values: string[]) {
   }
 
   return { strong, weak };
+}
+
+function isCompositeSearchRequirement(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  if (UNIVERSITY_MUST_HAVE_HINTS.some((hint) => hint.patterns.some((pattern) => normalized.includes(pattern)))) {
+    return false;
+  }
+
+  const containsKnownSearchDimension =
+    collectHintMatches(normalized, ROLE_HINT_PATTERNS).length > 0
+    || collectHintMatches(normalized, SKILL_HINT_PATTERNS).length > 0
+    || (normalized.match(LOCATION_HINT_PATTERN)?.length ?? 0) > 0;
+
+  if (!containsKnownSearchDimension) {
+    return false;
+  }
+
+  const hasWordPhrase = normalized.split(/\s+/).filter(Boolean).length >= 2;
+  const hasLongChinesePhrase = /[\u3400-\u9fff]/u.test(normalized) && normalized.length >= 6;
+  return hasWordPhrase || hasLongChinesePhrase;
+}
+
+function splitCompositeMustHaves(values: string[]) {
+  const strong: string[] = [];
+  const soft: string[] = [];
+
+  for (const value of mergeNormalizedLists(values)) {
+    if (isCompositeSearchRequirement(value)) {
+      soft.push(value);
+      continue;
+    }
+
+    strong.push(value);
+  }
+
+  return { strong, soft };
+}
+
+function collectResearchSignalTerms(values: string[]): string[] {
+  const text = values.join(" ");
+  if (!RESEARCH_SIGNAL_PATTERNS.some((pattern) => pattern.test(text))) {
+    return [];
+  }
+
+  return ["research", "paper", "论文"];
 }
 
 function collectHintMatches(
@@ -286,6 +379,10 @@ function heuristicIntent(query: string): QueryIntent {
     skills.add(skill);
   }
 
+  for (const term of collectResearchSignalTerms([normalized])) {
+    skills.add(term);
+  }
+
   for (const hint of UNIVERSITY_MUST_HAVE_HINTS) {
     if (hint.patterns.some((pattern) => normalized.includes(pattern))) {
       mustHaves.add(hint.canonical);
@@ -293,9 +390,7 @@ function heuristicIntent(query: string): QueryIntent {
     }
   }
 
-  const locationMatches = normalized.match(
-    /(beijing|shanghai|shenzhen|hangzhou|guangzhou|china|singapore|remote|北京|上海|深圳|杭州|广州|中国|新加坡|远程)/g
-  );
+  const locationMatches = normalized.match(LOCATION_HINT_PATTERN);
   for (const location of locationMatches ?? []) {
     locations.add(location);
   }
@@ -317,14 +412,22 @@ function heuristicIntent(query: string): QueryIntent {
 
 function applyIntent(query: string, intent: z.infer<typeof PlannedIntentSchema>): QueryIntent {
   const heuristic = heuristicIntent(query);
-  const mustHaveLists = splitWeakMustHaves(mergeNormalizedLists(intent.mustHaves, heuristic.mustHaves));
-  const niceToHaves = mergeNormalizedLists(intent.niceToHaves, heuristic.niceToHaves, mustHaveLists.weak);
+  const compositeMustHaves = splitCompositeMustHaves(mergeNormalizedLists(intent.mustHaves, heuristic.mustHaves));
+  const mustHaveLists = splitWeakMustHaves(compositeMustHaves.strong);
+  const researchSignals = collectResearchSignalTerms([query, ...intent.mustHaves, ...intent.niceToHaves]);
+  const niceToHaves = mergeNormalizedLists(
+    intent.niceToHaves,
+    heuristic.niceToHaves,
+    compositeMustHaves.soft,
+    mustHaveLists.weak,
+    researchSignals
+  );
   const llmSourceBias = normalizeSourceBias(intent.sourceBias);
 
   return {
     rawQuery: query,
     roles: mergeNormalizedLists(intent.roles, heuristic.roles),
-    skills: mergeNormalizedLists(intent.skills, heuristic.skills),
+    skills: mergeNormalizedLists(intent.skills, heuristic.skills, researchSignals),
     locations: mergeNormalizedLists(intent.locations, heuristic.locations),
     experienceLevel: intent.experienceLevel?.toLowerCase() ?? heuristic.experienceLevel,
     sourceBias: llmSourceBias ?? heuristic.sourceBias,

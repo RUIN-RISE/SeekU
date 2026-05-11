@@ -20,7 +20,12 @@
     "db:logs": "docker compose --env-file .env -f infra/docker-compose.yml logs -f",
     "db:generate": "pnpm --filter @seeku/db db:generate",
     "db:push": "pnpm --filter @seeku/db db:push",
-    "db:migrate": "pnpm --filter @seeku/db db:migrate"
+    "db:migrate": "pnpm --filter @seeku/db db:migrate",
+    "doctor": "tsx scripts/doctor.ts",
+    "eval:recruiting": "tsx scripts/eval/recruiting-precision.ts",
+    "eval:graph": "tsx scripts/eval/graph-rerank.ts",
+    "eval:all": "tsx scripts/eval/recruiting-precision.ts && tsx scripts/eval/graph-rerank.ts",
+    "preflight": "pnpm build && pnpm test && pnpm eval:all"
   },
   "devDependencies": {
     "@types/node": "^20.17.30",

@@ -59,18 +59,46 @@ const DEFAULT_LIMIT = 50;
 const DEFAULT_KEYWORD_THRESHOLD = SCORING_CONFIG.retriever.keywordThreshold;
 const RETRIEVER_BOOST = SCORING_CONFIG.retriever.boost;
 const SPECIALIZED_BLEND = SCORING_CONFIG.retriever.specializedBlend;
+const VECTOR_DIMENSION_MISS_PENALTY = 0.5;
+const VECTOR_DIMENSION_PARTIAL_WEIGHT = 0.5;
 const SPECIALIZED_QUERY_TERMS = [
   "rag",
   "retrieval",
   "检索",
+  "检索增强",
+  "向量检索",
+  "vector search",
   "multimodal",
   "multi-modal",
   "多模态",
   "computer vision",
   "计算机视觉",
-  "llm"
+  "llm",
+  "大模型",
+  "大语言模型",
+  "agent",
+  "智能体",
+  "agentic",
+  "transformer",
+  "diffusion",
+  "rlhf",
+  "fine-tuning",
+  "微调",
+  "nlp",
+  "自然语言处理",
+  "deep learning",
+  "深度学习",
+  "机器学习",
+  "machine learning",
+  "pytorch",
+  "tensorflow",
+  "cuda",
+  "triton",
+  "langchain",
+  "llamaindex",
+  "vllm"
 ] as const;
-const SHORT_TECH_TERMS = ["rag", "llm", "nlp", "cv"] as const;
+const SHORT_TECH_TERMS = ["rag", "llm", "nlp", "cv", "ai", "ml", "go", "rl", "sft", "rlhf", "rlvr"] as const;
 const OPEN_SOURCE_QUERY_TERMS = ["open source", "开源"] as const;
 const OPEN_SOURCE_TEXT_TERMS = ["open source", "open-source", "开源"] as const;
 const WEAK_MUST_HAVE_PATTERNS = [
@@ -82,31 +110,70 @@ const WEAK_MUST_HAVE_PATTERNS = [
 ] as const;
 
 const ROLE_EQUIVALENTS: Record<string, string[]> = {
-  "tech lead": ["tech lead", "technical lead", "技术负责人", "负责人"],
-  engineer: ["engineer", "工程师", "ai工程师", "后端工程师"],
+  "tech lead": ["tech lead", "technical lead", "技术负责人", "负责人", "技术总监"],
+  engineer: ["engineer", "工程师", "ai工程师", "后端工程师", "算法工程师", "机器学习工程师", "ml engineer"],
+  "ai engineer": ["ai engineer", "ai工程师", "人工智能工程师", "ml engineer", "机器学习工程师", "算法工程师", "nlp工程师", "cv工程师", "rag工程师", "agent工程师"],
+  "ml engineer": ["ml engineer", "机器学习工程师", "ai工程师", "算法工程师", "machine learning engineer"],
   "backend engineer": ["backend engineer", "backend", "后端", "后端工程师", "工程师"],
-  developer: ["developer", "开发者", "工程师"],
-  founder: ["founder", "创始人", "联合创始人", "co-founder", "cofounder"],
-  researcher: ["researcher", "研究员", "研究者", "ai研究员"],
-  scientist: ["scientist", "科学家"],
+  developer: ["developer", "开发者", "工程师", "独立开发者"],
+  founder: ["founder", "创始人", "联合创始人", "co-founder", "cofounder", "创业"],
+  researcher: ["researcher", "研究员", "研究者", "ai研究员", "研究科学家"],
+  scientist: ["scientist", "科学家", "研究科学家"],
+  architect: ["architect", "架构师", "系统架构", "software architect"],
   "product manager": ["product manager", "product", "pm", "产品经理"],
-  designer: ["designer", "设计师", "视觉设计"],
-  manager: ["manager", "经理"],
+  designer: ["designer", "设计师", "视觉设计", "ui设计师", "ux设计师"],
+  manager: ["manager", "经理", "技术负责人", "技术总监"],
+  "data engineer": ["data engineer", "数据工程师", "数据"],
+  devops: ["devops", "sre", "site reliability", "运维"],
 };
 
 const SKILL_EQUIVALENTS: Record<string, string[]> = {
-  "machine learning": ["machine learning", "ml"],
+  "machine learning": ["machine learning", "ml", "机器学习"],
+  algorithm: ["algorithm", "算法", "算法工程师", "算法研究员"],
+  "deep learning": ["deep learning", "深度学习"],
   backend: ["backend", "后端"],
-  infra: ["infra", "infrastructure", "系统优化", "devops"],
+  frontend: ["frontend", "前端"],
+  fullstack: ["fullstack", "full-stack", "全栈"],
+  infra: ["infra", "infrastructure", "系统优化", "devops", "基础设施"],
+  "ai infra": ["ai infra", "ai infrastructure", "ai基础设施", "ai infra"],
   multimodal: ["multimodal", "multi-modal", "多模态"],
-  "computer vision": ["computer vision", "cv", "计算机视觉"],
-  retrieval: ["retrieval", "检索"],
+  "computer vision": ["computer vision", "cv", "计算机视觉", "视觉"],
+  retrieval: ["retrieval", "检索", "检索增强", "向量检索", "vector search", "vector database", "向量数据库"],
   "open source": ["open source", "open-source", "开源"],
-  agent: ["agent", "智能体"],
+  agent: ["agent", "智能体", "agentic", "agent infra"],
   ai: ["ai", "人工智能"],
-  llm: ["llm", "大模型"],
-  rag: ["rag"],
-  nlp: ["nlp", "自然语言处理"],
+  "generative ai": ["generative ai", "生成式 ai", "生成式人工智能", "生成式", "aigc", "ai"],
+  llm: ["llm", "大模型", "大语言模型", "large language model"],
+  rag: ["rag", "检索增强", "retrieval augmented"],
+  nlp: ["nlp", "自然语言处理", "natural language processing"],
+  research: ["research", "researcher", "研究", "研究员", "科研", "论文", "paper", "publication", "published"],
+  paper: ["paper", "papers", "publication", "publications", "published", "论文", "发表"],
+  transformer: ["transformer", "attention", "注意力机制"],
+  diffusion: ["diffusion", "扩散模型"],
+  "fine-tuning": ["fine-tuning", "fine tuning", "微调", "sft"],
+  rlhf: ["rlhf", "rl", "rlvr", "强化学习", "reinforcement learning"],
+  pytorch: ["pytorch", "torch"],
+  tensorflow: ["tensorflow"],
+  cuda: ["cuda", "triton"],
+  docker: ["docker", "容器"],
+  kubernetes: ["kubernetes", "k8s"],
+  robotics: ["robotics", "机器人", "ros", "ros2"],
+  speech: ["speech", "语音", "tts", "asr", "audio", "音频"],
+  "prompt engineering": ["prompt engineering", "提示工程", "prompt"],
+  embedding: ["embedding", "嵌入", "向量化"],
+  quantization: ["quantization", "量化"],
+  mlops: ["mlops", "ml ops", "ml运营"],
+  observability: ["observability", "可观测性", "监控"],
+  evaluation: ["evaluation", "eval", "benchmark", "评测"],
+  langchain: ["langchain", "lang chain"],
+  llamaindex: ["llamaindex", "llama index"],
+  vllm: ["vllm", "vllm"],
+  ollama: ["ollama"],
+  dify: ["dify"],
+  openai: ["openai", "open ai"],
+  anthropic: ["anthropic", "claude"],
+  blockchain: ["blockchain", "区块链", "web3"],
+  startup: ["startup", "创业", "startup"],
 };
 
 function uniqueLowercase(values: string[]): string[] {
@@ -279,6 +346,51 @@ function numericFlagExpr(condition: SQL | null): SQL<number> {
   return sql<number>`CASE WHEN ${condition} THEN 1::double precision ELSE 0::double precision END`;
 }
 
+function combineOrConditions(conditions: Array<SQL | null>): SQL | null {
+  const present = conditions.filter((condition): condition is SQL => Boolean(condition));
+  if (present.length === 0) {
+    return null;
+  }
+
+  return sql`(${sql.join(present, sql.raw(" OR "))})`;
+}
+
+function buildDimensionMatchExpressions(intent: QueryIntent, normalizedDocText: SQLWrapper) {
+  const expandedRoles = expandRoleTerms(intent.roles);
+  const expandedSkills = expandSkillTerms(intent.skills);
+  const roleTextCondition = buildTextMatchCondition(expandedRoles, normalizedDocText);
+  const skillTextCondition = buildTextMatchCondition(expandedSkills, normalizedDocText);
+  const mustHaveConditions = buildMustHaveConditions(intent);
+
+  return {
+    dimensionCount:
+      (expandedRoles.length > 0 ? 1 : 0)
+      + (expandedSkills.length > 0 ? 1 : 0)
+      + (mustHaveConditions.length > 0 ? 1 : 0),
+    roleMatchExpr: numericFlagExpr(
+      expandedRoles.length > 0
+        ? combineOrConditions([
+          sql`${searchDocuments.facetRole} && ${toTextArray(expandedRoles)}`,
+          roleTextCondition
+        ])
+        : null
+    ),
+    skillMatchExpr: numericFlagExpr(
+      expandedSkills.length > 0
+        ? combineOrConditions([
+          sql`${searchDocuments.facetTags} && ${toTextArray(expandedSkills)}`,
+          skillTextCondition
+        ])
+        : null
+    ),
+    mustHaveMatchExpr: numericFlagExpr(
+      mustHaveConditions.length > 0
+        ? sql`(${sql.join(mustHaveConditions, sql.raw(" AND "))})`
+        : null
+    )
+  };
+}
+
 function toSnippet(text: string): string {
   return text.trim().slice(0, 280);
 }
@@ -344,15 +456,29 @@ const LOCATION_VARIANTS: Record<string, string[]> = {
   shanghai: ["上海", "shanghai"],
   shenzhen: ["深圳", "shenzhen"],
   guangzhou: ["广州", "guangzhou"],
+  suzhou: ["苏州", "suzhou"],
+  nanjing: ["南京", "nanjing"],
+  chengdu: ["成都", "chengdu"],
+  wuhan: ["武汉", "wuhan"],
   china: ["中国", "china"],
   singapore: ["新加坡", "singapore"],
+  tokyo: ["东京", "tokyo"],
+  "new york": ["纽约", "new york"],
+  remote: ["远程", "remote"],
   杭州: ["杭州", "hangzhou"],
   北京: ["北京", "beijing"],
   上海: ["上海", "shanghai"],
   深圳: ["深圳", "shenzhen"],
   广州: ["广州", "guangzhou"],
+  苏州: ["苏州", "suzhou"],
+  南京: ["南京", "nanjing"],
+  成都: ["成都", "chengdu"],
+  武汉: ["武汉", "wuhan"],
   中国: ["中国", "china"],
-  新加坡: ["新加坡", "singapore"]
+  新加坡: ["新加坡", "singapore"],
+  东京: ["东京", "tokyo"],
+  纽约: ["纽约", "new york"],
+  远程: ["远程", "remote"]
 };
 
 function expandLocationVariants(locations: string[]): string[] {
@@ -593,17 +719,35 @@ export class HybridRetriever {
     }
 
     const vector = `[${queryEmbedding.join(",")}]`;
+    const normalizedDocText = normalizeSearchExpression(searchDocuments.docText);
+    const dimensionMatches = buildDimensionMatchExpressions(intent, normalizedDocText);
+    const dimensionMatchTotal = sql<number>`
+      ${dimensionMatches.roleMatchExpr}
+      + ${dimensionMatches.skillMatchExpr}
+      + ${dimensionMatches.mustHaveMatchExpr}
+    `;
+    const dimensionCoverageExpr = dimensionMatches.dimensionCount >= 2
+      ? sql<number>`
+          ${float8Param(VECTOR_DIMENSION_MISS_PENALTY)}
+          + LEAST(${dimensionMatchTotal}, ${dimensionMatches.dimensionCount}::double precision)
+            / ${dimensionMatches.dimensionCount}::double precision
+            * ${float8Param(VECTOR_DIMENSION_PARTIAL_WEIGHT)}
+        `
+      : sql<number>`1::double precision`;
+    const vectorScoreExpr = sql<number>`1 - (${searchEmbeddings.embedding} <=> ${vector}::vector)`;
+    const adjustedVectorScoreExpr = sql<number>`(${vectorScoreExpr}) * ${dimensionCoverageExpr}`;
+
     const rows = await this.db
       .select({
         personId: searchEmbeddings.personId,
         docText: searchDocuments.docText,
-        score: sql<number>`1 - (${searchEmbeddings.embedding} <=> ${vector}::vector)`
+        score: adjustedVectorScoreExpr
       })
       .from(searchEmbeddings)
       .innerJoin(searchDocuments, eq(searchDocuments.personId, searchEmbeddings.personId))
       .innerJoin(persons, eq(persons.id, searchEmbeddings.personId))
       .where(and(...buildFilterConditions(intent, filters)))
-      .orderBy(sql`${searchEmbeddings.embedding} <=> ${vector}::vector`)
+      .orderBy(desc(adjustedVectorScoreExpr))
       .limit(this.limit);
 
     return rows.map((row) => {

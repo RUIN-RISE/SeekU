@@ -69,13 +69,18 @@ function createMockSearchDb(results: Map<unknown, unknown[]>) {
 
 describe("API Server", () => {
   let server: FastifyInstance;
+  let originalAdminKey: string | undefined;
 
   beforeAll(async () => {
+    originalAdminKey = process.env.API_ADMIN_KEY;
+    delete process.env.API_ADMIN_KEY;
     server = await buildApiServer({ searchServices: mockSearchServices });
   });
 
   afterAll(async () => {
     await server.close();
+    if (originalAdminKey) process.env.API_ADMIN_KEY = originalAdminKey;
+    else delete process.env.API_ADMIN_KEY;
   });
 
   describe("Health Check", () => {
@@ -86,7 +91,7 @@ describe("API Server", () => {
       });
 
       expect(response.statusCode).toBe(200);
-      expect(response.json()).toEqual({ status: "ok" });
+      expect(response.json()).toEqual({ status: "ok", database: "connected" });
     });
   });
 
@@ -330,8 +335,10 @@ describe("API Server", () => {
         url: "/admin/sync-status"
       });
 
-      expect(response.statusCode).toBe(200);
-      expect(response.json()).toHaveProperty("runs");
+      expect(response.statusCode).toBe(503);
+      expect(response.json()).toMatchObject({
+        error: "admin_disabled"
+      });
     });
 
     it("POST /admin/run-eval should return placeholder", async () => {
@@ -340,7 +347,7 @@ describe("API Server", () => {
         url: "/admin/run-eval"
       });
 
-      expect([200, 501]).toContain(response.statusCode);
+      expect(response.statusCode).toBe(503);
     });
   });
 

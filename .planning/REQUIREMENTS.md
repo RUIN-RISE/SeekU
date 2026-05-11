@@ -1,36 +1,32 @@
-# Requirements — Seeku v1.8
+# Requirements — Seeku v1.9
 
-Milestone: `v1.8 CLI-First Session Ledger`
-Status: Active
-Started: 2026-04-18
+Milestone: `v1.9 Graph Signals Reranking`
+Status: Complete
+Started: 2026-05-03
+Completed: 2026-05-03
 
 ## Active Requirements
 
-### CLI Ownership
+### Rerank Integration
 
-- [ ] `CLI-01` — CLI becomes the only formal agent interaction surface.
-- [ ] `CLI-02` — The browser chat shell is no longer required for standard product use.
-- [ ] `CLI-03` — Attach, resume, and workboard inspection all exist in the CLI.
+- [x] `GRAPH-RERANK-01` — The existing hybrid retriever remains the base candidate generator.
+- [x] `GRAPH-RERANK-02` — Graph signals are applied only as a rerank layer after retrieval.
+- [x] `GRAPH-RERANK-03` — The first graph rerank feature set uses explicit graph facts only.
 
-### Session Ledger
+### Feature Semantics
 
-- [ ] `LEDGER-01` — CLI-created sessions are durably recorded with a stable `sessionId`.
-- [ ] `LEDGER-02` — The session ledger stores at least:
-  - chat history
-  - latest workboard snapshot
-- [ ] `LEDGER-03` — The system uses database storage as the formal ledger and local file cache as a convenience layer.
-- [ ] `LEDGER-04` — Local session cache is retained until manual cleanup.
+- [x] `GRAPH-FEAT-01` — Graph features preserve Bonjour follow/follower semantics and do not imply trust or collaboration.
+- [x] `GRAPH-FEAT-02` — Missing graph data degrades safely without breaking ranking or display.
+- [x] `GRAPH-FEAT-03` — Pairwise graph signals are only used when an anchor person or equivalent comparison context is available.
 
-### Restore And Resume
+### Evaluation And Decision
 
-- [ ] `RESTORE-01` — CLI startup shows recent sessions and defaults to `new session`.
-- [ ] `RESTORE-02` — `attach <sessionId>` can restore a stopped CLI-created session.
-- [ ] `RESTORE-03` — Restored sessions open in a read-only posture.
-- [ ] `RESTORE-04` — Free-form input does not implicitly resume a restored session.
-- [ ] `RESTORE-05` — `resume` is explicit, asks a continuation question, and continues on the same `sessionId`.
+- [x] `GRAPH-EVAL-01` — Graph-sensitive eval queries exist for rerank validation.
+- [x] `GRAPH-EVAL-02` — The rerank path is measured against the current baseline with explicit metrics.
+- [x] `GRAPH-EVAL-03` — The milestone ends with a go / no-go recommendation for keeping or extending graph reranking.
 
 ## Milestone Notes
 
-- This milestone is about CLI product ownership, not broader multi-surface UX.
-- Restore scope is intentionally minimal in the first version.
-- Historical web-created sessions remain out of scope.
+- This milestone is about graph-aware reranking, not graph-model training.
+- Memory wiring is considered complete for the interactive CLI based on Phase 2b verification.
+- GraphTranslator, GraphSAGE, Node2Vec, and `memU` remain out of scope unless a later milestone explicitly reopens them.

@@ -186,4 +186,106 @@ describe("source filtering", () => {
     expect(intent.locations).toContain("hangzhou");
     expect(intent.sourceBias).toBeUndefined();
   });
+
+  it("recognizes expanded Chinese city filters in heuristic parsing", async () => {
+    const planner = new QueryPlanner({
+      provider: {
+        chat: async () => ({
+          content: JSON.stringify({
+            roles: [],
+            skills: [],
+            locations: [],
+            experienceLevel: null,
+            sourceBias: null,
+            mustHaves: [],
+            niceToHaves: []
+          }),
+          model: "mock"
+        })
+      } as any
+    });
+
+    const intent = await planner.parse("苏州 RAG engineer");
+
+    expect(intent.locations).toContain("苏州");
+    expect(intent.skills).toContain("rag");
+    expect(intent.roles).toContain("engineer");
+  });
+
+  it("downgrades publication requirements to research skill signals", async () => {
+    const planner = new QueryPlanner({
+      provider: {
+        chat: async () => ({
+          content: JSON.stringify({
+            roles: ["research scientist"],
+            skills: ["nlp"],
+            locations: [],
+            experienceLevel: null,
+            sourceBias: null,
+            mustHaves: ["论文发表经验"],
+            niceToHaves: []
+          }),
+          model: "mock"
+        })
+      } as any
+    });
+
+    const intent = await planner.parse("NLP 研究科学家，有论文发表经验");
+
+    expect(intent.roles).toEqual(expect.arrayContaining(["researcher", "scientist"]));
+    expect(intent.skills).toEqual(expect.arrayContaining(["nlp", "research", "paper", "论文"]));
+    expect(intent.mustHaves).not.toContain("论文发表经验");
+    expect(intent.niceToHaves).toEqual(expect.arrayContaining(["论文发表经验"]));
+  });
+
+  it("recognizes Chinese algorithm as a skill", async () => {
+    const planner = new QueryPlanner({
+      provider: {
+        chat: async () => ({
+          content: JSON.stringify({
+            roles: [],
+            skills: [],
+            locations: [],
+            experienceLevel: null,
+            sourceBias: null,
+            mustHaves: [],
+            niceToHaves: []
+          }),
+          model: "mock"
+        })
+      } as any
+    });
+
+    const intent = await planner.parse("深圳 计算机视觉 算法研究员");
+
+    expect(intent.skills).toEqual(expect.arrayContaining(["computer vision", "algorithm"]));
+    expect(intent.roles).toContain("researcher");
+    expect(intent.locations).toContain("深圳");
+  });
+
+  it("downgrades composite role and skill requirements from mustHaves", async () => {
+    const planner = new QueryPlanner({
+      provider: {
+        chat: async () => ({
+          content: JSON.stringify({
+            roles: [],
+            skills: [],
+            locations: [],
+            experienceLevel: null,
+            sourceBias: null,
+            mustHaves: ["生成式 ai 产品负责人"],
+            niceToHaves: []
+          }),
+          model: "mock"
+        })
+      } as any
+    });
+
+    const intent = await planner.parse("生成式 AI 产品负责人");
+
+    expect(intent.roles).toEqual(expect.arrayContaining(["product manager", "manager"]));
+    expect(intent.skills).toContain("ai");
+    expect(intent.mustHaves).not.toContain("生成式 ai 产品负责人");
+    expect(intent.niceToHaves).toContain("生成式 ai 产品负责人");
+  });
 });

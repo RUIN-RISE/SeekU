@@ -1,4 +1,5 @@
 import {
+  and,
   createDatabaseConnection,
   eq,
   evidenceItems,
@@ -11,6 +12,7 @@ import {
   persons,
   searchDocuments,
   searchEmbeddings,
+  sql,
   sourceProfiles,
   type EvidenceItem,
   type NewSearchDocument,
@@ -37,6 +39,8 @@ export interface SearchIndexWorkerConfig {
   batchSize?: number;
   embeddingBatchSize?: number;
   provider?: LLMProvider;
+  /** Skip staleness check — re-embed all documents regardless of timestamps */
+  force?: boolean;
 }
 
 export interface SearchDocumentSyncSummary {
@@ -70,19 +74,36 @@ function groupEvidence(items: EvidenceItem[]): Map<string, EvidenceItem[]> {
   return grouped;
 }
 
+function toTextArraySql(values: string[] | null | undefined) {
+  if (!values || values.length === 0) {
+    return sql`ARRAY[]::text[]`;
+  }
+
+  return sql`ARRAY[${sql.join(
+    values.map((value) => sql`${value}`),
+    sql`, `
+  )}]::text[]`;
+}
+
+function toJsonbSql(value: unknown) {
+  return sql`${JSON.stringify(value ?? {})}::jsonb`;
+}
+
 export class SearchIndexWorker {
   private readonly db: SeekuDatabase;
   private readonly batchSize: number;
   private readonly embeddingGenerator: EmbeddingGenerator;
+  private readonly force: boolean;
 
   constructor(db: SeekuDatabase, config: SearchIndexWorkerConfig = {}) {
     this.db = db;
     this.batchSize = config.batchSize ?? DEFAULT_BATCH_SIZE;
-    
+    this.force = config.force ?? false;
+
     // Hard-lock to SiliconFlow for indexing and embeddings to ensure 4096-dim vector compatibility.
     // This prevents provider drift if OPENAI_API_KEY is accidentally set.
     const provider = config.provider ?? SiliconFlowProvider.fromStrictEnv();
-    
+
     this.embeddingGenerator = new EmbeddingGenerator({
       provider,
       batchSize: config.embeddingBatchSize ?? config.batchSize ?? DEFAULT_BATCH_SIZE
@@ -143,6 +164,11 @@ export class SearchIndexWorker {
   }
 
   private async upsertDocument(document: NewSearchDocument) {
+    const documentUpdatedAt =
+      document.updatedAt instanceof Date
+        ? document.updatedAt.toISOString()
+        : new Date().toISOString();
+
     await this.db
       .insert(searchDocuments)
       .values(document)
@@ -155,7 +181,16 @@ export class SearchIndexWorker {
           facetSource: document.facetSource,
           facetTags: document.facetTags,
           rankFeatures: document.rankFeatures,
-          updatedAt: document.updatedAt ?? new Date()
+          updatedAt: sql`CASE
+            WHEN ${searchDocuments.docText} IS DISTINCT FROM ${document.docText}
+              OR ${searchDocuments.facetRole} IS DISTINCT FROM ${toTextArraySql(document.facetRole)}
+              OR ${searchDocuments.facetLocation} IS DISTINCT FROM ${toTextArraySql(document.facetLocation)}
+              OR ${searchDocuments.facetSource} IS DISTINCT FROM ${toTextArraySql(document.facetSource)}
+              OR ${searchDocuments.facetTags} IS DISTINCT FROM ${toTextArraySql(document.facetTags)}
+              OR ${searchDocuments.rankFeatures} IS DISTINCT FROM ${toJsonbSql(document.rankFeatures)}
+            THEN ${documentUpdatedAt}
+            ELSE ${searchDocuments.updatedAt}
+          END`
         }
       });
   }
@@ -205,10 +240,35 @@ export class SearchIndexWorker {
         return [];
       }
 
+      if (this.force) {
+        return this.db
+          .select()
+          .from(searchDocuments)
+          .where(inArray(searchDocuments.personId, personIds));
+      }
+
+      // In non-force mode with explicit IDs, still respect staleness
+      const rows = await this.db
+        .select({ document: searchDocuments })
+        .from(searchDocuments)
+        .leftJoin(searchEmbeddings, eq(searchEmbeddings.personId, searchDocuments.personId))
+        .where(
+          and(
+            inArray(searchDocuments.personId, personIds),
+            or(
+              isNull(searchEmbeddings.personId),
+              lt(searchEmbeddings.embeddedAt, searchDocuments.updatedAt)
+            )
+          )
+        );
+      return rows.map((row) => row.document);
+    }
+
+    if (this.force) {
       return this.db
         .select()
         .from(searchDocuments)
-        .where(inArray(searchDocuments.personId, personIds));
+        .limit(limit ?? this.batchSize);
     }
 
     const rows = await this.db
@@ -226,6 +286,45 @@ export class SearchIndexWorker {
       .limit(limit ?? this.batchSize);
 
     return rows.map((row) => row.document);
+  }
+
+  private async loadEmbeddingTargetIds(personIds?: string[]): Promise<string[]> {
+    if (personIds !== undefined) {
+      if (personIds.length === 0) {
+        return [];
+      }
+
+      const rows = await this.db
+        .select({ personId: searchDocuments.personId })
+        .from(searchDocuments)
+        .where(inArray(searchDocuments.personId, personIds))
+        .orderBy(searchDocuments.personId);
+
+      return rows.map((row) => row.personId);
+    }
+
+    if (this.force) {
+      const rows = await this.db
+        .select({ personId: searchDocuments.personId })
+        .from(searchDocuments)
+        .orderBy(searchDocuments.personId);
+
+      return rows.map((row) => row.personId);
+    }
+
+    const rows = await this.db
+      .select({ personId: searchDocuments.personId })
+      .from(searchDocuments)
+      .leftJoin(searchEmbeddings, eq(searchEmbeddings.personId, searchDocuments.personId))
+      .where(
+        or(
+          isNull(searchEmbeddings.personId),
+          lt(searchEmbeddings.embeddedAt, searchDocuments.updatedAt)
+        )
+      )
+      .orderBy(searchDocuments.personId);
+
+    return rows.map((row) => row.personId);
   }
 
   async rebuildEmbeddings(personIds?: string[]): Promise<SearchEmbeddingSyncSummary> {
@@ -254,9 +353,10 @@ export class SearchIndexWorker {
   }
 
   /**
-   * Rebuild ALL active candidates in batches
+   * Rebuild ALL active candidates in batches, with per-batch error recovery.
    */
-  async rebuildAll(): Promise<SearchIndexRunSummary> {
+  async rebuildAll(): Promise<SearchIndexRunSummary & { errors: string[] }> {
+    const errors: string[] = [];
     const totalProcessed: SearchIndexRunSummary = {
       documents: { personsProcessed: 0, documentsUpserted: 0, personIds: [] },
       embeddings: { documentsProcessed: 0, embeddingsUpserted: 0, personIds: [] }
@@ -274,24 +374,67 @@ export class SearchIndexWorker {
 
       if (activeBatch.length === 0) break;
 
-      const summary = await this.rebuildDocuments(activeBatch.map((p) => p.id));
-      totalProcessed.documents.personsProcessed += summary.personsProcessed;
-      totalProcessed.documents.documentsUpserted += summary.documentsUpserted;
-      totalProcessed.documents.personIds.push(...summary.personIds);
+      try {
+        const summary = await this.rebuildDocuments(activeBatch.map((p) => p.id));
+        totalProcessed.documents.personsProcessed += summary.personsProcessed;
+        totalProcessed.documents.documentsUpserted += summary.documentsUpserted;
+        totalProcessed.documents.personIds.push(...summary.personIds);
+      } catch (error) {
+        const batchStart = offset;
+        const batchEnd = offset + activeBatch.length;
+        const message = `Document batch ${batchStart}-${batchEnd} failed: ${error instanceof Error ? error.message : String(error)}`;
+        errors.push(message);
+        console.error(`[SearchIndexWorker] ${message}`);
+      }
+
       offset += this.batchSize;
     }
 
     // 2. Sync all embeddings in batches
-    while (true) {
-      const summary = await this.rebuildEmbeddings();
-      if (summary.documentsProcessed === 0) break;
+    const embeddingSummary = await this.rebuildAllEmbeddings();
+    totalProcessed.embeddings.documentsProcessed = embeddingSummary.documentsProcessed;
+    totalProcessed.embeddings.embeddingsUpserted = embeddingSummary.embeddingsUpserted;
+    totalProcessed.embeddings.personIds = embeddingSummary.personIds;
+    errors.push(...embeddingSummary.errors);
 
-      totalProcessed.embeddings.documentsProcessed += summary.documentsProcessed;
-      totalProcessed.embeddings.embeddingsUpserted += summary.embeddingsUpserted;
-      totalProcessed.embeddings.personIds.push(...summary.personIds);
+    return { ...totalProcessed, errors };
+  }
+
+  /**
+   * Rebuild embeddings for ALL documents that need it, in batches.
+   * Unlike rebuildEmbeddings() which processes one batch, this loops until done.
+   */
+  async rebuildAllEmbeddings(): Promise<SearchEmbeddingSyncSummary & { errors: string[] }> {
+    const errors: string[] = [];
+    const totalProcessed: SearchEmbeddingSyncSummary = {
+      documentsProcessed: 0,
+      embeddingsUpserted: 0,
+      personIds: []
+    };
+
+    const targetIds = await this.loadEmbeddingTargetIds();
+    if (targetIds.length === 0) {
+      return { ...totalProcessed, errors };
     }
 
-    return totalProcessed;
+    for (let index = 0; index < targetIds.length; index += this.batchSize) {
+      const batchIds = targetIds.slice(index, index + this.batchSize);
+
+      try {
+        const summary = await this.rebuildEmbeddings(batchIds);
+        totalProcessed.documentsProcessed += summary.documentsProcessed;
+        totalProcessed.embeddingsUpserted += summary.embeddingsUpserted;
+        totalProcessed.personIds.push(...summary.personIds);
+      } catch (error) {
+        const batchStart = index;
+        const batchEnd = index + batchIds.length;
+        const message = `Embedding batch ${batchStart}-${batchEnd} failed: ${error instanceof Error ? error.message : String(error)}`;
+        errors.push(message);
+        console.error(`[SearchIndexWorker] ${message}`);
+      }
+    }
+
+    return { ...totalProcessed, errors };
   }
 }
 
@@ -321,7 +464,11 @@ export async function runSearchEmbeddingWorker(
 
   try {
     const worker = new SearchIndexWorker(database, config);
-    return await worker.rebuildEmbeddings(personIds);
+    if (personIds !== undefined) {
+      return await worker.rebuildEmbeddings(personIds);
+    }
+
+    return await worker.rebuildAllEmbeddings();
   } finally {
     await ownedConnection?.close();
   }

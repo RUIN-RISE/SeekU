@@ -1,12 +1,50 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { buildApiServer } from "../server.js";
 import type { FastifyInstance } from "fastify";
+import type { SearchServices } from "../routes/search.js";
+
+const mockProvider = {
+  name: "mock",
+  embed: async () => ({
+    embedding: [0.1, 0.2, 0.3],
+    model: "mock-embedding",
+    dimension: 3
+  }),
+  chat: async () => ({
+    content: "{}",
+    model: "mock-chat"
+  }),
+  embedBatch: async () => []
+} as any;
+
+const mockSearchServices: SearchServices = {
+  provider: mockProvider,
+  pipeline: {
+    search: async () => ({
+      results: [],
+      intent: {
+        rawQuery: "",
+        roles: [],
+        skills: [],
+        locations: [],
+        mustHaves: [],
+        niceToHaves: []
+      },
+      totalCandidates: 0,
+      cachedIntent: false,
+      crossEncoderUsed: false,
+      documents: new Map(),
+      evidence: new Map(),
+      warnings: []
+    })
+  } as any
+};
 
 describe("API Security", () => {
   let server: FastifyInstance;
 
   beforeAll(async () => {
-    server = await buildApiServer();
+    server = await buildApiServer({ searchServices: mockSearchServices });
   });
 
   afterAll(async () => {
@@ -122,15 +160,13 @@ describe("API Security", () => {
     });
 
     it("accepts long query (no max length enforcement in current parseBody)", async () => {
-      // Current parseBody doesn't enforce max length — just trims whitespace.
-      // A 500-char query is valid and triggers search (may fail on LLM, but not 400).
       const response = await server.inject({
         method: "POST",
         url: "/search",
         payload: { query: "x".repeat(500) }
       });
 
-      // Should not be 400 — the query is valid non-empty string
+      // Should not be 400 — the query is valid non-empty string.
       expect(response.statusCode).not.toBe(400);
     });
 
@@ -141,8 +177,7 @@ describe("API Security", () => {
         payload: { query: "test", limit: 9999 }
       });
 
-      // Should not reject — the code clamps the limit
-      expect([200, 500]).toContain(response.statusCode);
+      expect(response.statusCode).toBe(200);
     });
   });
 

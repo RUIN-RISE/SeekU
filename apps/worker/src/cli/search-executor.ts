@@ -15,8 +15,9 @@ import {
   type SourceProfile,
   type PersonIdentity
 } from "@seeku/db";
-import { HybridRetriever, Reranker, buildDisambiguationNotes, extractCandidateSummary, type CrossEncoder, type CrossEncoderScore, type QueryIntent } from "@seeku/search";
+import { HybridRetriever, Reranker, SearchCore, type SearchCoreDependencies, buildDisambiguationNotes, extractCandidateSummary, type CrossEncoder, type CrossEncoderScore, type QueryIntent, type GraphRerankFeatures } from "@seeku/search";
 import { classifyMatchStrength } from "@seeku/shared";
+import { getMutualConnectionsBatch, getGraphNodeFeaturesBatch, areDirectNeighbors } from "@seeku/db";
 import type { ScoredCandidate, SearchConditions, ConditionAuditItem, CandidatePrimaryLink } from "./types.js";
 import { contextHasTermValue, buildSearchStateContextValue } from "./search-context-helpers.js";
 import { buildEffectiveQuery } from "./search-conditions.js";
@@ -106,7 +107,51 @@ export interface SearchExecutorDependencies {
 }
 
 export class SearchExecutor {
-  constructor(private deps: SearchExecutorDependencies) {}
+  private searchCore: SearchCore<SearchDocument, EvidenceItem, Person>;
+
+  constructor(private deps: SearchExecutorDependencies) {
+    const config = this.deps.reranker.getConfig?.();
+    if (config) {
+      console.log("[GraphRerank:Config]", JSON.stringify({
+        enabled: config.graphRerankEnabled,
+        mutualConnectionBoost: config.graphMutualConnectionBoost,
+        directNeighborBoost: config.graphDirectNeighborBoost,
+        sameComponentBoost: config.graphSameComponentBoost
+      }));
+    }
+
+    this.searchCore = new SearchCore<SearchDocument, EvidenceItem, Person>({
+      planner: deps.planner,
+      embedder: deps.llmProvider,
+      retriever: deps.retriever,
+      reranker: deps.reranker,
+      crossEncoder: deps.crossEncoder,
+      crossEncoderLimit: deps.crossEncoderLimit,
+      fetchGraphFeatures: (candidatePersonIds, anchorPersonId, signal) =>
+        this.fetchGraphFeatures(candidatePersonIds, anchorPersonId, signal),
+      loadDocuments: async (personIds) => {
+        const rows = await deps.db.select().from(searchDocuments).where(inArray(searchDocuments.personId, personIds));
+        return new Map(rows.map((r) => [r.personId, r as SearchDocument]));
+      },
+      loadEvidence: async (personIds) => {
+        const rows = await deps.db.select().from(evidenceItems).where(inArray(evidenceItems.personId, personIds));
+        const map = new Map<string, EvidenceItem[]>();
+        for (const item of rows) {
+          const entries = map.get(item.personId) ?? [];
+          entries.push(item as EvidenceItem);
+          map.set(item.personId, entries);
+        }
+        return map;
+      },
+      loadPersons: async (personIds) => {
+        const rows = await deps.db.select().from(persons).where(and(eq(persons.searchStatus, "active"), inArray(persons.id, personIds)));
+        return new Map(rows.map((r) => [r.id, r as Person]));
+      },
+      getContextText: (person, document, evidence) =>
+        buildSearchStateContextValue(person, document, evidence.slice(0, 8)),
+      getDocFacetSource: (document) => document?.facetSource ?? []
+    });
+  }
 
   async performSearch(
     query: string,
@@ -119,56 +164,51 @@ export class SearchExecutor {
       throw options.signal.reason ?? new Error("Search execution aborted.");
     }
 
-    const limit = conditions.limit;
-    const intent = this.mergeIntentWithConditions(await this.deps.planner.parse(query, {
-      signal: options.signal
-    }), conditions);
-    const queryEmbedding = await this.deps.llmProvider.embed(intent.rawQuery, {
-      signal: options.signal
-    });
+    const coreResult = await this.searchCore.execute(query, conditions, options);
 
-    if (options.signal?.aborted) {
-      throw options.signal.reason ?? new Error("Search execution aborted.");
+    if (coreResult.isFallback) {
+      return this.performFallbackSearch(conditions, {
+        filterDropoff: coreResult.diagnostics.filterDropoff as SearchExecutionDiagnostics["filterDropoff"],
+        sourceCounterfactual: coreResult.diagnostics.sourceCounterfactual as SearchExecutionDiagnostics["sourceCounterfactual"]
+      });
     }
 
-    let retrieved = await this.deps.retriever.retrieve(intent, { embedding: queryEmbedding.embedding });
+    const { reranked, graphFeaturesMap, loaded, diagnostics: coreDiagnostics } = coreResult;
+    const { documents: documentMap, evidence: evidenceMap, persons: personMap } = loaded;
 
-    if (retrieved.length === 0) {
-      const diagnostics: SearchExecutionDiagnostics = {
-        filterDropoff: { status: "unavailable" },
-        sourceCounterfactual: conditions.sourceBias
-          ? {
-              status: "available",
-              restrictedSource: conditions.sourceBias,
-              unrestrictedRetrievedCount: 0
-            }
-          : { status: "unavailable" }
-      };
-      return this.performFallbackSearch(conditions, diagnostics);
+    const graphRerankDiagnostics = {
+      hasAnchor: Boolean(conditions.candidateAnchor?.personId),
+      candidateCount: reranked.length,
+      graphFeatureCount: graphFeaturesMap.size,
+      graphFeatureRate: reranked.length > 0 ? graphFeaturesMap.size / reranked.length : 0
+    };
+    console.log("[GraphRerank:Fetch]", JSON.stringify(graphRerankDiagnostics));
+
+    const graphBoostCount = reranked.filter(r =>
+      r.matchReasons.some(reason => reason.startsWith("graph:"))
+    ).length;
+    if (graphBoostCount > 0) {
+      console.log("[GraphRerank:Applied]", JSON.stringify({
+        boostedCount: graphBoostCount,
+        top5GraphReasons: reranked.slice(0, 5).map(r => ({
+          id: r.personId.slice(0, 8),
+          score: r.finalScore.toFixed(3),
+          graphReasons: r.matchReasons.filter(reason => reason.startsWith("graph:"))
+        }))
+      }));
     }
 
-    const personIds = retrieved.map((result) => result.personId);
-    const [documents, evidence, people, identities] = await Promise.all([
-      this.deps.db.select().from(searchDocuments).where(inArray(searchDocuments.personId, personIds)),
-      this.deps.db.select().from(evidenceItems).where(inArray(evidenceItems.personId, personIds)),
-      this.deps.db
-        .select()
-        .from(persons)
-        .where(and(eq(persons.searchStatus, "active"), inArray(persons.id, personIds))),
-      this.deps.db
-        .select()
-        .from(personIdentities)
-        .where(inArray(personIdentities.personId, personIds))
-    ]);
-
-    const sourceProfileIds = identities.map((identity) => identity.sourceProfileId);
+    const personIds = reranked.map((r) => r.personId);
+    const identities = personIds.length > 0
+      ? await this.deps.db.select().from(personIdentities).where(inArray(personIdentities.personId, personIds))
+      : [];
+    const sourceProfileIds = identities.map((i) => i.sourceProfileId);
     const sourceProfileRows = sourceProfileIds.length > 0
       ? await this.deps.db.select().from(sourceProfiles).where(inArray(sourceProfiles.id, sourceProfileIds))
       : [];
     const sourceProfileMap = new Map<string, SourceProfile>(
-      sourceProfileRows.map((profile) => [profile.id, profile as SourceProfile])
+      sourceProfileRows.map((p) => [p.id, p as SourceProfile])
     );
-
     const identityMap = new Map<string, PersonIdentity[]>();
     for (const identity of identities) {
       const entries = identityMap.get(identity.personId) ?? [];
@@ -176,53 +216,7 @@ export class SearchExecutor {
       identityMap.set(identity.personId, entries);
     }
 
-    const documentMap = new Map<string, SearchDocument>(documents.map((document) => [document.personId, document as SearchDocument]));
-    const evidenceMap = new Map<string, EvidenceItem[]>();
-    for (const item of evidence) {
-      const entries = evidenceMap.get(item.personId) ?? [];
-      entries.push(item as EvidenceItem);
-      evidenceMap.set(item.personId, entries);
-    }
-    const personMap = new Map<string, Person>(people.map((person) => [person.id, person as Person]));
-
-    const dropoffCounts: Partial<Record<SearchFilterName, number>> = {};
-    const filteredRetrieved = retrieved.filter((result) => {
-      const person = personMap.get(result.personId);
-      if (!person) {
-        return false;
-      }
-
-      const filterEvaluation = this.evaluateSearchStateFilters(
-        person,
-        documentMap.get(result.personId),
-        evidenceMap.get(result.personId) || [],
-        conditions
-      );
-      for (const failedFilter of filterEvaluation.failedFilters) {
-        dropoffCounts[failedFilter] = (dropoffCounts[failedFilter] ?? 0) + 1;
-      }
-
-      return filterEvaluation.matches;
-    });
-
-    const diagnostics: SearchExecutionDiagnostics = {
-      filterDropoff: this.buildFilterDropoffDiagnostics(dropoffCounts),
-      sourceCounterfactual: conditions.sourceBias
-        ? {
-            status: "available",
-            restrictedSource: conditions.sourceBias,
-            unrestrictedRetrievedCount: retrieved.length
-          }
-        : { status: "unavailable" }
-    };
-
-    const reranked = this.deps.reranker.rerank(
-      filteredRetrieved,
-      intent,
-      documentMap,
-      evidenceMap,
-      await this.scoreWithCrossEncoder(filteredRetrieved, intent, documentMap, evidenceMap, personMap, conditions.limit, options.signal)
-    );
+    const limit = conditions.limit;
     const hydrationWindow = conditions.preferFresh ? Math.min(reranked.length, limit * 2) : limit;
     const hydrated: HydratedCandidate[] = reranked.slice(0, hydrationWindow).map((result) => {
       const person = personMap.get(result.personId);
@@ -232,10 +226,10 @@ export class SearchExecutor {
 
       const document = documentMap.get(result.personId);
       const candidateEvidence = evidenceMap.get(result.personId) || [];
-      const personIdentities = identityMap.get(result.personId) || [];
+      const candidateIdentities = identityMap.get(result.personId) || [];
 
       const { sources, bonjourUrl, primaryLinks } = this.deps.buildCandidateSourceMetadata(
-        personIdentities,
+        candidateIdentities,
         sourceProfileMap,
         candidateEvidence,
         document?.facetSource ?? []
@@ -252,21 +246,11 @@ export class SearchExecutor {
         ? this.deps.scorer.calculateExperienceMatch(person, candidateEvidence, conditions) >= 10
         : false;
       const queryMatch = this.deps.buildQueryMatchExplanation(
-        person,
-        document,
-        candidateEvidence,
-        conditions,
-        {
-          score: result.finalScore,
-          retrievalReasons: result.matchReasons,
-          sources,
-          referenceDate
-        }
+        person, document, candidateEvidence, conditions,
+        { score: result.finalScore, retrievalReasons: result.matchReasons, sources, referenceDate }
       );
       const conditionAudit = this.deps.buildConditionAudit(person, document, candidateEvidence, conditions, {
-        sources,
-        referenceDate,
-        experienceMatched
+        sources, referenceDate, experienceMatched
       });
 
       return {
@@ -286,34 +270,28 @@ export class SearchExecutor {
         primaryLinks,
         lastSyncedAt: person.updatedAt,
         latestEvidenceAt,
-        _hydrated: {
-          person,
-          document,
-          evidence: candidateEvidence
-        }
+        _hydrated: { person, document, evidence: candidateEvidence }
       };
     });
 
     const disambiguationNotes = buildDisambiguationNotes(
       buildEffectiveQuery(conditions),
-      hydrated.map((candidate) => ({
-        personId: candidate.personId,
-        name: candidate.name,
-        headline: candidate.headline,
-        matchReasons: candidate.queryReasons,
-        document: candidate._hydrated.document
+      hydrated.map((c) => ({
+        personId: c.personId, name: c.name, headline: c.headline,
+        matchReasons: c.queryReasons, document: c._hydrated.document
       }))
     );
-
     hydrated.forEach((candidate) => {
       const disambiguation = disambiguationNotes.get(candidate.personId);
-      if (!disambiguation) {
-        return;
-      }
-
+      if (!disambiguation) return;
       candidate.disambiguation = disambiguation;
       candidate.matchReason = `${candidate.matchReason} ${disambiguation}`;
     });
+
+    const diagnostics: SearchExecutionDiagnostics = {
+      filterDropoff: coreDiagnostics.filterDropoff as SearchExecutionDiagnostics["filterDropoff"],
+      sourceCounterfactual: coreDiagnostics.sourceCounterfactual as SearchExecutionDiagnostics["sourceCounterfactual"]
+    };
 
     const ordered = this.applySearchStateOrdering(hydrated, conditions).slice(0, limit);
     if (ordered.length > 0) {
@@ -566,83 +544,6 @@ export class SearchExecutor {
     });
   }
 
-  private async scoreWithCrossEncoder(
-    retrieved: Array<{ personId: string }>,
-    intent: QueryIntent,
-    documentMap: Map<string, SearchDocument>,
-    evidenceMap: Map<string, EvidenceItem[]>,
-    personMap: Map<string, Person>,
-    requestLimit: number,
-    signal?: AbortSignal
-  ): Promise<Map<string, CrossEncoderScore> | undefined> {
-    const encoder = this.deps.crossEncoder;
-    if (!encoder || retrieved.length === 0) {
-      return undefined;
-    }
-
-    // Bind CE coverage to the request size: we want every candidate that could
-    // surface in the user's top-N to actually be CE-scored. Otherwise unscored
-    // tail candidates can leapfrog scored ones at the heuristic-only path
-    // (heuristic=0.6 beats heuristic=0.8 * 0.7 + low-CE * 0.3 = 0.59).
-    const configuredLimit = this.deps.crossEncoderLimit ?? 15;
-    const limit = Math.max(configuredLimit, requestLimit * 2);
-    const top = retrieved.slice(0, limit);
-    const summaries = top.map((result) =>
-      extractCandidateSummary(
-        documentMap.get(result.personId),
-        evidenceMap.get(result.personId) ?? [],
-        result.personId,
-        personMap.get(result.personId)
-      )
-    );
-
-    try {
-      const scores = await encoder.scoreBatch(intent, summaries, { signal });
-      return new Map(scores.map((score) => [score.personId, score]));
-    } catch (error) {
-      if (signal?.aborted) {
-        throw signal.reason ?? error;
-      }
-      // Cross-encoder is best-effort: fall back to heuristic-only scoring
-      // rather than blocking the search response on LLM hiccups.
-      const reason = error instanceof Error ? error.message : String(error);
-      console.warn(`[SearchExecutor] Cross-encoder scoring failed, falling back to heuristic-only: ${reason}`);
-      return undefined;
-    }
-  }
-
-  private mergeIntentWithConditions(intent: QueryIntent, conditions: SearchConditions): QueryIntent {
-    const unique = (values: string[]) => [...new Set(values.map((value) => value.trim().toLowerCase()).filter(Boolean))];
-
-    return {
-      ...intent,
-      roles: unique([
-        ...intent.roles,
-        ...(conditions.role ? [conditions.role] : [])
-      ]),
-      skills: unique([
-        ...intent.skills,
-        ...conditions.skills
-      ]),
-      locations: unique([
-        ...intent.locations,
-        ...conditions.locations
-      ]),
-      experienceLevel: intent.experienceLevel ?? conditions.experience?.toLowerCase(),
-      sourceBias: conditions.sourceBias ?? intent.sourceBias,
-      mustHaves: unique([
-        ...intent.mustHaves,
-        ...(conditions.role ? [conditions.role] : []),
-        ...conditions.skills,
-        ...conditions.mustHave
-      ]),
-      niceToHaves: unique([
-        ...intent.niceToHaves,
-        ...conditions.niceToHave
-      ])
-    };
-  }
-
   private computeFallbackScore(
     person: Person,
     document: SearchDocument,
@@ -788,5 +689,92 @@ export class SearchExecutor {
     }
 
     return score;
+  }
+
+  /**
+   * Fetch graph features for reranking.
+   * Only computes pairwise features when an anchor person is available.
+   * Returns an empty map if no anchor context exists (graceful degradation).
+   */
+  private async fetchGraphFeatures(
+    candidatePersonIds: string[],
+    anchorPersonId: string | undefined,
+    signal?: AbortSignal
+  ): Promise<Map<string, GraphRerankFeatures>> {
+    // No anchor = no pairwise features = graceful degradation
+    if (!anchorPersonId || candidatePersonIds.length === 0) {
+      return new Map();
+    }
+
+    if (signal?.aborted) {
+      return new Map();
+    }
+
+    try {
+      // Get node features for anchor and all candidates
+      const allPersonIds = [anchorPersonId, ...candidatePersonIds];
+      const nodeFeaturesMap = await getGraphNodeFeaturesBatch(this.deps.db, allPersonIds);
+
+      // Check if anchor has graph data
+      const anchorFeatures = nodeFeaturesMap.get(anchorPersonId);
+      if (!anchorFeatures) {
+        // Anchor not in graph - no pairwise features available
+        return new Map();
+      }
+
+      // Get mutual connections for all candidates against anchor
+      const mutualConnectionsMap = await getMutualConnectionsBatch(
+        this.deps.db,
+        anchorPersonId,
+        candidatePersonIds
+      );
+
+      // Build result map
+      const result = new Map<string, GraphRerankFeatures>();
+
+      for (const candidateId of candidatePersonIds) {
+        const candidateFeatures = nodeFeaturesMap.get(candidateId);
+        if (!candidateFeatures) {
+          // Candidate not in graph - skip
+          continue;
+        }
+
+        // Check same component
+        const sameComponentAsAnchor = Boolean(
+          anchorFeatures.componentId &&
+          candidateFeatures.componentId &&
+          anchorFeatures.componentId === candidateFeatures.componentId
+        );
+
+        // Check direct neighbor (expensive, so we do it per candidate)
+        // We'll check this lazily only for top candidates later
+        // For now, we assume not a direct neighbor (will be enriched later if needed)
+        let isDirectNeighbor = false;
+
+        // For candidates with mutual connections, check if they're direct neighbors
+        const mutualCount = mutualConnectionsMap.get(candidateId) ?? 0;
+        if (mutualCount > 0 || sameComponentAsAnchor) {
+          // Only check direct neighbor for candidates with some graph proximity
+          try {
+            isDirectNeighbor = await areDirectNeighbors(this.deps.db, anchorPersonId, candidateId);
+          } catch {
+            // If check fails, assume not a direct neighbor
+            isDirectNeighbor = false;
+          }
+        }
+
+        result.set(candidateId, {
+          mutualConnectionCount: mutualCount,
+          isDirectNeighbor,
+          sameComponentAsAnchor
+        });
+      }
+
+      return result;
+    } catch (error) {
+      // Graceful degradation: if graph queries fail, return empty map
+      console.error("Graph feature fetch failed, falling back to non-graph ranking:", error);
+      return new Map();
+    }
   }
 }

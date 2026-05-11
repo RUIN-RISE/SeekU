@@ -62,7 +62,15 @@ export const SCORING_CONFIG = {
     universityFocusBoost: envNumber("SEEKU_SCORING_UNIVERSITY_FOCUS", 0.18),
     universityManualSeedBoost: envNumber("SEEKU_SCORING_UNIVERSITY_MANUAL_SEED", 0.24),
     strongVectorThreshold: envNumber("SEEKU_SCORING_STRONG_VECTOR", 0.75),
-    strongKeywordThreshold: envNumber("SEEKU_SCORING_STRONG_KEYWORD", 0.5)
+    strongKeywordThreshold: envNumber("SEEKU_SCORING_STRONG_KEYWORD", 0.5),
+    // Graph rerank feature flags - EXPLICIT CONTROL REQUIRED
+    // Default is DISABLED (0) to prevent accidental enablement in production
+    // Must explicitly set SEEKU_GRAPH_RERANK_ENABLED=1 to enable
+    graphRerankEnabled: envNumber("SEEKU_GRAPH_RERANK_ENABLED", 0) === 1,
+    graphMutualConnectionBoost: envNumber("SEEKU_GRAPH_MUTUAL_CONNECTION_BOOST", 0.02),
+    graphDirectNeighborBoost: envNumber("SEEKU_GRAPH_DIRECT_NEIGHBOR_BOOST", 0.08),
+    // Same-component boost disabled: 99.8% of graph is one giant component, no discriminative value
+    graphSameComponentBoost: envNumber("SEEKU_GRAPH_SAME_COMPONENT_BOOST", 0)
   },
   pipeline: {
     crossEncoderLimit: envNumber("SEEKU_SCORING_CROSS_ENCODER_LIMIT", 15),

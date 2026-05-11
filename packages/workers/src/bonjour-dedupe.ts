@@ -23,7 +23,7 @@ import {
 } from "@seeku/db";
 import { runBackfillPersonFieldsWorker } from "./backfill-person-fields.js";
 import { runEvidenceStorageWorker } from "./evidence-storage.js";
-import { runSearchIndexWorker } from "./search-index-worker.js";
+import { runSearchEmbeddingWorker, runSearchIndexWorker } from "./search-index-worker.js";
 
 type StrongAliasType = "github" | "x" | "jike";
 
@@ -418,6 +418,7 @@ export async function runBonjourStrongAliasDedupeWorker(
       await runEvidenceStorageWorker(winnerPersonIds, database);
       await runBackfillPersonFieldsWorker(winnerPersonIds, database);
       await runSearchIndexWorker(winnerPersonIds, database);
+      await runSearchEmbeddingWorker(winnerPersonIds, database);
     }
 
     return {

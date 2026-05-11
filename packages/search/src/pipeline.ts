@@ -1,15 +1,8 @@
 /**
  * Search Pipeline Orchestrator — coordinates all search components in a unified flow.
  *
- * Provides a single entry point for search that orchestrates:
- * 1. Query parsing (QueryPlanner)
- * 2. Query cache lookup (QueryCache)
- * 3. Hybrid retrieval (HybridRetriever)
- * 4. Evidence & document loading
- * 5. Heuristic reranking (Reranker)
- * 6. Optional cross-encoder scoring (CrossEncoder)
- *
- * Supports progressive callbacks for streaming results.
+ * Internally delegates to SearchCore for the retrieve→rerank pipeline,
+ * adding cache, progress callbacks, and the PipelineResult shape on top.
  *
  * @module search/pipeline
  */
@@ -28,6 +21,9 @@ import {
   type CrossEncoderScore,
   type CandidateSummary
 } from "./cross-encoder.js";
+
+import { SearchCore, type SearchCoreDependencies } from "./search-core.js";
+import type { SearchConditions } from "./search-conditions-types.js";
 
 export interface PipelineConfig {
   db: SeekuDatabase;
@@ -140,6 +136,7 @@ export class SearchPipeline {
 
   /**
    * Execute the full search pipeline.
+   * Delegates core retrieve→rerank to SearchCore, adds cache + callbacks on top.
    */
   async search(
     query: string,
@@ -181,7 +178,7 @@ export class SearchPipeline {
       this.cache.set(queryEmbedding.embedding, intent);
     }
 
-    // Stage 3: Retrieve candidates
+    // Stage 3: Retrieve candidates (via SearchCore's retriever)
     emit("retrieve", "Retrieving candidates");
     const retrieved = await this.retriever.retrieve(intent, {
       filters,
@@ -211,11 +208,10 @@ export class SearchPipeline {
     const personIds = retrieved.map((item) => item.personId);
     const { documents, evidence, persons } = await this.loadDocumentsAndEvidence(personIds);
 
-    // Stage 5: Rerank with heuristics
+    // Stage 5: Rerank with heuristics (same Reranker as SearchCore)
     emit("rerank", "Reranking candidates");
     let reranked = this.reranker.rerank(retrieved, intent, documents, evidence);
 
-    // Emit intermediate results for streaming
     callbacks?.onResults?.(reranked);
 
     // Stage 6: Optional cross-encoder scoring
@@ -225,7 +221,6 @@ export class SearchPipeline {
     if (this.useCrossEncoder && this.crossEncoder) {
       emit("cross_encoder", "Cross-encoder scoring");
 
-      // Take top candidates for cross-encoder (expensive operation)
       const topCandidates = reranked.slice(0, this.crossEncoderLimit);
       const candidateSummaries = topCandidates.map((result) =>
         extractCandidateSummary(
@@ -242,7 +237,6 @@ export class SearchPipeline {
       crossEncoderScores = new Map(scores.map((score) => [score.personId, score]));
       crossEncoderUsed = true;
 
-      // Re-rerank with cross-encoder scores
       reranked = this.reranker.rerank(
         retrieved,
         intent,

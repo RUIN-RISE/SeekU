@@ -9,6 +9,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@seeku/db": "workspace:*",
+    "@seeku/llm": "workspace:*",
+    "@seeku/search": "workspace:*",
+    "@seeku/shared": "workspace:*",
+    "dotenv": "^16.4.7",
     "zod": "^3.24.2"
   },
   "devDependencies": {

@@ -22,6 +22,7 @@ import {
   runIdentityResolutionWorker,
   runProfileEnrichmentWorker,
   runSearchEmbeddingWorker,
+  runSearchFacetBackfillWorker,
   runSearchIndexWorker,
   runSearchRebuildWorker,
   runSocialGraphWorker,
@@ -43,6 +44,11 @@ import { runScanGithubZjuCommand } from "./cli/scan-github-zju.js";
 import { runZjuExtractionPipeline } from "./cli/extraction.js";
 import { runSearchCli, runShowCli } from "./search-cli.js";
 import { runInteractiveSearch } from "./cli/index.js";
+import {
+  loadRecruitingPrecisionQueries,
+  runRecruitingPrecisionEval,
+  selectRecruitingPrecisionQueries
+} from "@seeku/eval";
 
 // --- Argument Parsing ---
 
@@ -92,6 +98,17 @@ type CommandRunner = (parsed: ReturnType<typeof parseArgs>, rawArgv: string[]) =
 
 function splitCsv(value: string | undefined): string[] | undefined {
   return value?.split(",").map((v) => v.trim()).filter(Boolean);
+}
+
+function parseMissingFacets(value: string | undefined) {
+  const parsed = splitCsv(value) ?? undefined;
+  if (!parsed) {
+    return undefined;
+  }
+
+  return parsed.filter((item): item is "role" | "tags" | "location" =>
+    item === "role" || item === "tags" || item === "location"
+  );
 }
 
 function buildCommandRegistry(): Map<string, CommandRunner> {
@@ -192,14 +209,33 @@ function buildCommandRegistry(): Map<string, CommandRunner> {
 
   registry.set("search-embeddings", async (parsed) => {
     const personIds = splitCsv(parsed.args.get("person-ids"));
+    const force = parsed.flags.has("force");
     const indexingProvider = SiliconFlowProvider.fromStrictEnv();
-    return runSearchEmbeddingWorker(personIds, undefined, { provider: indexingProvider });
+    return runSearchEmbeddingWorker(personIds, undefined, { provider: indexingProvider, force });
   });
 
   registry.set("rebuild-search", async (parsed) => {
     const personIds = splitCsv(parsed.args.get("person-ids"));
+    const force = parsed.flags.has("force");
     const indexingProvider = SiliconFlowProvider.fromStrictEnv();
-    return runSearchRebuildWorker(personIds, undefined, { provider: indexingProvider });
+    return runSearchRebuildWorker(personIds, undefined, { provider: indexingProvider, force });
+  });
+
+  registry.set("backfill-search-facets", async (parsed) => {
+    const enrichmentProvider = SiliconFlowProvider.fromStrictEnv();
+    return runSearchFacetBackfillWorker({
+      personIds: splitCsv(parsed.args.get("person-ids")),
+      limit: Number(parsed.args.get("limit") ?? "50"),
+      offset: Number(parsed.args.get("offset") ?? "0"),
+      afterPersonId: parsed.args.get("after-person-id"),
+      sample: parsed.flags.has("sample"),
+      apply: parsed.flags.has("apply"),
+      refreshEmbeddings: parsed.flags.has("refresh-embeddings"),
+      minConfidence: Number(parsed.args.get("min-confidence") ?? "0.75"),
+      missing: parseMissingFacets(parsed.args.get("missing")),
+      provider: enrichmentProvider,
+      embeddingProvider: SiliconFlowProvider.fromStrictEnv()
+    });
   });
 
   // --- Enrichment commands ---
@@ -266,6 +302,27 @@ function buildCommandRegistry(): Map<string, CommandRunner> {
     });
   });
 
+  registry.set("eval-recruiting-precision", async (parsed) => {
+    const crossEncoderArg = parsed.args.get("cross-encoder")?.toLowerCase();
+    const useCrossEncoder = parsed.flags.has("no-cross-encoder")
+      ? false
+      : crossEncoderArg === "off"
+        ? false
+        : crossEncoderArg === "on"
+          ? true
+          : undefined;
+    const queryIds = splitCsv(parsed.args.get("query-id"));
+    const queries = queryIds
+      ? selectRecruitingPrecisionQueries(await loadRecruitingPrecisionQueries(), queryIds)
+      : undefined;
+
+    return runRecruitingPrecisionEval({
+      limit: Number(parsed.args.get("limit") ?? "10"),
+      queries,
+      useCrossEncoder
+    });
+  });
+
   registry.set("version", async () => {
     console.log(chalk.bold("Seeku CLI v1.1.0"));
     console.log(chalk.dim("Search Assistant Edition"));
@@ -290,10 +347,19 @@ function buildCommandRegistry(): Map<string, CommandRunner> {
     console.log(`  ${chalk.cyan("extract-zju-talent")}  🚀 运行 ZJU 人才全链路发现与深度提炼管道`);
     console.log(`  ${chalk.cyan("coverage")}            输出当前 active/indexed/embedded/multi-source 覆盖率`);
     console.log(`  ${chalk.cyan("agent-eval")}          运行 CLI agent acceptance + Q4/Q6/Q8 regression harness`);
-    console.log(`  ${chalk.cyan("rebuild-search")}      全量重建 search documents + embeddings`);
+    console.log(`  ${chalk.cyan("eval-recruiting-precision")} 运行招人精准度评估查询集（默认启用 cross-encoder）`);
+    console.log(`  ${chalk.cyan("rebuild-search")}      全量重建 search documents + embeddings (--force 跳过时间戳检查)`);
+    console.log(`  ${chalk.cyan("backfill-search-facets")} LLM 补全缺失 facet，默认 dry-run，--apply 后写入，可加 --refresh-embeddings`);
+    console.log(`  ${chalk.cyan("search-embeddings")}   仅重建 embeddings (--force 重新生成全部)`);
 
     console.log(chalk.yellow("\nOptions:"));
     console.log(`  ${chalk.dim("--limit <num>")}         设置返回结果数量 (默认: 10)`);
+    console.log(`  ${chalk.dim("--query-id <id[,id2]>")} 仅运行指定 recruiting eval case，如 rp006`);
+    console.log(`  ${chalk.dim("--no-cross-encoder")}   关闭 recruiting eval 的 cross-encoder`);
+    console.log(`  ${chalk.dim("--cross-encoder=off")}  同上，显式关闭 cross-encoder`);
+    console.log(`  ${chalk.dim("--offset <num>")}        跳过前 N 个候选，用于分片 backfill`);
+    console.log(`  ${chalk.dim("--after-person-id <id>")} 从上批 nextAfterPersonId 后继续，适合 apply 批处理`);
+    console.log(`  ${chalk.dim("--sample")}              随机抽样缺 facet 候选，用于质量抽查`);
     console.log(`  ${chalk.dim("--json")}                以 JSON 格式输出结果`);
     console.log("");
     return undefined;

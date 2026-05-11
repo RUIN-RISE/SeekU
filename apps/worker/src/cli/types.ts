@@ -1,24 +1,7 @@
 import type { MatchStrength } from "@seeku/shared";
+import type { SearchConditions, SearchCandidateAnchor } from "@seeku/search";
 
-export interface SearchConditions {
-  skills: string[];
-  locations: string[];
-  experience?: string;
-  role?: string;
-  sourceBias?: "bonjour" | "github";
-  mustHave: string[];
-  niceToHave: string[];
-  exclude: string[];
-  preferFresh: boolean;
-  candidateAnchor?: SearchCandidateAnchor;
-  limit: number;
-}
-
-export interface SearchCandidateAnchor {
-  shortlistIndex?: number;
-  personId?: string;
-  name?: string;
-}
+export type { SearchConditions, SearchCandidateAnchor } from "@seeku/search";
 
 export type RecoveryDiagnosis = "intent_missing" | "retrieval_failed";
 export type RecoveryBoundaryDiagnosticCode =
@@ -87,6 +70,27 @@ export interface CandidatePrimaryLink {
   url: string;
 }
 
+/**
+ * Graph features for a candidate.
+ * Only populated when graph data is available.
+ */
+export interface CandidateGraphFeatures {
+  /** Total connections in the graph (followers + following) */
+  undirectedDegree: number;
+  /** Number of people this candidate follows */
+  outDegree: number;
+  /** Number of people who follow this candidate */
+  inDegree: number;
+  /** Size of the connected component this candidate belongs to */
+  componentSize: number | null;
+  /** Number of mutual connections with anchor person (if anchor is available) */
+  mutualConnectionCount?: number;
+  /** Whether this candidate is a direct neighbor of the anchor person */
+  isDirectNeighbor?: boolean;
+  /** Whether this candidate is in the same component as the anchor person */
+  sameComponentAsAnchor?: boolean;
+}
+
 export interface ScoredCandidate {
   personId: string;
   name: string;
@@ -107,6 +111,8 @@ export interface ScoredCandidate {
   primaryLinks?: CandidatePrimaryLink[];
   lastSyncedAt?: Date; // When person data was last updated
   latestEvidenceAt?: Date; // Most recent evidence timestamp
+  // Graph features (optional, only when graph data is available)
+  graphFeatures?: CandidateGraphFeatures;
 }
 
 export interface ComparisonEvidenceSummary {

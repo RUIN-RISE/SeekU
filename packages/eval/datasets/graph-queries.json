@@ -1,0 +1,81 @@
+[
+  {
+    "id": "g001",
+    "text": "找出与凯撒的复利实验室有共同好友的候选人",
+    "category": "graph_adjacency",
+    "graphQueryType": "mutual_connections",
+    "anchorPersonName": "凯撒的复利实验室",
+    "expectedGraphFeatures": ["mutual_connection_count > 0"]
+  },
+  {
+    "id": "g002",
+    "text": "推荐在同一个社交圈子里的AI工程师",
+    "category": "graph_community",
+    "graphQueryType": "same_component",
+    "expectedGraphFeatures": ["same_component_as_known_person"]
+  },
+  {
+    "id": "g003",
+    "text": "找出Vincent的一度人脉",
+    "category": "graph_adjacency",
+    "graphQueryType": "direct_neighbors",
+    "anchorPersonName": "Vincent",
+    "expectedGraphFeatures": ["is_direct_neighbor"]
+  },
+  {
+    "id": "g004",
+    "text": "推荐社交网络中影响力较大的候选人",
+    "category": "graph_centrality",
+    "graphQueryType": "high_degree",
+    "expectedGraphFeatures": ["high_undirected_degree"]
+  },
+  {
+    "id": "g005",
+    "text": "找出与钟采莉🔥Chelly在同一个社交圈子的产品经理",
+    "category": "graph_community_role",
+    "graphQueryType": "same_component_role",
+    "anchorPersonName": "钟采莉🔥Chelly",
+    "expectedRoles": ["product"],
+    "expectedGraphFeatures": ["same_component_as_anchor", "role_match"]
+  },
+  {
+    "id": "g006",
+    "text": "找出与Charles有二度关系的AI研究员",
+    "category": "graph_adjacency",
+    "graphQueryType": "second_degree_neighbors",
+    "anchorPersonName": "Charles",
+    "expectedRoles": ["researcher"],
+    "expectedGraphFeatures": ["second_degree_connection"]
+  },
+  {
+    "id": "g007",
+    "text": "推荐在最大社交圈子里的杭州候选人",
+    "category": "graph_location_community",
+    "graphQueryType": "largest_component_location",
+    "expectedLocation": "杭州",
+    "expectedGraphFeatures": ["in_largest_component", "location_match"]
+  },
+  {
+    "id": "g008",
+    "text": "找出社交网络中连接数最多的前10位候选人",
+    "category": "graph_centrality",
+    "graphQueryType": "top_degree",
+    "expectedGraphFeatures": ["top_10_degree"]
+  },
+  {
+    "id": "g009",
+    "text": "推荐与Mouna有共同好友的开源贡献者",
+    "category": "graph_adjacency_skill",
+    "graphQueryType": "mutual_connections_skill",
+    "anchorPersonName": "Mouna",
+    "expectedSkills": ["open-source"],
+    "expectedGraphFeatures": ["mutual_connection_count > 0", "skill_match"]
+  },
+  {
+    "id": "g010",
+    "text": "找出社交网络中的孤立节点（没有好友关系的候选人）",
+    "category": "graph_structure",
+    "graphQueryType": "isolated_nodes",
+    "expectedGraphFeatures": ["undirected_degree = 0"]
+  }
+]

@@ -2,6 +2,51 @@
 
 Earlier milestone history before explicit archival discipline remains in git and the phase summaries under `.planning/phases/`.
 
+## v1.9 Graph Signals Reranking (Started: 2026-05-03)
+
+**Status:** Active
+
+**Goal:**
+- improve ranking with explicit graph features after retrieval
+- measure whether graph reranking produces meaningful lift before any graph-model training
+
+**Planned scope:**
+- graph-aware reranking in the existing TypeScript stack
+- pairwise graph features when an anchor person exists
+- graph-sensitive eval expansion
+
+**Explicit non-goals:**
+- GraphTranslator
+- graph embeddings or GraphSAGE training
+- `memU`
+- graph-only retrieval replacement
+
+---
+
+## v1.8 CLI-First Session Ledger (Shipped: 2026-04-24)
+
+**Phases completed:** 1 phase, 4 plans, 4 delivered batches
+
+**Key accomplishments:**
+- CLI is now the only formal agent interaction surface — browser chat shell no longer required for standard product use.
+- Added DB-backed session ledger with durable `sessionId`, transcript, and workboard snapshot storage.
+- Added CLI startup session picker with recent sessions, `attach <sessionId>`, and explicit `resume` flow.
+- Restored sessions open read-only and require explicit continuation prompt before resuming execution.
+- Added folded CLI workboard with `Now / Why / Movement / Focus` rendering for session inspection.
+
+**Archives:**
+- `.planning/ROADMAP.md` (current)
+- `.planning/REQUIREMENTS.md` (current)
+
+**Residual risks:**
+1. Transcript model is message-only in writes — event entries parsed but not generated.
+2. Cache files are unversioned — no schema migration path, relies on coercion.
+3. DB schema still evolving — agent_sessions may need migration.
+4. Single-user assumption — no concurrent-session locking.
+5. Restore scope is narrow — only chat history and latest workboard snapshot.
+
+---
+
 ## v1.7 Runtime-Backed Chat Agent Integration (Shipped: 2026-04-18)
 
 **Phases completed:** 1 phase, 4 plans, 4 delivered batches

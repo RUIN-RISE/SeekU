@@ -165,13 +165,17 @@ function sanitizePathSegment(value: string) {
   return normalized.length > 0 ? normalized : "unknown";
 }
 
+function toJson(value: unknown) {
+  return `${JSON.stringify(value)}\n`;
+}
+
 function toPrettyJson(value: unknown) {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
-async function writeJsonFile(path: string, value: unknown) {
+async function writeJsonFile(path: string, value: unknown, pretty = false) {
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, toPrettyJson(value), "utf8");
+  await writeFile(path, pretty ? toPrettyJson(value) : toJson(value), "utf8");
 }
 
 function throwIfAborted(signal?: AbortSignal, fallbackMessage = "Bonjour dump aborted.") {
@@ -481,7 +485,7 @@ export async function dumpBonjourRawData(
     ? sortCategories(await client.fetchCategories({ signal: options.signal }))
     : [];
   const categoriesPath = resolve(outputDir, "categories.json");
-  await writeJsonFile(categoriesPath, categories);
+  await writeJsonFile(categoriesPath, categories, true);
 
   const handleAccumulators = new Map<string, HandleAccumulator>();
   const commentThreadAccumulators = new Map<string, CommentThreadAccumulator>();
@@ -748,7 +752,7 @@ export async function dumpBonjourRawData(
     commentThreadsScanned = commentRecords.length;
     commentRowsScanned = commentRecords.reduce((sum, record) => sum + record.commentCount, 0);
     commentIndexPath = resolve(outputDir, "comment-index.json");
-    await writeJsonFile(commentIndexPath, commentRecords);
+    await writeJsonFile(commentIndexPath, commentRecords, true);
   }
 
   const { importedHandleCount, importRecords } = recordImportedHandles(
@@ -774,14 +778,14 @@ export async function dumpBonjourRawData(
     }
 
     importedHandlesIndexPath = resolve(outputDir, "imported-handles-index.json");
-    await writeJsonFile(importedHandlesIndexPath, importRecords);
+    await writeJsonFile(importedHandlesIndexPath, importRecords, true);
   }
 
   const handles = [...handleAccumulators.values()].map(toHandleSummary).sort(compareHandleSummary);
   const handlesPath = resolve(outputDir, "handles.json");
   const communityIndexPath = resolve(outputDir, "community-index.json");
-  await writeJsonFile(handlesPath, handles);
-  await writeJsonFile(communityIndexPath, communityIndex);
+  await writeJsonFile(handlesPath, handles, true);
+  await writeJsonFile(communityIndexPath, communityIndex, true);
 
   let profilesDumped = 0;
   let inflatedProfiles = 0;
@@ -847,7 +851,7 @@ export async function dumpBonjourRawData(
     inflatedProfiles = profileRecords.filter((record) => Boolean(record?.inflated)).length;
 
     profilesIndexPath = resolve(outputDir, "profiles-index.json");
-    await writeJsonFile(profilesIndexPath, profileRecords);
+    await writeJsonFile(profilesIndexPath, profileRecords, true);
   }
 
   const communityPagesScanned =
@@ -898,7 +902,7 @@ export async function dumpBonjourRawData(
     profilesDumped,
     inflatedProfiles,
     truncatedCategories
-  });
+  }, true);
 
   return {
     outputDir,

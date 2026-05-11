@@ -27,6 +27,15 @@ import { buildAttachedMission } from "./chat-runtime-attachment";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
 const MISSION_PAGE_SIZE = 10;
+// TODO(seeku-runtime): these are placeholders that ape the CLI agent runtime —
+// the real shortlist/compare logic lives in apps/worker/src/cli/workflow.ts and
+// should drive this surface via SSE instead of being hard-coded here.
+// See docs/product/DIAGNOSTIC_REPORT_2026-04-26.md (P0-1).
+const SHORTLIST_TARGET_SIZE = Number(process.env.NEXT_PUBLIC_SHORTLIST_TARGET_SIZE ?? 5);
+const COMPARE_SET_MIN_SCORE = Number(process.env.NEXT_PUBLIC_COMPARE_SET_MIN_SCORE ?? 0.75);
+const COMPARE_SET_MAX_SIZE = Number(process.env.NEXT_PUBLIC_COMPARE_SET_MAX_SIZE ?? 3);
+const COMPARING_THRESHOLD = Number(process.env.NEXT_PUBLIC_COMPARING_THRESHOLD ?? 2);
+const HIGH_CONFIDENCE_THRESHOLD = Number(process.env.NEXT_PUBLIC_HIGH_CONFIDENCE_THRESHOLD ?? 3);
 
 export type MissionPhase =
   | "running_search"
@@ -329,9 +338,9 @@ export function useChatSession(options: UseChatSessionOptions = {}): UseChatSess
     runtime.offset += MISSION_PAGE_SIZE;
     runtime.correction = undefined;
 
-    const shortlist = deduped.slice(0, Math.min(5, deduped.length)).map(toCandidateSnapshot);
-    const compareSet = shortlist.filter((candidate) => candidate.matchScore >= 0.75).slice(0, 3);
-    const topIds = shortlist.slice(0, 3).map((candidate) => candidate.personId);
+    const shortlist = deduped.slice(0, Math.min(SHORTLIST_TARGET_SIZE, deduped.length)).map(toCandidateSnapshot);
+    const compareSet = shortlist.filter((candidate) => candidate.matchScore >= COMPARE_SET_MIN_SCORE).slice(0, COMPARE_SET_MAX_SIZE);
+    const topIds = shortlist.slice(0, COMPARE_SET_MAX_SIZE).map((candidate) => candidate.personId);
     const newTop = topIds.filter((id) => !runtime.lastTopIds.includes(id)).length;
     runtime.lastTopIds = topIds;
     const stopDecision = evaluateMissionStopPolicy({
@@ -348,7 +357,7 @@ export function useChatSession(options: UseChatSessionOptions = {}): UseChatSess
           candidate: compareSet[0],
           rationale: "当前 compare 集合已经强到可以给出默认推进顺位。",
           createdAt: new Date().toISOString(),
-          confidenceLevel: compareSet.length >= 3 ? "high" : "medium"
+          confidenceLevel: compareSet.length >= HIGH_CONFIDENCE_THRESHOLD ? "high" : "medium"
         }
       : null;
     uncertaintyRef.current = stopDecision.uncertainties;
@@ -363,7 +372,7 @@ export function useChatSession(options: UseChatSessionOptions = {}): UseChatSess
 
     updateMission((current) => current ? { ...current, roundCount: round } : current);
     syncSnapshot({
-      status: compareSet.length >= 2 ? "comparing" : "shortlist",
+      status: compareSet.length >= COMPARING_THRESHOLD ? "comparing" : "shortlist",
       statusSummary: stopDecision.statusSummary,
       confidenceStatus: {
         level: stopDecision.confidenceLevel,
@@ -383,7 +392,7 @@ export function useChatSession(options: UseChatSessionOptions = {}): UseChatSess
       }
     });
 
-    if (compareSet.length >= 2) {
+    if (compareSet.length >= COMPARING_THRESHOLD) {
       emitEvent({
         sessionId: snapshot.sessionId,
         type: "compare_updated",
@@ -427,7 +436,7 @@ export function useChatSession(options: UseChatSessionOptions = {}): UseChatSess
       return;
     }
 
-    setMissionPhase(compareSet.length >= 2 ? "comparing" : "narrowing", compareSet.length >= 2
+    setMissionPhase(compareSet.length >= COMPARING_THRESHOLD ? "comparing" : "narrowing", compareSet.length >= COMPARING_THRESHOLD
       ? `第 ${round} 轮后 compare 已可看，但系统会继续确认，避免过早停止。`
       : `第 ${round} 轮后继续收敛 shortlist。`);
 
@@ -494,7 +503,7 @@ export function useChatSession(options: UseChatSessionOptions = {}): UseChatSess
     if (classification === "stop_or_pause_intent") {
       const shortlist = shortlistRef.current;
       const compareSet = compareSetRef.current;
-      const summary = summarizeStopReason(compareSet.length >= 2 ? "enough_compare" : "enough_shortlist", shortlist, compareSet);
+      const summary = summarizeStopReason(compareSet.length >= COMPARING_THRESHOLD ? "enough_compare" : "enough_shortlist", shortlist, compareSet);
       addAssistantMessage(`收到，我先停在这里并给你当前结果。\n\n${summary}`, {
         results: shortlist.map((candidate) => ({
           personId: candidate.personId,
@@ -508,7 +517,7 @@ export function useChatSession(options: UseChatSessionOptions = {}): UseChatSess
       setMissionPhase("stopped", summary);
       updateMission((current) => current ? {
         ...current,
-        stopReason: compareSet.length >= 2 ? "enough_compare" : "enough_shortlist"
+        stopReason: compareSet.length >= COMPARING_THRESHOLD ? "enough_compare" : "enough_shortlist"
       } : current);
       syncSnapshot({
         status: "waiting-input",

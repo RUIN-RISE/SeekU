@@ -35,5 +35,5 @@ export interface AdapterConfig {
 export const DEFAULT_ADAPTER_CONFIG: Omit<AdapterConfig, "baseUrl"> = {
   timeout: 10_000,
   maxRetries: 3,
-  requestDelay: 250
+  requestDelay: 100
 };

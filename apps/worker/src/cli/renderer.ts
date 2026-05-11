@@ -1,6 +1,7 @@
 import { Person, EvidenceItem, SearchDocument } from "@seeku/db";
 import {
   CandidatePrimaryLink,
+  CandidateGraphFeatures,
   ComparisonEntry,
   ComparisonResult,
   ConditionAuditItem,
@@ -9,6 +10,7 @@ import {
   ScoredCandidate,
   SearchConditions
 } from "./types.js";
+import { getGraphExplanationForCandidate, getGraphBadgeForCandidate } from "./graph-enrichment.js";
 import chalk from "chalk";
 import boxen from "boxen";
 import { formatPercentScore } from "./score-format.js";
@@ -52,6 +54,8 @@ export class TerminalRenderer {
         lastSyncedAt?: Date;
       latestEvidenceAt?: Date;
       document?: SearchDocument;
+      graphFeatures?: CandidateGraphFeatures;
+      anchorName?: string;
     }
   ): string {
     const { dimensions, overallScore, summary, highlights } = profile;
@@ -127,6 +131,14 @@ export class TerminalRenderer {
       ? chalk.dim(`证据来源：${evidenceSources.join(", ")}`)
       : chalk.dim("证据来源：无");
 
+    // Graph features section
+    const graphExplanation = extra?.graphFeatures
+      ? this.formatGraphExplanation(extra.graphFeatures, extra?.anchorName)
+      : null;
+    const graphSection = graphExplanation
+      ? `${chalk.bold("社交信号：")}\n${graphExplanation}`
+      : "";
+
     const content = `
 ${header}
 
@@ -158,6 +170,7 @@ ${highlightSection}
 
 ${chalk.bold("最新相关证据：")}
 ${this.renderEvidenceCards(evidence, extra?.queryReasons)}
+${graphSection ? `\n${graphSection}` : ""}
 
 ${chalk.dim("下一步：back 返回 | o 打开 Bonjour | why 评分依据 | refine 收敛 | q 退出")}
     `;
@@ -950,5 +963,82 @@ ${chalk.dim("下一步：back 返回 | o 打开 Bonjour | why 评分依据 | ref
     }
 
     return `${age} 天前更新`;
+  }
+
+  // ============================================================================
+  // Graph Features Formatting
+  // ============================================================================
+
+  /**
+   * Format graph features for display in profile view.
+   */
+  private formatGraphExplanation(
+    graphFeatures: CandidateGraphFeatures,
+    anchorName?: string
+  ): string | null {
+    const parts: string[] = [];
+
+    // Mutual connections (most interesting signal)
+    if (anchorName && graphFeatures.mutualConnectionCount && graphFeatures.mutualConnectionCount > 0) {
+      if (graphFeatures.mutualConnectionCount === 1) {
+        parts.push(`与 ${anchorName} 有 1 个共同 Bonjour 连接（双方都关注的人）`);
+      } else {
+        parts.push(`与 ${anchorName} 有 ${graphFeatures.mutualConnectionCount} 个共同 Bonjour 连接（双方都关注的人）`);
+      }
+    }
+
+    // Direct neighbor
+    if (anchorName && graphFeatures.isDirectNeighbor) {
+      parts.push(`与 ${anchorName} 在 Bonjour 上有直接关注关系`);
+    }
+
+    // Same component
+    if (anchorName && graphFeatures.sameComponentAsAnchor) {
+      if (graphFeatures.componentSize && graphFeatures.componentSize > 100) {
+        parts.push(`与 ${anchorName} 处于同一个 Bonjour 社交圈子（该圈子有 ${graphFeatures.componentSize} 人）`);
+      } else {
+        parts.push(`与 ${anchorName} 处于同一个 Bonjour 社交圈子`);
+      }
+    }
+
+    // High degree (only for very high degree nodes)
+    if (graphFeatures.undirectedDegree >= 100) {
+      if (graphFeatures.undirectedDegree >= 500) {
+        parts.push(`在 Bonjour 上有 ${graphFeatures.undirectedDegree} 个连接（位于前 5% 高连接度用户）`);
+      } else {
+        parts.push(`在 Bonjour 上有 ${graphFeatures.undirectedDegree} 个连接`);
+      }
+    }
+
+    if (parts.length === 0) {
+      return null;
+    }
+
+    return parts.map((part) => `  ${chalk.cyan("🔗")} ${part}`).join("\n");
+  }
+
+  /**
+   * Format a short graph badge for inline display.
+   */
+  formatGraphBadge(
+    graphFeatures: CandidateGraphFeatures,
+    anchorName?: string
+  ): string | null {
+    // Mutual connections badge
+    if (anchorName && graphFeatures.mutualConnectionCount && graphFeatures.mutualConnectionCount > 0) {
+      return chalk.cyan(`🔗 ${graphFeatures.mutualConnectionCount} 共同连接`);
+    }
+
+    // Direct neighbor badge
+    if (anchorName && graphFeatures.isDirectNeighbor) {
+      return chalk.cyan("🔗 直接连接");
+    }
+
+    // High degree badge
+    if (graphFeatures.undirectedDegree >= 100) {
+      return chalk.cyan(`🔗 ${graphFeatures.undirectedDegree} 连接`);
+    }
+
+    return null;
   }
 }
