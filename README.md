@@ -107,6 +107,7 @@ cp .env.example .env
 Required:
 
 - `DATABASE_URL`
+- `DEEPSEEK_API_KEY`
 - `SILICONFLOW_API_KEY` or `OPENAI_API_KEY`
 
 Optional:
@@ -119,10 +120,15 @@ Example:
 
 ```bash
 DATABASE_URL=postgres://seeku:seeku_dev_password@localhost:5432/seeku
+DEEPSEEK_API_KEY=YOUR_DEEPSEEK_API_KEY_HERE
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_CHAT_MODEL=deepseek-v4-flash
 SILICONFLOW_API_KEY=YOUR_API_KEY_HERE
 GITHUB_TOKEN=YOUR_API_KEY_HERE
 JINA_API_KEY=YOUR_API_KEY_HERE
 ```
+
+Chat uses DeepSeek by default. Embeddings still use SiliconFlow.
 
 ### 4. Start the Database
 
@@ -155,6 +161,18 @@ npx tsx apps/worker/src/cli.ts attach <session-id>
 # Script mode
 npx tsx apps/worker/src/cli.ts search "杭州 AI" --json --limit 10
 ```
+
+### 7. Verify DeepSeek Chat Routing
+
+```bash
+pnpm exec tsx -e "import 'dotenv/config'; import { createProvider } from './packages/llm/src/index.ts'; (async () => { const provider = createProvider(); const res = await provider.chat([{ role: 'system', content: 'Reply with exactly OK' }, { role: 'user', content: 'OK' }], { model: 'deepseek-v4-flash', temperature: 0 }); console.log(JSON.stringify({ provider: provider.name, model: res.model, content: res.content })); })()"
+```
+
+Expected output should include:
+
+- `provider: "deepseek"`
+- `model: "deepseek-v4-flash"`
+- `content: "OK"`
 
 ## CLI Commands
 
@@ -260,13 +278,14 @@ seeku/
 Variable             Required  Description
 ---------------------------------------------------------------
 DATABASE_URL         Yes       PostgreSQL connection string
-SILICONFLOW_API_KEY  Yes*      SiliconFlow API key
-OPENAI_API_KEY       Yes*      OpenAI-compatible fallback key
+DEEPSEEK_API_KEY     Yes       DeepSeek chat / planner API key
+SILICONFLOW_API_KEY  Yes*      SiliconFlow embedding API key
+OPENAI_API_KEY       Yes*      OpenAI-compatible fallback key for embeddings
 GITHUB_TOKEN         No        GitHub sync token
 JINA_API_KEY         No        Jina Reader API key
 API_PORT             No        API server port
 
-* Provide either SILICONFLOW_API_KEY or OPENAI_API_KEY.
+* Provide either SILICONFLOW_API_KEY or OPENAI_API_KEY for embeddings.
 ```
 
 ## Data Sources
@@ -359,6 +378,7 @@ cp .env.example .env
 必填：
 
 - `DATABASE_URL`
+- `DEEPSEEK_API_KEY`
 - `SILICONFLOW_API_KEY` 或 `OPENAI_API_KEY`
 
 选填：
@@ -366,6 +386,18 @@ cp .env.example .env
 - `GITHUB_TOKEN`
 - `JINA_API_KEY`
 - `API_PORT`
+
+推荐配置示例：
+
+```bash
+DATABASE_URL=postgres://seeku:seeku_dev_password@localhost:5432/seeku
+DEEPSEEK_API_KEY=YOUR_DEEPSEEK_API_KEY_HERE
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_CHAT_MODEL=deepseek-v4-flash
+SILICONFLOW_API_KEY=YOUR_API_KEY_HERE
+```
+
+当前默认是 DeepSeek 负责 chat / planner，SiliconFlow 负责 embedding。
 
 ### 3. 启动数据库并迁移
 
@@ -395,6 +427,18 @@ npx tsx apps/worker/src/cli.ts "找杭州 AI 工程师"
 # 脚本模式
 npx tsx apps/worker/src/cli.ts search "杭州 AI" --json --limit 10
 ```
+
+### 6. 验证 DeepSeek 已接管聊天链路
+
+```bash
+pnpm exec tsx -e "import 'dotenv/config'; import { createProvider } from './packages/llm/src/index.ts'; (async () => { const provider = createProvider(); const res = await provider.chat([{ role: 'system', content: 'Reply with exactly OK' }, { role: 'user', content: 'OK' }], { model: 'deepseek-v4-flash', temperature: 0 }); console.log(JSON.stringify({ provider: provider.name, model: res.model, content: res.content })); })()"
+```
+
+期望输出包含：
+
+- `provider: "deepseek"`
+- `model: "deepseek-v4-flash"`
+- `content: "OK"`
 
 ## CLI 命令速查
 
