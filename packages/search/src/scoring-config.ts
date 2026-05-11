@@ -73,6 +73,7 @@ export const SCORING_CONFIG = {
     leadershipPenalty: envNumber("SEEKU_EVIDENCE_GATE_LEADERSHIP_PENALTY", 0.55),
     researcherPenalty: envNumber("SEEKU_EVIDENCE_GATE_RESEARCHER_PENALTY", 0.55),
     researcherPartialPenalty: envNumber("SEEKU_EVIDENCE_GATE_RESEARCHER_PARTIAL_PENALTY", 0.80),
+    productPartialPenalty: envNumber("SEEKU_EVIDENCE_GATE_PRODUCT_PARTIAL_PENALTY", 0.80),
     productPenalty: envNumber("SEEKU_EVIDENCE_GATE_PRODUCT_PENALTY", 0.55),
     engineerPenalty: envNumber("SEEKU_EVIDENCE_GATE_ENGINEER_PENALTY", 0.70)
   }

@@ -386,6 +386,15 @@ export class Reranker {
           /^(产品经理)$/.test(role)
         );
         if (hasProductRole) return 1.0;
+
+        const facetRoles = document?.facetRole ?? [];
+        const hasFacetProductRole = facetRoles.some(role =>
+          /^(产品经理|产品负责人)$/.test(role)
+        );
+        if (hasFacetProductRole) {
+          return SCORING_CONFIG.evidenceGate.productPartialPenalty;
+        }
+
         return SCORING_CONFIG.evidenceGate.productPenalty;
       }
 
