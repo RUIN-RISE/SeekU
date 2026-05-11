@@ -34,7 +34,7 @@ Seeku is an evidence-driven AI talent search engine. The currently shipped prima
 - **Default Docker**: `infra/docker-compose.yml` uses `pgvector/pgvector:pg16` image
 - **Vector Dimensions**: 4096 (Qwen3-Embedding-8B) — No ANN index (HNSW limit is 2000), uses sequential scan for MVP
 - **LLM Provider**: SiliconFlow API (OpenAI SDK compatible)
-  - Chat: `stepfun-ai/Step-3.5-Flash`
+  - Chat: `deepseek-v4-flash` via DeepSeek API
   - Embedding: `Qwen/Qwen3-Embedding-8B`
 <!-- GSD:project-end -->
 

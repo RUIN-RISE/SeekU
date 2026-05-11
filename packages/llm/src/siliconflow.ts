@@ -2,9 +2,9 @@ import OpenAI from "openai";
 import type { LLMProvider, LLMProviderConfig, ChatMessage, ChatResponse, EmbeddingResponse, ChatOptions } from "./provider.js";
 import { withRetry } from "@seeku/shared";
 
-// SiliconFlow defaults (Stepfun models)
+// SiliconFlow defaults for generic chat fallback and embeddings.
 const SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1";
-const DEFAULT_CHAT_MODEL = "stepfun-ai/Step-3.5-Flash";
+const DEFAULT_CHAT_MODEL = "Qwen/Qwen2.5-72B-Instruct";
 const DEFAULT_EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-8B";
 const DEFAULT_EMBEDDING_DIMENSION = 4096;
 

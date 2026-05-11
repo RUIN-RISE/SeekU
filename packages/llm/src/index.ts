@@ -1,11 +1,11 @@
 export * from "./provider.js";
 export * from "./siliconflow.js";
 export * from "./openrouter.js";
-export * from "./stepfun.js";
+export * from "./deepseek.js";
 export * from "./embeddings.js";
 
 import type { LLMProvider } from "./provider.js";
-import { StepFunProvider } from "./stepfun.js";
+import { DeepSeekProvider } from "./deepseek.js";
 import { SiliconFlowProvider } from "./siliconflow.js";
 
 function createLazyEmbedProvider() {
@@ -21,15 +21,15 @@ function createLazyEmbedProvider() {
 }
 
 /**
- * Create a provider that routes chat to StepFun (if configured) or SiliconFlow,
+ * Create a provider that routes chat to DeepSeek (if configured) or SiliconFlow,
  * and always routes embedding to SiliconFlow.
  * Drop-in replacement for SiliconFlowProvider.fromEnv().
  */
 export function createProvider(): LLMProvider {
   const getEmbedProvider = createLazyEmbedProvider();
 
-  if (process.env.STEPFUN_API_KEY) {
-    const chatProvider = StepFunProvider.fromEnv();
+  if (process.env.DEEPSEEK_API_KEY) {
+    const chatProvider = DeepSeekProvider.fromEnv();
     return {
       get name() { return chatProvider.name; },
       chat: (messages, options) => chatProvider.chat(messages, options),

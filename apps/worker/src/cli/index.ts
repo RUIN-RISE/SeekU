@@ -589,8 +589,8 @@ export async function runInteractiveSearch(
     const message = error instanceof Error ? error.message : "Unknown error occurred";
     console.error(chalk.red("\n❌ Unable to start interactive search."));
 
-    if (message.includes("STEPFUN_API_KEY")) {
-      console.error(chalk.yellow("Missing chat credentials. Set `STEPFUN_API_KEY` before starting the CLI."));
+    if (message.includes("DEEPSEEK_API_KEY")) {
+      console.error(chalk.yellow("Missing chat credentials. Set `DEEPSEEK_API_KEY` before starting the CLI."));
     } else if (message.includes("SILICONFLOW_API_KEY") || message.includes("OPENAI_API_KEY")) {
       console.error(chalk.yellow("Missing embedding credentials. Set `SILICONFLOW_API_KEY` or `OPENAI_API_KEY` before running retrieval."));
     } else if (message.includes("DATABASE_URL")) {

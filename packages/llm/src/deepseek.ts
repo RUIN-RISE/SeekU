@@ -2,32 +2,31 @@ import OpenAI from "openai";
 import type { LLMProvider, LLMProviderConfig, ChatMessage, ChatResponse, ChatOptions } from "./provider.js";
 import { withRetry } from "@seeku/shared";
 
-// StepFun (阶跃星辰) official API defaults
-const STEPFUN_BASE_URL = "https://api.stepfun.com/v1";
-const DEFAULT_CHAT_MODEL = "step-3.5-flash-2603";
+const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
+const DEFAULT_CHAT_MODEL = "deepseek-v4-flash";
 
-export class StepFunProvider implements LLMProvider {
-  readonly name = "stepfun";
+export class DeepSeekProvider implements LLMProvider {
+  readonly name = "deepseek";
   private client: OpenAI;
   private defaultChatModel: string;
 
   constructor(config: LLMProviderConfig) {
     this.client = new OpenAI({
       apiKey: config.apiKey,
-      baseURL: config.baseURL ?? STEPFUN_BASE_URL
+      baseURL: config.baseURL ?? DEEPSEEK_BASE_URL
     });
     this.defaultChatModel = config.defaultChatModel ?? DEFAULT_CHAT_MODEL;
   }
 
-  static fromEnv(): StepFunProvider {
-    const apiKey = process.env.STEPFUN_API_KEY;
+  static fromEnv(): DeepSeekProvider {
+    const apiKey = process.env.DEEPSEEK_API_KEY;
     if (!apiKey) {
-      throw new Error("STEPFUN_API_KEY is required to use StepFunProvider");
+      throw new Error("DEEPSEEK_API_KEY is required to use DeepSeekProvider");
     }
-    return new StepFunProvider({
+    return new DeepSeekProvider({
       apiKey,
-      baseURL: process.env.STEPFUN_BASE_URL ?? STEPFUN_BASE_URL,
-      defaultChatModel: process.env.STEPFUN_CHAT_MODEL ?? DEFAULT_CHAT_MODEL
+      baseURL: process.env.DEEPSEEK_BASE_URL ?? DEEPSEEK_BASE_URL,
+      defaultChatModel: process.env.DEEPSEEK_CHAT_MODEL ?? DEFAULT_CHAT_MODEL
     });
   }
 
@@ -35,8 +34,12 @@ export class StepFunProvider implements LLMProvider {
     return withRetry(async () => {
       const response = await this.client.chat.completions.create({
         model: options?.model ?? this.defaultChatModel,
-        messages: messages.map(m => ({ role: m.role, content: m.content })),
-        temperature: options?.temperature ?? 0.7
+        messages: messages.map((message) => ({
+          role: message.role,
+          content: message.content
+        })),
+        temperature: options?.temperature ?? 0.7,
+        response_format: options?.responseFormat === "json" ? { type: "json_object" } : undefined
       }, {
         signal: options?.signal
       });
@@ -54,14 +57,10 @@ export class StepFunProvider implements LLMProvider {
   }
 
   async embed(_text?: string, _options?: { model?: string; signal?: AbortSignal }): Promise<never> {
-    throw new Error("StepFunProvider does not support embeddings. Use SiliconFlowProvider for embedding operations.");
+    throw new Error("DeepSeekProvider does not support embeddings here. Use SiliconFlowProvider for embedding operations.");
   }
 
   async embedBatch(_texts?: string[], _options?: { model?: string; signal?: AbortSignal }): Promise<never> {
-    throw new Error("StepFunProvider does not support embeddings. Use SiliconFlowProvider for embedding operations.");
-  }
-
-  getEmbeddingDimension(): number {
-    throw new Error("StepFunProvider does not support embeddings.");
+    throw new Error("DeepSeekProvider does not support embeddings here. Use SiliconFlowProvider for embedding operations.");
   }
 }
